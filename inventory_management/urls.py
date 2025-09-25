@@ -18,8 +18,11 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from .api_views import api_root
-from .auth_views import CustomAuthToken, token_info, logout_token
+from .auth_views import (
+    CustomTokenObtainPairView, jwt_user_info, jwt_logout, jwt_register
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -32,11 +35,16 @@ urlpatterns = [
     path('api/v1/', include('colors.urls')),
     path('api/v1/', include('stock.urls')),
     
-    # Authentication
+    # JWT Authentication endpoints
+    path('api/v1/auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/v1/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/v1/auth/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
+    path('api/v1/auth/user/', jwt_user_info, name='jwt_user_info'),
+    path('api/v1/auth/logout/', jwt_logout, name='jwt_logout'),
+    path('api/v1/auth/register/', jwt_register, name='jwt_register'),
+    
+    # Session authentication (for admin and browsable API)
     path('api/auth/', include('rest_framework.urls')),
-    path('api/v1/auth/token/', CustomAuthToken.as_view(), name='api_token_auth'),
-    path('api/v1/auth/token/info/', token_info, name='token_info'),
-    path('api/v1/auth/token/logout/', logout_token, name='token_logout'),
 ]
 
 # Serve media files during development

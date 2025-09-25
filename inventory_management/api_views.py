@@ -13,9 +13,12 @@ def api_root(request, format=None):
         'message': 'Welcome to Django Inventory Management System API',
         'version': '1.0.0',
         'authentication': {
-            'get_token': request.build_absolute_uri('/api/v1/auth/token/'),
-            'token_info': request.build_absolute_uri('/api/v1/auth/token/info/'),
-            'logout': request.build_absolute_uri('/api/v1/auth/token/logout/'),
+            'login': request.build_absolute_uri('/api/v1/auth/login/'),
+            'refresh_token': request.build_absolute_uri('/api/v1/auth/token/refresh/'),
+            'verify_token': request.build_absolute_uri('/api/v1/auth/token/verify/'),
+            'user_info': request.build_absolute_uri('/api/v1/auth/user/'),
+            'logout': request.build_absolute_uri('/api/v1/auth/logout/'),
+            'register': request.build_absolute_uri('/api/v1/auth/register/'),
             'session_auth': request.build_absolute_uri('/api/auth/'),
         },
         'endpoints': {

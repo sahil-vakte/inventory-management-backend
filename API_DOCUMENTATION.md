@@ -24,9 +24,12 @@ This is a comprehensive Django-based Warehouse Inventory Management System (WIMS
 ## API Endpoints
 
 ### Authentication
-- `POST /api/v1/auth/token/` - Get authentication token
-- `GET /api/v1/auth/token/info/` - Get current token information
-- `DELETE /api/v1/auth/token/logout/` - Logout (delete token)
+- `POST /api/v1/auth/login/` - Get JWT access and refresh tokens
+- `POST /api/v1/auth/token/refresh/` - Refresh access token using refresh token
+- `POST /api/v1/auth/token/verify/` - Verify token validity
+- `GET /api/v1/auth/user/` - Get current user information
+- `POST /api/v1/auth/logout/` - Logout (blacklist refresh token)
+- `POST /api/v1/auth/register/` - Register new user and get tokens
 - `GET/POST /api/auth/` - Django session authentication
 
 ### Products API (`/api/v1/products/`)
@@ -118,16 +121,16 @@ Required columns: `VS Parent ID`, `VS Child ID`, `Parent Reference`, `Child`, `P
 ## Authentication
 All API endpoints require authentication. You can use:
 
-1. **Token Authentication** - Get token from `/api/v1/auth/token/` and include in headers:
+1. **JWT Authentication** - Get JWT tokens from `/api/v1/auth/login/` and include in headers:
    ```
-   Authorization: Token your_token_here
+   Authorization: Bearer your_access_token_here
    ```
 
 2. **Session Authentication** - Login via Django admin or `/api/auth/`
 
-### Getting Your Authentication Token
+### Getting Your JWT Tokens
 ```bash
-curl -X POST http://localhost:8000/api/v1/auth/token/ \
+curl -X POST http://localhost:8000/api/v1/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{"username": "your_username", "password": "your_password"}'
 ```
@@ -135,26 +138,42 @@ curl -X POST http://localhost:8000/api/v1/auth/token/ \
 Response:
 ```json
 {
-  "token": "your_authentication_token_here",
+  "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
   "user_id": 1,
   "username": "your_username",
   "email": "user@example.com",
   "is_staff": true,
-  "is_superuser": true,
-  "created": false
+  "is_superuser": true
 }
 ```
 
-### Check Token Information
+### Refreshing Your Access Token
 ```bash
-curl -X GET http://localhost:8000/api/v1/auth/token/info/ \
-  -H "Authorization: Token your_token_here"
+curl -X POST http://localhost:8000/api/v1/auth/token/refresh/ \
+  -H "Content-Type: application/json" \
+  -d '{"refresh": "your_refresh_token_here"}'
 ```
 
-### Logout (Delete Token)
+### Check User Information
 ```bash
-curl -X DELETE http://localhost:8000/api/v1/auth/token/logout/ \
-  -H "Authorization: Token your_token_here"
+curl -X GET http://localhost:8000/api/v1/auth/user/ \
+  -H "Authorization: Bearer your_access_token_here"
+```
+
+### Logout (Blacklist Refresh Token)
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/logout/ \
+  -H "Authorization: Bearer your_access_token_here" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token": "your_refresh_token_here"}'
+```
+
+### Register New User
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/register/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "newuser", "email": "new@example.com", "password": "newpassword123"}'
 ```
 
 ## Example Requests
@@ -162,8 +181,23 @@ curl -X DELETE http://localhost:8000/api/v1/auth/token/logout/ \
 ### Import Colors from Excel
 ```bash
 curl -X POST http://localhost:8000/api/v1/colors/import-excel/ \
-  -H "Authorization: Token your_token" \
+  -H "Authorization: Bearer your_access_token" \
   -F "file=@colors.xlsx"
+```
+
+### Get Authentication Token First
+```bash
+# Get tokens
+TOKENS=$(curl -s -X POST http://localhost:8000/api/v1/auth/login/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "your_password"}')
+
+# Extract access token
+ACCESS_TOKEN=$(echo "$TOKENS" | python -c "import sys, json; print(json.load(sys.stdin)['access'])")
+
+# Use access token for API calls
+curl -X GET http://localhost:8000/api/v1/colors/ \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ### Complete Authentication Flow Example
@@ -212,13 +246,13 @@ curl -X GET http://localhost:8000/api/v1/stock/ -H "Authorization: Token $TOKEN"
 ### Get Low Stock Items
 ```bash
 curl -X GET "http://localhost:8000/api/v1/stock/low-stock/" \
-  -H "Authorization: Token your_token"
+  -H "Authorization: Bearer your_access_token"
 ```
 
 ### Adjust Stock Level
 ```bash
 curl -X POST http://localhost:8000/api/v1/stock/109LT_BK/adjust-stock/ \
-  -H "Authorization: Token your_token" \
+  -H "Authorization: Bearer your_access_token" \
   -H "Content-Type: application/json" \
   -d '{"quantity": 10, "reason": "New stock arrival"}'
 ```
@@ -226,7 +260,7 @@ curl -X POST http://localhost:8000/api/v1/stock/109LT_BK/adjust-stock/ \
 ### Search Products
 ```bash
 curl -X GET "http://localhost:8000/api/v1/products/?search=fabric&active_only=true" \
-  -H "Authorization: Token your_token"
+  -H "Authorization: Bearer your_access_token"
 ```
 
 ## Error Handling
