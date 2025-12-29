@@ -1,0 +1,86 @@
+{
+  "info": {
+    "name": "Inventory Management API (All Endpoints)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        { "name": "Login", "request": { "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": { "raw": "{{baseUrl}}/api/v1/auth/login/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"] }, "body": { "mode": "raw", "raw": "{\"username\": \"\", \"password\": \"\"}" } } },
+        { "name": "Token Refresh", "request": { "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": { "raw": "{{baseUrl}}/api/v1/auth/token/refresh/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "token", "refresh"] }, "body": { "mode": "raw", "raw": "{\"refresh\": \"\"}" } } },
+        { "name": "Token Verify", "request": { "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": { "raw": "{{baseUrl}}/api/v1/auth/token/verify/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "token", "verify"] }, "body": { "mode": "raw", "raw": "{\"token\": \"\"}" } } },
+        { "name": "User Info", "request": { "method": "GET", "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}], "url": { "raw": "{{baseUrl}}/api/v1/auth/user/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "user"] } } },
+        { "name": "Logout", "request": { "method": "POST", "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}], "url": { "raw": "{{baseUrl}}/api/v1/auth/logout/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "logout"] } } },
+        { "name": "Register", "request": { "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}], "url": { "raw": "{{baseUrl}}/api/v1/auth/register/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "register"] }, "body": { "mode": "raw", "raw": "{\"username\": \"\", \"password\": \"\", \"email\": \"\"}" } } }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        { "name": "List Products", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/products/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "products"] } } },
+        { "name": "Create Product", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/products/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "products"] }, "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "Get Product", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/products/:id/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "products", ":id"] } } },
+        { "name": "Update Product", "request": { "method": "PUT", "url": { "raw": "{{baseUrl}}/api/v1/products/:id/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "products", ":id"] }, "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "Delete Product", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/products/:id/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "products", ":id"] } } },
+        { "name": "Import Products from Excel", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/products/import-excel/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "products", "import-excel"] }, "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] } } },
+        { "name": "Product Stats", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/products/stats/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "products", "stats"] } } }
+      ]
+    },
+    {
+      "name": "Colors",
+      "item": [
+        { "name": "List Colors", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/colors/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "colors"] } } },
+        { "name": "Create Color", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/colors/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "colors"] }, "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "Get Color", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/colors/:code/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "colors", ":code"] } } },
+        { "name": "Update Color", "request": { "method": "PUT", "url": { "raw": "{{baseUrl}}/api/v1/colors/:code/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "colors", ":code"] }, "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "Delete Color", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/colors/:code/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "colors", ":code"] } } },
+        { "name": "Import Colors from Excel", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/colors/import-excel/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "colors", "import-excel"] }, "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] } } },
+        { "name": "Export Colors to Excel", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/colors/export-excel/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "colors", "export-excel"] } } }
+      ]
+    },
+    {
+      "name": "Stock",
+      "item": [
+        { "name": "List Stock", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/stock/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock"] } } },
+        { "name": "Create Stock", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/stock/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock"] }, "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "Get Stock Item", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/stock/:sku/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock", ":sku"] } } },
+        { "name": "Update Stock Item", "request": { "method": "PUT", "url": { "raw": "{{baseUrl}}/api/v1/stock/:sku/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock", ":sku"] }, "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "Delete Stock Item", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/stock/:sku/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock", ":sku"] } } },
+        { "name": "Adjust Stock", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/stock/:sku/adjust-stock/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock", ":sku", "adjust-stock"] }, "body": { "mode": "raw", "raw": "{\"quantity\": 0, \"reason\": \"\"}" } } },
+        { "name": "Reserve Stock", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/stock/:sku/reserve-stock/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock", ":sku", "reserve-stock"] }, "body": { "mode": "raw", "raw": "{\"quantity\": 0}" } } },
+        { "name": "Release Stock", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/stock/:sku/release-stock/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock", ":sku", "release-stock"] }, "body": { "mode": "raw", "raw": "{\"quantity\": 0}" } } },
+        { "name": "Import Stock from Excel", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/stock/import-excel/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock", "import-excel"] }, "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] } } },
+        { "name": "Stock Stats", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/stock/stats/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock", "stats"] } } },
+        { "name": "Low Stock Items", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/stock/low-stock/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "stock", "low-stock"] } } }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        { "name": "List Categories", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/categories/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "categories"] } } },
+        { "name": "Create Category", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/categories/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "categories"] }, "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "Get Category", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/categories/:id/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "categories", ":id"] } } },
+        { "name": "Update Category", "request": { "method": "PUT", "url": { "raw": "{{baseUrl}}/api/v1/categories/:id/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "categories", ":id"] }, "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "Delete Category", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/categories/:id/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "categories", ":id"] } } }
+      ]
+    },
+    {
+      "name": "Brands",
+      "item": [
+        { "name": "List Brands", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/brands/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "brands"] } } },
+        { "name": "Create Brand", "request": { "method": "POST", "url": { "raw": "{{baseUrl}}/api/v1/brands/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "brands"] }, "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "Get Brand", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/brands/:id/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "brands", ":id"] } } },
+        { "name": "Update Brand", "request": { "method": "PUT", "url": { "raw": "{{baseUrl}}/api/v1/brands/:id/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "brands", ":id"] }, "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "Delete Brand", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/brands/:id/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "brands", ":id"] } } }
+      ]
+    },
+    {
+      "name": "Stock Movements",
+      "item": [
+        { "name": "List Movements", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/movements/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "movements"] } } },
+        { "name": "Get Movement", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/movements/:id/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "movements", ":id"] } } }
+      ]
+    }
+  ]
+}
