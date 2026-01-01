@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Orders>
+  <!-- Sample Order 1: Basic order with full details -->
+  <Order>
+    <OrderNumber>EXT-2026-001</OrderNumber>
+    <CustomerInfo>
+      <Name>John Doe</Name>
+      <Email>john.doe@example.com</Email>
+      <Phone>+44 7700 900123</Phone>
+      <Company>Doe Enterprises Ltd</Company>
+    </CustomerInfo>
+    <ShippingAddress>
+      <AddressLine1>123 High Street</AddressLine1>
+      <AddressLine2>Flat 4B</AddressLine2>
+      <City>London</City>
+      <State>Greater London</State>
+      <PostalCode>SW1A 1AA</PostalCode>
+      <Country>UK</Country>
+    </ShippingAddress>
+    <BillingAddress>
+      <AddressLine1>123 High Street</AddressLine1>
+      <AddressLine2>Flat 4B</AddressLine2>
+      <City>London</City>
+      <State>Greater London</State>
+      <PostalCode>SW1A 1AA</PostalCode>
+      <Country>UK</Country>
+    </BillingAddress>
+    <OrderDate>2026-01-02T10:30:00</OrderDate>
+    <ExpectedDeliveryDate>2026-01-09T00:00:00</ExpectedDeliveryDate>
+    <OrderStatus>PENDING</OrderStatus>
+    <PaymentStatus>UNPAID</PaymentStatus>
+    <PaymentMethod>Credit Card</PaymentMethod>
+    <PaymentReference>PMT-123456</PaymentReference>
+    <ShippingMethod>Standard Delivery</ShippingMethod>
+    <Subtotal>125.00</Subtotal>
+    <TaxRate>20.00</TaxRate>
+    <TaxAmount>25.00</TaxAmount>
+    <ShippingCost>5.99</ShippingCost>
+    <DiscountAmount>10.00</DiscountAmount>
+    <TotalAmount>145.99</TotalAmount>
+    <CustomerNotes>Please deliver after 2 PM</CustomerNotes>
+    <InternalNotes>VIP customer - priority handling</InternalNotes>
+    <Items>
+      <Item>
+        <SKU>109LT-BK</SKU>
+        <ProductName>109 Lace Trim - Black</ProductName>
+        <ProductType>109LT</ProductType>
+        <ColorCode>BK</ColorCode>
+        <Quantity>5</Quantity>
+        <UnitPrice>25.00</UnitPrice>
+        <TaxRate>20.00</TaxRate>
+        <DiscountAmount>0.00</DiscountAmount>
+        <Notes>Gift wrap required</Notes>
+      </Item>
+    </Items>
+  </Order>
+
+  <!-- Sample Order 2: Multiple items -->
+  <Order>
+    <OrderNumber>EXT-2026-002</OrderNumber>
+    <CustomerInfo>
+      <Name>Jane Smith</Name>
+      <Email>jane.smith@example.com</Email>
+      <Phone>+44 7700 900456</Phone>
+    </CustomerInfo>
+    <ShippingAddress>
+      <AddressLine1>456 Market Road</AddressLine1>
+      <City>Manchester</City>
+      <State>Greater Manchester</State>
+      <PostalCode>M1 1AA</PostalCode>
+      <Country>UK</Country>
+    </ShippingAddress>
+    <OrderDate>2026-01-02T14:15:00</OrderDate>
+    <ExpectedDeliveryDate>2026-01-10T00:00:00</ExpectedDeliveryDate>
+    <OrderStatus>CONFIRMED</OrderStatus>
+    <PaymentStatus>PAID</PaymentStatus>
+    <PaymentMethod>PayPal</PaymentMethod>
+    <ShippingMethod>Express Delivery</ShippingMethod>
+    <Subtotal>180.00</Subtotal>
+    <TaxRate>20.00</TaxRate>
+    <TaxAmount>36.00</TaxAmount>
+    <ShippingCost>12.99</ShippingCost>
+    <DiscountAmount>0.00</DiscountAmount>
+    <TotalAmount>228.99</TotalAmount>
+    <Items>
+      <Item>
+        <SKU>109LT-BK</SKU>
+        <ProductName>109 Lace Trim - Black</ProductName>
+        <ProductType>109LT</ProductType>
+        <ColorCode>BK</ColorCode>
+        <Quantity>3</Quantity>
+        <UnitPrice>30.00</UnitPrice>
+        <TaxRate>20.00</TaxRate>
+      </Item>
+      <Item>
+        <SKU>109LT-WHT</SKU>
+        <ProductName>109 Lace Trim - White</ProductName>
+        <ProductType>109LT</ProductType>
+        <ColorCode>WHT</ColorCode>
+        <Quantity>3</Quantity>
+        <UnitPrice>30.00</UnitPrice>
+        <TaxRate>20.00</TaxRate>
+      </Item>
+    </Items>
+  </Order>
+
+  <!-- Sample Order 3: Minimal required fields only -->
+  <Order>
+    <CustomerName>Bob Johnson</CustomerName>
+    <CustomerEmail>bob.johnson@example.com</CustomerEmail>
+    <Items>
+      <Item>
+        <SKU>109LT-BK</SKU>
+        <ProductName>Test Product</ProductName>
+        <Quantity>2</Quantity>
+        <UnitPrice>50.00</UnitPrice>
+      </Item>
+    </Items>
+  </Order>
+</Orders>

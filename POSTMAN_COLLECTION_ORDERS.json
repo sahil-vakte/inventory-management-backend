@@ -1,0 +1,1162 @@
+{
+	"info": {
+		"_postman_id": "order-management-collection",
+		"name": "Inventory Management - Orders API",
+		"description": "Complete Postman collection for Order Management System with XML upload support",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{access_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login (Get JWT Token)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"access_token\", jsonData.access);",
+									"    pm.environment.set(\"refresh_token\", jsonData.refresh);",
+									"    console.log(\"Access token saved to environment\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"admin\",\n    \"password\": \"admin\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/login/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"login",
+								""
+							]
+						},
+						"description": "Login to get JWT access and refresh tokens. The access token is automatically saved to environment variables."
+					},
+					"response": []
+				},
+				{
+					"name": "Refresh Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"access_token\", jsonData.access);",
+									"    console.log(\"Access token refreshed\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"refresh\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/token/refresh/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"token",
+								"refresh",
+								""
+							]
+						},
+						"description": "Refresh the access token using the refresh token"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/user/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"user",
+								""
+							]
+						},
+						"description": "Get information about the currently authenticated user"
+					},
+					"response": []
+				}
+			],
+			"description": "Authentication endpoints for JWT tokens"
+		},
+		{
+			"name": "Orders - CRUD",
+			"item": [
+				{
+					"name": "List All Orders",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							]
+						},
+						"description": "Get a paginated list of all orders"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Order by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								""
+							]
+						},
+						"description": "Get detailed information about a specific order including items and status history"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Order (Simple)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"customer_name\": \"John Doe\",\n    \"customer_email\": \"john.doe@example.com\",\n    \"customer_phone\": \"+44 7700 900123\",\n    \"items\": [\n        {\n            \"sku\": \"109LT-BK\",\n            \"product_name\": \"109 Lace Trim - Black\",\n            \"quantity\": 2,\n            \"unit_price\": \"25.00\"\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							]
+						},
+						"description": "Create a simple order with minimal required fields"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Order (Complete)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"customer_name\": \"Jane Smith\",\n    \"customer_email\": \"jane.smith@example.com\",\n    \"customer_phone\": \"+44 7700 900456\",\n    \"customer_company\": \"Smith Ltd\",\n    \"shipping_address_line1\": \"123 High Street\",\n    \"shipping_address_line2\": \"Flat 4B\",\n    \"shipping_city\": \"London\",\n    \"shipping_state\": \"Greater London\",\n    \"shipping_postal_code\": \"SW1A 1AA\",\n    \"shipping_country\": \"UK\",\n    \"billing_address_line1\": \"123 High Street\",\n    \"billing_city\": \"London\",\n    \"billing_postal_code\": \"SW1A 1AA\",\n    \"billing_country\": \"UK\",\n    \"payment_method\": \"Credit Card\",\n    \"payment_status\": \"PAID\",\n    \"shipping_method\": \"Express Delivery\",\n    \"shipping_cost\": \"12.99\",\n    \"tax_rate\": \"20.00\",\n    \"discount_amount\": \"5.00\",\n    \"customer_notes\": \"Please deliver after 2 PM\",\n    \"internal_notes\": \"VIP customer\",\n    \"items\": [\n        {\n            \"sku\": \"109LT-BK\",\n            \"product_name\": \"109 Lace Trim - Black\",\n            \"product_type\": \"109LT\",\n            \"color_code\": \"BK\",\n            \"quantity\": 3,\n            \"unit_price\": \"30.00\",\n            \"tax_rate\": \"20.00\",\n            \"discount_amount\": \"0.00\"\n        },\n        {\n            \"sku\": \"109LT-WHT\",\n            \"product_name\": \"109 Lace Trim - White\",\n            \"product_type\": \"109LT\",\n            \"color_code\": \"WHT\",\n            \"quantity\": 2,\n            \"unit_price\": \"30.00\"\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							]
+						},
+						"description": "Create a complete order with all optional fields populated"
+					},
+					"response": []
+				},
+				{
+					"name": "Update Order",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"customer_name\": \"John Doe Updated\",\n    \"customer_email\": \"john.updated@example.com\",\n    \"customer_phone\": \"+44 7700 900999\",\n    \"internal_notes\": \"Order updated by API\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								""
+							]
+						},
+						"description": "Update an existing order (full update)"
+					},
+					"response": []
+				},
+				{
+					"name": "Partial Update Order",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"customer_phone\": \"+44 7700 900888\",\n    \"internal_notes\": \"Phone number updated\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								""
+							]
+						},
+						"description": "Partially update specific fields of an order"
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Order (Soft Delete)",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								""
+							]
+						},
+						"description": "Soft delete an order (can be restored)"
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Order (Permanent)",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/?force_delete=true",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								""
+							],
+							"query": [
+								{
+									"key": "force_delete",
+									"value": "true"
+								}
+							]
+						},
+						"description": "Permanently delete an order (cannot be restored)"
+					},
+					"response": []
+				},
+				{
+					"name": "Restore Deleted Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/restore/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								"restore",
+								""
+							]
+						},
+						"description": "Restore a soft-deleted order"
+					},
+					"response": []
+				}
+			],
+			"description": "Basic CRUD operations for orders"
+		},
+		{
+			"name": "Order Workflows",
+			"item": [
+				{
+					"name": "Confirm Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"notes\": \"Order confirmed by customer\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/confirm/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								"confirm",
+								""
+							]
+						},
+						"description": "Confirm a pending order (PENDING → CONFIRMED)"
+					},
+					"response": []
+				},
+				{
+					"name": "Start Processing Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/start-processing/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								"start-processing",
+								""
+							]
+						},
+						"description": "Start processing an order (CONFIRMED → PROCESSING)"
+					},
+					"response": []
+				},
+				{
+					"name": "Ship Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"tracking_number\": \"TRACK-123456789\",\n    \"carrier\": \"DHL Express\",\n    \"notes\": \"Shipped via express delivery\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/ship/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								"ship",
+								""
+							]
+						},
+						"description": "Mark order as shipped with tracking information (PROCESSING → SHIPPED)"
+					},
+					"response": []
+				},
+				{
+					"name": "Mark as Delivered",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/deliver/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								"deliver",
+								""
+							]
+						},
+						"description": "Mark order as delivered (SHIPPED → DELIVERED)"
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"reason\": \"Customer requested cancellation - no longer needed\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/cancel/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								"cancel",
+								""
+							]
+						},
+						"description": "Cancel an order and release reserved stock"
+					},
+					"response": []
+				}
+			],
+			"description": "Order lifecycle workflow actions"
+		},
+		{
+			"name": "Order Items",
+			"item": [
+				{
+					"name": "Add Item to Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"sku\": \"109LT-RED\",\n    \"product_name\": \"109 Lace Trim - Red\",\n    \"quantity\": 1,\n    \"unit_price\": \"30.00\",\n    \"notes\": \"Added by customer request\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/add-item/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								"add-item",
+								""
+							]
+						},
+						"description": "Add an item to an existing order (only works for PENDING or CONFIRMED orders)"
+					},
+					"response": []
+				},
+				{
+					"name": "Remove Item from Order",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/items/2/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								"items",
+								"2",
+								""
+							]
+						},
+						"description": "Remove an item from an order (only works for PENDING or CONFIRMED orders)"
+					},
+					"response": []
+				},
+				{
+					"name": "List All Order Items",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/order-items/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"order-items",
+								""
+							]
+						},
+						"description": "Get all order items across all orders"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Order Item by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/order-items/1/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"order-items",
+								"1",
+								""
+							]
+						},
+						"description": "Get details of a specific order item"
+					},
+					"response": []
+				}
+			],
+			"description": "Manage order items"
+		},
+		{
+			"name": "XML Upload",
+			"item": [
+				{
+					"name": "Upload XML File",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "sample_order.xml",
+									"description": "Select the XML file to upload"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/upload-xml/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"upload-xml",
+								""
+							]
+						},
+						"description": "Upload orders from XML file. Supports both single order and multiple orders (batch) in one XML file."
+					},
+					"response": []
+				}
+			],
+			"description": "Upload orders from XML files"
+		},
+		{
+			"name": "Filtering & Search",
+			"item": [
+				{
+					"name": "Filter by Status (Pending)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/?order_status=PENDING",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							],
+							"query": [
+								{
+									"key": "order_status",
+									"value": "PENDING"
+								}
+							]
+						},
+						"description": "Get all pending orders"
+					},
+					"response": []
+				},
+				{
+					"name": "Filter by Payment Status (Paid)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/?payment_status=PAID",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							],
+							"query": [
+								{
+									"key": "payment_status",
+									"value": "PAID"
+								}
+							]
+						},
+						"description": "Get all paid orders"
+					},
+					"response": []
+				},
+				{
+					"name": "Filter by Date Range",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/?date_from=2026-01-01&date_to=2026-01-31",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							],
+							"query": [
+								{
+									"key": "date_from",
+									"value": "2026-01-01"
+								},
+								{
+									"key": "date_to",
+									"value": "2026-01-31"
+								}
+							]
+						},
+						"description": "Get orders within a specific date range"
+					},
+					"response": []
+				},
+				{
+					"name": "Filter by Total Amount Range",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/?min_total=100.00&max_total=500.00",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							],
+							"query": [
+								{
+									"key": "min_total",
+									"value": "100.00"
+								},
+								{
+									"key": "max_total",
+									"value": "500.00"
+								}
+							]
+						},
+						"description": "Get orders within a specific total amount range"
+					},
+					"response": []
+				},
+				{
+					"name": "Filter by Order Source (XML)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/?order_source=XML",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							],
+							"query": [
+								{
+									"key": "order_source",
+									"value": "XML"
+								}
+							]
+						},
+						"description": "Get all orders created from XML upload"
+					},
+					"response": []
+				},
+				{
+					"name": "Search Orders",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/?search=john",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							],
+							"query": [
+								{
+									"key": "search",
+									"value": "john"
+								}
+							]
+						},
+						"description": "Search orders by order number, customer name, email, phone, or tracking number"
+					},
+					"response": []
+				},
+				{
+					"name": "Include Deleted Orders",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/?include_deleted=true",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							],
+							"query": [
+								{
+									"key": "include_deleted",
+									"value": "true"
+								}
+							]
+						},
+						"description": "Get all orders including soft-deleted ones"
+					},
+					"response": []
+				},
+				{
+					"name": "Only Deleted Orders",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/?only_deleted=true",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							],
+							"query": [
+								{
+									"key": "only_deleted",
+									"value": "true"
+								}
+							]
+						},
+						"description": "Get only soft-deleted orders"
+					},
+					"response": []
+				},
+				{
+					"name": "Combined Filters",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/?order_status=CONFIRMED&payment_status=PAID&date_from=2026-01-01&ordering=-total_amount",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							],
+							"query": [
+								{
+									"key": "order_status",
+									"value": "CONFIRMED"
+								},
+								{
+									"key": "payment_status",
+									"value": "PAID"
+								},
+								{
+									"key": "date_from",
+									"value": "2026-01-01"
+								},
+								{
+									"key": "ordering",
+									"value": "-total_amount"
+								}
+							]
+						},
+						"description": "Combine multiple filters and sorting"
+					},
+					"response": []
+				}
+			],
+			"description": "Examples of filtering and searching orders"
+		},
+		{
+			"name": "Statistics & Reporting",
+			"item": [
+				{
+					"name": "Get Order Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/stats/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"stats",
+								""
+							]
+						},
+						"description": "Get comprehensive order statistics including counts by status, revenue, average order value, and unpaid orders"
+					},
+					"response": []
+				},
+				{
+					"name": "Order Status History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/order-history/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"order-history",
+								""
+							]
+						},
+						"description": "Get all order status change history"
+					},
+					"response": []
+				},
+				{
+					"name": "Filter History by Order",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/order-history/?order=1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"order-history",
+								""
+							],
+							"query": [
+								{
+									"key": "order",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Get status history for a specific order"
+					},
+					"response": []
+				}
+			],
+			"description": "Statistics and reporting endpoints"
+		},
+		{
+			"name": "Other Resources",
+			"item": [
+				{
+					"name": "List Products",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/products/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"products",
+								""
+							]
+						},
+						"description": "Get all products (for reference when creating orders)"
+					},
+					"response": []
+				},
+				{
+					"name": "List Stock Items",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/stock/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"stock",
+								""
+							]
+						},
+						"description": "Get all stock items (to check SKUs and availability)"
+					},
+					"response": []
+				},
+				{
+					"name": "List Colors",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/colors/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"colors",
+								""
+							]
+						},
+						"description": "Get all color codes"
+					},
+					"response": []
+				}
+			],
+			"description": "Other inventory resources for reference"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
