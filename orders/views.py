@@ -76,9 +76,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
-        if self.action == 'list':
-            return OrderListSerializer
-        elif self.action in ['create', 'update', 'partial_update']:
+        if self.action in ['create', 'update', 'partial_update']:
             return OrderCreateUpdateSerializer
         elif self.action == 'confirm':
             return OrderConfirmSerializer
@@ -86,6 +84,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             return OrderShipSerializer
         elif self.action == 'cancel':
             return OrderCancelSerializer
+        # Use detailed serializer for both list and retrieve
         return OrderDetailSerializer
     
     def perform_create(self, serializer):
