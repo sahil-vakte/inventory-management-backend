@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "order-management-collection",
 		"name": "Inventory Management - Orders API",
-		"description": "Complete Postman collection for Order Management System with XML upload support",
+		"description": "Complete Postman collection for Order Management System with XML upload support and Employee Assignment workflow. Note: Automatic stock reservation/release has been removed - employees must manually manage stock.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"auth": {
@@ -202,7 +202,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"customer_name\": \"John Doe\",\n    \"customer_email\": \"john.doe@example.com\",\n    \"customer_phone\": \"+44 7700 900123\",\n    \"items\": [\n        {\n            \"sku\": \"109LT-BK\",\n            \"product_name\": \"109 Lace Trim - Black\",\n            \"quantity\": 2,\n            \"unit_price\": \"25.00\"\n        }\n    ]\n}"
+							"raw": "{\n    \"customer_name\": \"John Doe\",\n    \"customer_email\": \"john.doe@example.com\",\n    \"customer_phone\": \"+44 7700 900123\",\n    \"assigned_to\": 2,\n    \"items\": [\n        {\n            \"sku\": \"109LT-BK\",\n            \"product_name\": \"109 Lace Trim - Black\",\n            \"quantity\": 2,\n            \"unit_price\": \"25.00\"\n        }\n    ]\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/orders/",
@@ -232,7 +232,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"customer_name\": \"Jane Smith\",\n    \"customer_email\": \"jane.smith@example.com\",\n    \"customer_phone\": \"+44 7700 900456\",\n    \"customer_company\": \"Smith Ltd\",\n    \"shipping_address_line1\": \"123 High Street\",\n    \"shipping_address_line2\": \"Flat 4B\",\n    \"shipping_city\": \"London\",\n    \"shipping_state\": \"Greater London\",\n    \"shipping_postal_code\": \"SW1A 1AA\",\n    \"shipping_country\": \"UK\",\n    \"billing_address_line1\": \"123 High Street\",\n    \"billing_city\": \"London\",\n    \"billing_postal_code\": \"SW1A 1AA\",\n    \"billing_country\": \"UK\",\n    \"payment_method\": \"Credit Card\",\n    \"payment_status\": \"PAID\",\n    \"shipping_method\": \"Express Delivery\",\n    \"shipping_cost\": \"12.99\",\n    \"tax_rate\": \"20.00\",\n    \"discount_amount\": \"5.00\",\n    \"customer_notes\": \"Please deliver after 2 PM\",\n    \"internal_notes\": \"VIP customer\",\n    \"items\": [\n        {\n            \"sku\": \"109LT-BK\",\n            \"product_name\": \"109 Lace Trim - Black\",\n            \"product_type\": \"109LT\",\n            \"color_code\": \"BK\",\n            \"quantity\": 3,\n            \"unit_price\": \"30.00\",\n            \"tax_rate\": \"20.00\",\n            \"discount_amount\": \"0.00\"\n        },\n        {\n            \"sku\": \"109LT-WHT\",\n            \"product_name\": \"109 Lace Trim - White\",\n            \"product_type\": \"109LT\",\n            \"color_code\": \"WHT\",\n            \"quantity\": 2,\n            \"unit_price\": \"30.00\"\n        }\n    ]\n}"
+							"raw": "{\n    \"customer_name\": \"Jane Smith\",\n    \"customer_email\": \"jane.smith@example.com\",\n    \"customer_phone\": \"+44 7700 900456\",\n    \"customer_company\": \"Smith Ltd\",\n    \"assigned_to\": 3,\n    \"shipping_address_line1\": \"123 High Street\",\n    \"shipping_address_line2\": \"Flat 4B\",\n    \"shipping_city\": \"London\",\n    \"shipping_state\": \"Greater London\",\n    \"shipping_postal_code\": \"SW1A 1AA\",\n    \"shipping_country\": \"UK\",\n    \"billing_address_line1\": \"123 High Street\",\n    \"billing_city\": \"London\",\n    \"billing_postal_code\": \"SW1A 1AA\",\n    \"billing_country\": \"UK\",\n    \"payment_method\": \"Credit Card\",\n    \"payment_status\": \"PAID\",\n    \"shipping_method\": \"Express Delivery\",\n    \"shipping_cost\": \"12.99\",\n    \"tax_rate\": \"20.00\",\n    \"discount_amount\": \"5.00\",\n    \"customer_notes\": \"Please deliver after 2 PM\",\n    \"internal_notes\": \"VIP customer\",\n    \"items\": [\n        {\n            \"sku\": \"109LT-BK\",\n            \"product_name\": \"109 Lace Trim - Black\",\n            \"product_type\": \"109LT\",\n            \"color_code\": \"BK\",\n            \"quantity\": 3,\n            \"unit_price\": \"30.00\",\n            \"tax_rate\": \"20.00\",\n            \"discount_amount\": \"0.00\"\n        },\n        {\n            \"sku\": \"109LT-WHT\",\n            \"product_name\": \"109 Lace Trim - White\",\n            \"product_type\": \"109LT\",\n            \"color_code\": \"WHT\",\n            \"quantity\": 2,\n            \"unit_price\": \"30.00\"\n        }\n    ]\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/v1/orders/",
@@ -556,12 +556,234 @@
 								""
 							]
 						},
-						"description": "Cancel an order and release reserved stock"
+						"description": "Cancel an order. Note: Stock must be manually released by assigned employee."
 					},
 					"response": []
 				}
 			],
 			"description": "Order lifecycle workflow actions"
+		},
+		{
+			"name": "Employee Assignment",
+			"item": [
+				{
+					"name": "Assign Employee to Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"employee_id\": 2\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/assign-employee/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								"assign-employee",
+								""
+							]
+						},
+						"description": "Assign an employee to handle this order. The assigned employee will be responsible for managing stock and processing the order."
+					},
+					"response": []
+				},
+				{
+					"name": "Unassign Employee from Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/1/unassign-employee/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"1",
+								"unassign-employee",
+								""
+							]
+						},
+						"description": "Remove employee assignment from this order"
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Assigned Orders",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/my-assigned-orders/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								"my-assigned-orders",
+								""
+							]
+						},
+						"description": "Get all orders assigned to the currently logged-in employee"
+					},
+					"response": []
+				},
+				{
+					"name": "Filter Orders by Assigned Employee",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/?assigned_to=2",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders",
+								""
+							],
+							"query": [
+								{
+									"key": "assigned_to",
+									"value": "2",
+									"description": "Employee/User ID"
+								}
+							]
+						},
+						"description": "Filter orders by assigned employee ID"
+					},
+					"response": []
+				}
+			],
+			"description": "Employee assignment for manual order and stock management"
+		},
+		{
+			"name": "Manual Stock Management",
+			"item": [
+				{
+					"name": "Reserve Stock for Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"quantity\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/stock/109LT-BLK/reserve-stock/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"stock",
+								"109LT-BLK",
+								"reserve-stock",
+								""
+							]
+						},
+						"description": "Manually reserve stock for an order. Employee must do this after order is assigned."
+					},
+					"response": []
+				},
+				{
+					"name": "Release Reserved Stock",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"quantity\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/stock/109LT-BLK/release-stock/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"stock",
+								"109LT-BLK",
+								"release-stock",
+								""
+							]
+						},
+						"description": "Release reserved stock (e.g., when order is cancelled). Employee must do this manually."
+					},
+					"response": []
+				},
+				{
+					"name": "Adjust Stock (Fulfillment)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"quantity\": -10,\n    \"reason\": \"Fulfilled Order ORD-20260108-0001\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/stock/109LT-BLK/adjust-stock/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"stock",
+								"109LT-BLK",
+								"adjust-stock",
+								""
+							]
+						},
+						"description": "Manually adjust stock levels. Use negative quantity to reduce stock after shipping order. Use positive for receiving stock."
+					},
+					"response": []
+				}
+			],
+			"description": "Manual stock management endpoints - employees must manually manage stock for their assigned orders"
 		},
 		{
 			"name": "Order Items",
@@ -1156,6 +1378,11 @@
 		{
 			"key": "refresh_token",
 			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "employee_id",
+			"value": "2",
 			"type": "string"
 		}
 	]

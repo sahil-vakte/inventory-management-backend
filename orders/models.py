@@ -135,6 +135,9 @@ class Order(models.Model):
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
                                   related_name='orders_updated', blank=True,
                                   help_text="User who last updated this order")
+    assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='assigned_orders',
+                                   help_text="Employee assigned to handle this order")
     
     # Source tracking
     order_source = models.CharField(max_length=50, default='MANUAL',
@@ -219,11 +222,6 @@ class Order(models.Model):
         if user:
             self.deleted_by = user
         self.save()
-        
-        # Also release any reserved stock
-        for item in self.items.all():
-            if item.stock_item and item.stock_item.reserved_stock >= item.quantity:
-                item.stock_item.release_stock(item.quantity)
     
     def restore(self):
         """Restore soft deleted order"""
@@ -321,7 +319,7 @@ class Order(models.Model):
         )
     
     def cancel(self, reason=None, user=None):
-        """Cancel the order and release stock"""
+        """Cancel the order - stock must be released manually by assigned employee"""
         if self.order_status in [self.STATUS_DELIVERED, self.STATUS_CANCELLED]:
             raise ValueError(f"Cannot cancel order in {self.order_status} status")
         
@@ -330,10 +328,6 @@ class Order(models.Model):
         if user:
             self.updated_by = user
         self.save()
-        
-        # Release reserved stock for all items
-        for item in self.items.all():
-            item.release_stock()
         
         OrderStatusHistory.objects.create(
             order=self,
@@ -416,12 +410,6 @@ class OrderItem(models.Model):
     # Additional Info
     notes = models.TextField(blank=True, null=True, help_text="Item-specific notes")
     
-    # Stock reservation tracking
-    stock_reserved = models.BooleanField(default=False, 
-                                        help_text="Whether stock has been reserved for this item")
-    stock_fulfilled = models.BooleanField(default=False,
-                                         help_text="Whether this item has been fulfilled")
-    
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -444,26 +432,6 @@ class OrderItem(models.Model):
         if not self.line_total or self.line_total == 0:
             self.line_total = (self.unit_price * self.quantity) - self.discount_amount
         super().save(*args, **kwargs)
-    
-    def reserve_stock(self):
-        """Reserve stock for this order item"""
-        if self.stock_item and not self.stock_reserved:
-            success = self.stock_item.reserve_stock(self.quantity)
-            if success:
-                self.stock_reserved = True
-                self.save()
-            return success
-        return False
-    
-    def release_stock(self):
-        """Release reserved stock"""
-        if self.stock_item and self.stock_reserved:
-            success = self.stock_item.release_stock(self.quantity)
-            if success:
-                self.stock_reserved = False
-                self.save()
-            return success
-        return False
 
 
 class OrderStatusHistory(models.Model):

@@ -95,6 +95,8 @@ class StockItemViewSet(viewsets.ModelViewSet):
             return Response({'message': 'Stock item restored successfully', 'data': serializer.data})
         except StockItem.DoesNotExist:
             return Response({'error': 'Stock item not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=True, methods=['post'], url_path='adjust-stock')
     def adjust_stock(self, request, pk=None):
         """Adjust stock levels for a specific item"""
         stock_item = self.get_object()

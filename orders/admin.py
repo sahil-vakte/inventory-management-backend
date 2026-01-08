@@ -8,8 +8,7 @@ class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 1
     fields = [
-        'sku', 'product_name', 'quantity', 'unit_price', 
-        'line_total', 'stock_reserved', 'stock_fulfilled'
+        'sku', 'product_name', 'quantity', 'unit_price', 'line_total'
     ]
     readonly_fields = ['line_total']
 
@@ -29,11 +28,11 @@ class OrderAdmin(admin.ModelAdmin):
     
     list_display = [
         'order_number', 'customer_name', 'order_status_badge', 
-        'payment_status_badge', 'total_amount', 'order_date', 
-        'item_count', 'is_deleted'
+        'payment_status_badge', 'total_amount', 'order_date',
+        'assigned_to', 'item_count', 'is_deleted'
     ]
     list_filter = [
-        'order_status', 'payment_status', 'order_source', 
+        'order_status', 'payment_status', 'order_source', 'assigned_to',
         'is_deleted', 'order_date', 'created_at'
     ]
     search_fields = [
@@ -50,7 +49,7 @@ class OrderAdmin(admin.ModelAdmin):
         ('Order Information', {
             'fields': (
                 'order_number', 'external_order_id', 'order_status', 
-                'payment_status', 'order_source'
+                'payment_status', 'order_source', 'assigned_to'
             )
         }),
         ('Customer Information', {
@@ -205,9 +204,9 @@ class OrderItemAdmin(admin.ModelAdmin):
     
     list_display = [
         'id', 'order_link', 'sku', 'product_name', 'quantity', 
-        'unit_price', 'line_total', 'stock_reserved', 'stock_fulfilled'
+        'unit_price', 'line_total'
     ]
-    list_filter = ['stock_reserved', 'stock_fulfilled', 'created_at']
+    list_filter = ['created_at']
     search_fields = ['sku', 'product_name', 'order__order_number']
     readonly_fields = ['line_total', 'created_at', 'updated_at']
     
@@ -227,8 +226,8 @@ class OrderItemAdmin(admin.ModelAdmin):
                 'tax_rate', 'discount_amount'
             )
         }),
-        ('Status', {
-            'fields': ('stock_reserved', 'stock_fulfilled', 'notes')
+        ('Additional Info', {
+            'fields': ('notes',)
         }),
         ('Timestamps', {
             'fields': ('created_at', 'updated_at'),

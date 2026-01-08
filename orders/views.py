@@ -25,7 +25,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     
     filterset_fields = [
         'order_status', 'payment_status', 'order_source', 
-        'customer_email', 'is_deleted'
+        'customer_email', 'assigned_to', 'is_deleted'
     ]
     search_fields = [
         'order_number', 'external_order_id', 'customer_name', 
@@ -43,15 +43,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         if include_deleted == 'true':
             queryset = Order.all_objects.select_related(
-                'created_by', 'updated_by'
+                'created_by', 'updated_by', 'assigned_to'
             ).prefetch_related('items', 'status_history')
         elif self.request.query_params.get('only_deleted', 'false').lower() == 'true':
             queryset = Order.all_objects.filter(is_deleted=True).select_related(
-                'created_by', 'updated_by'
+                'created_by', 'updated_by', 'assigned_to'
             ).prefetch_related('items', 'status_history')
         else:
             queryset = Order.objects.select_related(
-                'created_by', 'updated_by'
+                'created_by', 'updated_by', 'assigned_to'
             ).prefetch_related('items', 'status_history')
         
         # Filter by date range
@@ -135,6 +135,61 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {'error': 'Order not found'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
+    
+    @action(detail=True, methods=['post'], url_path='assign-employee')
+    def assign_employee(self, request, pk=None):
+        """Assign an employee to handle this order"""
+        order = self.get_object()
+        employee_id = request.data.get('employee_id')
+        
+        if not employee_id:
+            return Response(
+                {'error': 'employee_id is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            from django.contrib.auth.models import User
+            employee = User.objects.get(id=employee_id)
+            order.assigned_to = employee
+            order.updated_by = request.user
+            order.save()
+            
+            return Response({
+                'message': f'Order assigned to {employee.username}',
+                'order': OrderDetailSerializer(order).data
+            })
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Employee not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=True, methods=['post'], url_path='unassign-employee')
+    def unassign_employee(self, request, pk=None):
+        """Unassign employee from order"""
+        order = self.get_object()
+        order.assigned_to = None
+        order.updated_by = request.user
+        order.save()
+        
+        return Response({
+            'message': 'Employee unassigned from order',
+            'order': OrderDetailSerializer(order).data
+        })
+    
+    @action(detail=False, methods=['get'], url_path='my-assigned-orders')
+    def my_assigned_orders(self, request):
+        """Get orders assigned to the current user"""
+        orders = self.get_queryset().filter(assigned_to=request.user)
+        
+        page = self.paginate_queryset(orders)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(orders, many=True)
+        return Response(serializer.data)
     
     @action(detail=True, methods=['post'], url_path='confirm')
     def confirm(self, request, pk=None):
@@ -385,7 +440,7 @@ class OrderItemViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     
-    filterset_fields = ['order', 'sku', 'stock_reserved', 'stock_fulfilled']
+    filterset_fields = ['order', 'sku']
     search_fields = ['sku', 'product_name']
     ordering_fields = ['created_at', 'quantity', 'line_total']
     ordering = ['-created_at']

@@ -18,8 +18,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'id', 'order', 'product', 'stock_item', 'product_detail', 'stock_detail',
             'sku', 'product_name', 'product_type', 'color_code',
             'quantity', 'unit_price', 'line_total', 'tax_rate', 'discount_amount',
-            'notes', 'stock_reserved', 'stock_fulfilled',
-            'created_at', 'updated_at'
+            'notes', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'line_total', 'created_at', 'updated_at']
     
@@ -28,19 +27,6 @@ class OrderItemSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError("Quantity must be greater than 0")
         return value
-    
-    def validate(self, data):
-        """Validate stock availability if stock_item is provided"""
-        stock_item = data.get('stock_item')
-        quantity = data.get('quantity', 1)
-        
-        if stock_item:
-            if stock_item.total_available_stock < quantity:
-                raise serializers.ValidationError(
-                    f"Insufficient stock. Available: {stock_item.total_available_stock}, Requested: {quantity}"
-                )
-        
-        return data
 
 
 class OrderItemCreateSerializer(serializers.ModelSerializer):
@@ -115,6 +101,7 @@ class OrderListSerializer(serializers.ModelSerializer):
     order_status_display = serializers.CharField(source='get_order_status_display', read_only=True)
     payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    assigned_to_username = serializers.CharField(source='assigned_to.username', read_only=True)
     item_count = serializers.IntegerField(read_only=True)
     total_quantity = serializers.IntegerField(read_only=True)
     
@@ -125,7 +112,8 @@ class OrderListSerializer(serializers.ModelSerializer):
             'customer_email', 'order_status', 'order_status_display',
             'payment_status', 'payment_status_display', 'order_date',
             'total_amount', 'item_count', 'total_quantity',
-            'created_by_username', 'order_source', 'created_at'
+            'created_by_username', 'assigned_to', 'assigned_to_username',
+            'order_source', 'created_at'
         ]
         read_only_fields = ['id', 'order_number', 'created_at']
 
@@ -141,6 +129,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
     updated_by_username = serializers.CharField(source='updated_by.username', read_only=True)
+    assigned_to_username = serializers.CharField(source='assigned_to.username', read_only=True)
     
     item_count = serializers.IntegerField(read_only=True)
     total_quantity = serializers.IntegerField(read_only=True)
@@ -174,7 +163,7 @@ class OrderCreateUpdateSerializer(serializers.ModelSerializer):
             'order_status', 'payment_status', 'order_date', 'expected_delivery_date',
             'subtotal', 'tax_amount', 'tax_rate', 'shipping_cost', 'discount_amount', 'total_amount',
             'payment_method', 'payment_reference', 'shipping_method',
-            'customer_notes', 'internal_notes', 'order_source', 'items'
+            'customer_notes', 'internal_notes', 'order_source', 'assigned_to', 'items'
         ]
     
     def validate_customer_name(self, value):
@@ -203,16 +192,6 @@ class OrderCreateUpdateSerializer(serializers.ModelSerializer):
         order.calculate_totals()
         order.save()
         
-        # Reserve stock for items
-        for item in order.items.all():
-            if item.stock_item:
-                try:
-                    item.reserve_stock()
-                except Exception as e:
-                    # If stock reservation fails, we might want to handle it differently
-                    # For now, we'll continue but log the error
-                    pass
-        
         return order
     
     def update(self, instance, validated_data):
@@ -232,10 +211,8 @@ class OrderCreateUpdateSerializer(serializers.ModelSerializer):
         
         # Update items if provided
         if items_data is not None:
-            # Remove old items and release stock
-            for item in instance.items.all():
-                item.release_stock()
-                item.delete()
+            # Remove old items
+            instance.items.all().delete()
             
             # Create new items
             for item_data in items_data:
@@ -244,14 +221,6 @@ class OrderCreateUpdateSerializer(serializers.ModelSerializer):
             # Recalculate totals
             instance.calculate_totals()
             instance.save()
-            
-            # Reserve stock for new items
-            for item in instance.items.all():
-                if item.stock_item:
-                    try:
-                        item.reserve_stock()
-                    except Exception as e:
-                        pass
         
         return instance
 
