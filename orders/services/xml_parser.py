@@ -259,23 +259,21 @@ class XMLOrderParser:
         return order
     
     def _parse_order_item(self, item_elem, order, is_wims_format=False):
-        """Parse a single Item XML element and create OrderItem"""
-        
+        """Parse a single Item XML element and create OrderItem, assigning location from related product if available"""
+
         if is_wims_format:
-            # WIMS format uses <reference> for SKU, <title> for name
             sku = self._get_text(item_elem, 'reference', required=True)
             quantity = int(self._get_text(item_elem, 'quantity', '1'))
             unit_price = self._get_decimal(item_elem, 'price_inc', Decimal('0.00'))
             product_name = self._get_text(item_elem, 'title', sku)
             tax_rate = self._get_decimal(item_elem, 'tax_rate', Decimal('20.00'))
         else:
-            # Standard format
             sku = self._get_text(item_elem, 'SKU', required=True)
             quantity = int(self._get_text(item_elem, 'Quantity', '1'))
             unit_price = self._get_decimal(item_elem, 'UnitPrice', Decimal('0.00'))
             product_name = self._get_text(item_elem, 'ProductName', sku)
             tax_rate = self._get_decimal(item_elem, 'TaxRate', Decimal('20.00'))
-        
+
         item_data = {
             'order': order,
             'sku': sku,
@@ -288,13 +286,19 @@ class XMLOrderParser:
             'discount_amount': self._get_decimal(item_elem, 'DiscountAmount', Decimal('0.00')),
             'notes': self._get_text(item_elem, 'Notes'),
         }
-        
+
+        # Try to find product by SKU and assign location if available
+        try:
+            product = Product.objects.get(child_reference=sku)
+            item_data['product'] = product
+            # If you want to denormalize location, add here (e.g., item_data['location'] = product.location)
+        except Product.DoesNotExist:
+            pass
+
         # Try to find stock item by SKU
         try:
             stock_item = StockItem.objects.get(sku=sku)
             item_data['stock_item'] = stock_item
-            
-            # Auto-fill from stock item if not provided
             if not item_data.get('product_type'):
                 item_data['product_type'] = stock_item.product_type
             if not item_data.get('color_code'):
@@ -304,21 +308,17 @@ class XMLOrderParser:
             if unit_price == Decimal('0.00'):
                 item_data['unit_price'] = stock_item.unit_cost
         except StockItem.DoesNotExist:
-            # Stock item not found, continue with provided data
             pass
-        
-        # Create order item
+
         order_item = OrderItem.objects.create(**item_data)
-        
-        # Reserve stock if available
+
         if order_item.stock_item:
             try:
                 order_item.reserve_stock()
             except Exception as e:
-                # Log error but don't fail order creation
                 order.internal_notes = (order.internal_notes or '') + f"\nWarning: Could not reserve stock for {sku}: {str(e)}"
                 order.save()
-        
+
         return order_item
     
     def _get_text(self, element, tag, default=None, required=False):

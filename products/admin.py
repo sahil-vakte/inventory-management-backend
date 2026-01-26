@@ -1,5 +1,10 @@
 from django.contrib import admin
-from .models import Product, Category, Brand
+from .models import Product, Category, Brand, Location
+@admin.register(Location)
+class LocationAdmin(admin.ModelAdmin):
+    list_display = ['id', 'name', 'description', 'created_at', 'updated_at']
+    search_fields = ['id', 'name']
+    ordering = ['id']
 
 @admin.register(Brand)
 class BrandAdmin(admin.ModelAdmin):
@@ -64,7 +69,7 @@ class CategoryAdmin(admin.ModelAdmin):
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = [
-        'vs_child_id', 'child_reference', 'child_product_title', 
+        'vs_child_id', 'location','child_reference', 'child_product_title', 
         'brand', 'rrp_price_inc_vat', 'child_active', 'parent_active', 'is_deleted'
     ]
     list_filter = [
@@ -87,6 +92,11 @@ class ProductAdmin(admin.ModelAdmin):
         ('Basic Information', {
             'fields': (
                 'vs_parent_id', 'vs_child_id', 'parent_reference', 'child_reference'
+            )
+        }),
+        ('Product Location', {
+            'fields': (
+                'location',
             )
         }),
         ('Product Details', {

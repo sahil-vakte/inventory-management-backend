@@ -10,6 +10,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     """Serializer for Order Items"""
     
     product_detail = ProductListSerializer(source='product', read_only=True)
+    product_location = serializers.SerializerMethodField(read_only=True)
     stock_detail = StockItemListSerializer(source='stock_item', read_only=True)
     
     class Meta:
@@ -18,9 +19,46 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'id', 'order', 'product', 'stock_item', 'product_detail', 'stock_detail',
             'sku', 'product_name', 'product_type', 'color_code',
             'quantity', 'unit_price', 'line_total', 'tax_rate', 'discount_amount',
-            'notes', 'created_at', 'updated_at'
+            'notes', 'created_at', 'updated_at',
+            'product_location'
         ]
-        read_only_fields = ['id', 'line_total', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'line_total', 'created_at', 'updated_at', 'product_location']
+
+    def get_product_location(self, obj):
+        # Always fetch location from the related product, even if not set on order item
+        product = obj.product
+        if product and product.location:
+            return {
+                'id': product.location.id,
+                'name': product.location.name,
+                'description': product.location.description,
+            }
+        # If product is not set, try to find by SKU (child_reference)
+        from products.models import Product
+        if not product and obj.sku:
+            try:
+                product = Product.objects.get(child_reference=obj.sku)
+                if product.location:
+                    return {
+                        'id': product.location.id,
+                        'name': product.location.name,
+                        'description': product.location.description,
+                    }
+            except Product.DoesNotExist:
+                pass
+        # If still not found, try to find by product_name (child_product_title)
+        if not product and obj.product_name:
+            try:
+                product = Product.objects.filter(child_product_title=obj.product_name).first()
+                if product and product.location:
+                    return {
+                        'id': product.location.id,
+                        'name': product.location.name,
+                        'description': product.location.description,
+                    }
+            except Exception:
+                pass
+        return None
     
     def validate_quantity(self, value):
         """Validate quantity is positive"""

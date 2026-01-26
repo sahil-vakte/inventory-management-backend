@@ -1,5 +1,10 @@
 from rest_framework import serializers
-from .models import Product, Category, Brand
+from .models import Product, Category, Brand, Location
+class LocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ['id', 'name', 'description', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 class CategorySerializer(serializers.ModelSerializer):
     """Serializer for Category model"""
@@ -23,12 +28,14 @@ class ProductListSerializer(serializers.ModelSerializer):
     effective_price = serializers.ReadOnlyField()
     is_active = serializers.ReadOnlyField()
     
+    location = serializers.CharField(source='location.id', read_only=True)
     class Meta:
         model = Product
         fields = [
             'vs_child_id', 'child_reference', 'child_product_title',
             'brand_name', 'effective_price', 'is_active',
-            'child_active', 'parent_active', 'featured', 'is_deleted'
+            'child_active', 'parent_active', 'featured', 'is_deleted',
+            'location'
         ]
 
 class ProductDetailSerializer(serializers.ModelSerializer):
@@ -38,6 +45,8 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     effective_price = serializers.ReadOnlyField()
     is_active = serializers.ReadOnlyField()
     
+    location = LocationSerializer(read_only=True)
+    location_id = serializers.CharField(source='location.id', read_only=True)
     class Meta:
         model = Product
         fields = '__all__'
@@ -46,31 +55,36 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 class ProductCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating products"""
     
+    location = serializers.CharField(required=False, allow_null=True, write_only=True)
+
     class Meta:
         model = Product
         exclude = ['is_deleted', 'deleted_at', 'created_at', 'updated_at']
-    
+
     def validate(self, data):
-        """Custom validation for product data"""
         # Ensure prices are positive
         if data.get('rrp_price_inc_vat', 0) < 0:
             raise serializers.ValidationError("RRP price cannot be negative")
         if data.get('cost_price_inc_vat', 0) < 0:
             raise serializers.ValidationError("Cost price cannot be negative")
-        
+
+        # Validate location exists if provided
+        location_id = data.get('location')
+        if location_id:
+            try:
+                location = Location.objects.get(id=location_id)
+                data['location'] = location
+            except Location.DoesNotExist:
+                raise serializers.ValidationError({"location": "Location does not exist."})
         return data
-    
+
     def validate_vs_child_id(self, value):
-        """Validate VS Child ID uniqueness among non-deleted records"""
         if self.instance:
-            # For updates, exclude current instance
             existing = Product.all_objects.filter(
                 vs_child_id=value, is_deleted=False
             ).exclude(vs_child_id=self.instance.vs_child_id)
         else:
-            # For creation
             existing = Product.all_objects.filter(vs_child_id=value, is_deleted=False)
-        
         if existing.exists():
             raise serializers.ValidationError("Product with this VS Child ID already exists.")
         return value

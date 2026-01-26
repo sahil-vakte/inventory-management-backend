@@ -1,6 +1,37 @@
+
 from django.db import models
 from django.utils import timezone
 from decimal import Decimal
+from django.db.models import Max
+class Location(models.Model):
+    """Location model with custom alphanumeric primary key (LOC001, LOC002, ...)"""
+    id = models.CharField(primary_key=True, max_length=10, editable=False)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'locations'
+        ordering = ['id']
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            last = Location.objects.aggregate(max_id=Max('id'))['max_id']
+            if last:
+                # Extract numeric part and increment
+                try:
+                    last_num = int(last.replace('LOC', ''))
+                except Exception:
+                    last_num = 0
+                next_num = last_num + 1
+            else:
+                next_num = 1
+            self.id = f"LOC{next_num:03d}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.id} - {self.name}"
 
 class BaseManager(models.Manager):
     """Base manager with soft delete support"""
@@ -115,6 +146,7 @@ class Product(models.Model):
     # Relations
     brand = models.ForeignKey(Brand, on_delete=models.SET_NULL, blank=True, null=True)
     categories = models.ManyToManyField(Category, blank=True)
+    location = models.ForeignKey('Location', on_delete=models.SET_NULL, blank=True, null=True, related_name='products', help_text="Location where the product is stored")
     
     # Attributes
     attribute_length = models.CharField(max_length=100, blank=True, null=True)

@@ -1,0 +1,80 @@
+{
+  "info": {
+    "_postman_id": "b1e1c1e0-2026-4c1e-8e01-collection-locations-crud",
+    "name": "Inventory Management - Locations CRUD",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "List Locations",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}", "type": "text" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/products/locations/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "products", "locations", ""]
+        }
+      }
+    },
+    {
+      "name": "Create Location",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}", "type": "text" },
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"LOC-001\",\n  \"description\": \"Main warehouse\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/products/locations/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "products", "locations", ""]
+        }
+      }
+    },
+    {
+      "name": "Update Location",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}", "type": "text" },
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"LOC-001-Updated\",\n  \"description\": \"Updated warehouse description\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/products/locations/{{location_id}}/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "products", "locations", "{{location_id}}", ""]
+        }
+      }
+    },
+    {
+      "name": "Delete Location",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}", "type": "text" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/products/locations/{{location_id}}/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "products", "locations", "{{location_id}}", ""]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "access_token", "value": "" },
+    { "key": "location_id", "value": "LOC001" }
+  ]
+}

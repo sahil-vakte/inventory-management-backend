@@ -1,3 +1,4 @@
+from rest_framework import mixins
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -8,12 +9,20 @@ import pandas as pd
 from django.db import transaction
 from django.db import models
 from decimal import Decimal
-from .models import Product, Category, Brand
+from .models import Product, Category, Brand, Location
 from .serializers import (
     ProductListSerializer, ProductDetailSerializer, 
-    ProductCreateUpdateSerializer, CategorySerializer, BrandSerializer
+    ProductCreateUpdateSerializer, CategorySerializer, BrandSerializer, LocationSerializer
 )
 
+# Location CRUD API
+class LocationViewSet(viewsets.ModelViewSet):
+    queryset = Location.objects.all()
+    serializer_class = LocationSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['id', 'name']
+    ordering = ['id']
 class CategoryViewSet(viewsets.ModelViewSet):
     """ViewSet for Category CRUD operations with soft delete support"""
     queryset = Category.objects.all()  # Default queryset for router registration
@@ -131,6 +140,8 @@ class ProductViewSet(viewsets.ModelViewSet):
         elif self.action in ['create', 'update', 'partial_update']:
             return ProductCreateUpdateSerializer
         return ProductDetailSerializer
+
+    # No need to override create/update unless custom logic is needed, as serializer handles location validation and assignment.
     
     def get_queryset(self):
         """Return queryset based on include_deleted parameter"""
