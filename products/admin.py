@@ -69,7 +69,7 @@ class CategoryAdmin(admin.ModelAdmin):
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = [
-        'vs_child_id', 'location','child_reference', 'child_product_title', 
+        'vs_child_id', 'primary_location', 'secondary_location', 'child_reference', 'child_product_title', 
         'brand', 'rrp_price_inc_vat', 'child_active', 'parent_active', 'is_deleted'
     ]
     list_filter = [
@@ -94,9 +94,9 @@ class ProductAdmin(admin.ModelAdmin):
                 'vs_parent_id', 'vs_child_id', 'parent_reference', 'child_reference'
             )
         }),
-        ('Product Location', {
+        ('Product Locations', {
             'fields': (
-                'location',
+                'primary_location', 'secondary_location',
             )
         }),
         ('Product Details', {

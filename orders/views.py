@@ -310,15 +310,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         if serializer.is_valid():
             item = serializer.save(order=order)
             
-            # Reserve stock
-            if item.stock_item:
-                try:
-                    item.reserve_stock()
-                except Exception as e:
-                    return Response(
-                        {'error': f'Failed to reserve stock: {str(e)}'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+            # Note: Stock must be reserved manually by assigned employee
+            # Stock is not automatically reserved to allow for flexibility
             
             # Recalculate order totals
             order.calculate_totals()
@@ -345,7 +338,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         try:
             item = order.items.get(id=item_id)
-            item.release_stock()
+            # Note: Stock must be released manually by assigned employee
+            # Stock is not automatically released to allow for flexibility
             item.delete()
             
             # Recalculate order totals

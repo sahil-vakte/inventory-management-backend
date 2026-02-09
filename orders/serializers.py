@@ -10,7 +10,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
     """Serializer for Order Items"""
     
     product_detail = ProductListSerializer(source='product', read_only=True)
-    product_location = serializers.SerializerMethodField(read_only=True)
+    product_primary_location = serializers.SerializerMethodField(read_only=True)
+    product_secondary_location = serializers.SerializerMethodField(read_only=True)
     stock_detail = StockItemListSerializer(source='stock_item', read_only=True)
     
     class Meta:
@@ -20,29 +21,29 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'sku', 'product_name', 'product_type', 'color_code',
             'quantity', 'unit_price', 'line_total', 'tax_rate', 'discount_amount',
             'notes', 'created_at', 'updated_at',
-            'product_location'
+            'product_primary_location', 'product_secondary_location'
         ]
-        read_only_fields = ['id', 'line_total', 'created_at', 'updated_at', 'product_location']
+        read_only_fields = ['id', 'line_total', 'created_at', 'updated_at', 'product_primary_location', 'product_secondary_location']
 
-    def get_product_location(self, obj):
-        # Always fetch location from the related product, even if not set on order item
+    def get_product_primary_location(self, obj):
+        # Always fetch primary location from the related product
         product = obj.product
-        if product and product.location:
+        if product and product.primary_location:
             return {
-                'id': product.location.id,
-                'name': product.location.name,
-                'description': product.location.description,
+                'id': product.primary_location.id,
+                'name': product.primary_location.name,
+                'description': product.primary_location.description,
             }
         # If product is not set, try to find by SKU (child_reference)
         from products.models import Product
         if not product and obj.sku:
             try:
                 product = Product.objects.get(child_reference=obj.sku)
-                if product.location:
+                if product.primary_location:
                     return {
-                        'id': product.location.id,
-                        'name': product.location.name,
-                        'description': product.location.description,
+                        'id': product.primary_location.id,
+                        'name': product.primary_location.name,
+                        'description': product.primary_location.description,
                     }
             except Product.DoesNotExist:
                 pass
@@ -50,11 +51,47 @@ class OrderItemSerializer(serializers.ModelSerializer):
         if not product and obj.product_name:
             try:
                 product = Product.objects.filter(child_product_title=obj.product_name).first()
-                if product and product.location:
+                if product and product.primary_location:
                     return {
-                        'id': product.location.id,
-                        'name': product.location.name,
-                        'description': product.location.description,
+                        'id': product.primary_location.id,
+                        'name': product.primary_location.name,
+                        'description': product.primary_location.description,
+                    }
+            except Exception:
+                pass
+        return None
+    
+    def get_product_secondary_location(self, obj):
+        # Always fetch secondary location from the related product
+        product = obj.product
+        if product and product.secondary_location:
+            return {
+                'id': product.secondary_location.id,
+                'name': product.secondary_location.name,
+                'description': product.secondary_location.description,
+            }
+        # If product is not set, try to find by SKU (child_reference)
+        from products.models import Product
+        if not product and obj.sku:
+            try:
+                product = Product.objects.get(child_reference=obj.sku)
+                if product.secondary_location:
+                    return {
+                        'id': product.secondary_location.id,
+                        'name': product.secondary_location.name,
+                        'description': product.secondary_location.description,
+                    }
+            except Product.DoesNotExist:
+                pass
+        # If still not found, try to find by product_name (child_product_title)
+        if not product and obj.product_name:
+            try:
+                product = Product.objects.filter(child_product_title=obj.product_name).first()
+                if product and product.secondary_location:
+                    return {
+                        'id': product.secondary_location.id,
+                        'name': product.secondary_location.name,
+                        'description': product.secondary_location.description,
                     }
             except Exception:
                 pass

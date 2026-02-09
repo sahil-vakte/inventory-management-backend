@@ -287,11 +287,11 @@ class XMLOrderParser:
             'notes': self._get_text(item_elem, 'Notes'),
         }
 
-        # Try to find product by SKU and assign location if available
+        # Try to find product by SKU and assign locations if available
         try:
             product = Product.objects.get(child_reference=sku)
             item_data['product'] = product
-            # If you want to denormalize location, add here (e.g., item_data['location'] = product.location)
+            # Location info (primary_location, secondary_location) is retrieved via OrderItemSerializer
         except Product.DoesNotExist:
             pass
 

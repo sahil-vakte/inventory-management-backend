@@ -146,7 +146,8 @@ class Product(models.Model):
     # Relations
     brand = models.ForeignKey(Brand, on_delete=models.SET_NULL, blank=True, null=True)
     categories = models.ManyToManyField(Category, blank=True)
-    location = models.ForeignKey('Location', on_delete=models.SET_NULL, blank=True, null=True, related_name='products', help_text="Location where the product is stored")
+    primary_location = models.ForeignKey('Location', on_delete=models.SET_NULL, blank=True, null=True, related_name='primary_products', help_text="Primary location where the product is stored")
+    secondary_location = models.ForeignKey('Location', on_delete=models.SET_NULL, blank=True, null=True, related_name='secondary_products', help_text="Secondary/backup location where the product is stored")
     
     # Attributes
     attribute_length = models.CharField(max_length=100, blank=True, null=True)
