@@ -59,6 +59,21 @@ class Order(models.Model):
         (PAYMENT_FAILED, 'Failed'),
     ]
     
+    # Order Source Choices
+    SOURCE_MANUAL = 'MANUAL'
+    SOURCE_XML = 'XML'
+    SOURCE_EBAY = 'EBAY'
+    SOURCE_API = 'API'
+    SOURCE_WEBSITE = 'WEBSITE'
+    
+    SOURCE_CHOICES = [
+        (SOURCE_MANUAL, 'Manual Entry'),
+        (SOURCE_XML, 'XML Import'),
+        (SOURCE_EBAY, 'eBay'),
+        (SOURCE_API, 'API'),
+        (SOURCE_WEBSITE, 'Website'),
+    ]
+    
     # Primary Fields
     order_number = models.CharField(max_length=50, unique=True, 
                                     help_text="Unique order number")
@@ -140,8 +155,9 @@ class Order(models.Model):
                                    help_text="Employee assigned to handle this order")
     
     # Source tracking
-    order_source = models.CharField(max_length=50, default='MANUAL',
-                                   help_text="Source of order: MANUAL, XML, API, WEBSITE")
+    order_source = models.CharField(max_length=50, choices=SOURCE_CHOICES, 
+                                   default=SOURCE_MANUAL,
+                                   help_text="Source of order")
     
     # Soft Delete Fields
     is_deleted = models.BooleanField(default=False, help_text="Soft delete flag")
@@ -396,8 +412,14 @@ class OrderItem(models.Model):
     product_type = models.CharField(max_length=50, blank=True, null=True)
     color_code = models.CharField(max_length=10, blank=True, null=True)
     
+    # External references
+    ebay_item_id = models.CharField(max_length=100, blank=True, null=True,
+                                   help_text="eBay Item ID if order is from eBay")
+    
     # Quantity and Pricing
     quantity = models.PositiveIntegerField(default=1)
+    quantity_ordered = models.PositiveIntegerField(default=1,
+                                                   help_text="Original quantity ordered")
     unit_price = models.DecimalField(max_digits=10, decimal_places=2,
                                     help_text="Price per unit at time of order")
     line_total = models.DecimalField(max_digits=12, decimal_places=2,

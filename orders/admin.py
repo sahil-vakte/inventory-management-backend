@@ -29,7 +29,7 @@ class OrderAdmin(admin.ModelAdmin):
     list_display = [
         'order_number', 'customer_name', 'order_status_badge', 
         'payment_status_badge', 'total_amount', 'order_date',
-        'assigned_to', 'item_count', 'is_deleted'
+        'assigned_to', 'item_count','order_source', 'is_deleted'
     ]
     list_filter = [
         'order_status', 'payment_status', 'order_source', 'assigned_to',
