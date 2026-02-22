@@ -2,100 +2,25 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from decimal import Decimal
 from .models import Order, OrderItem, OrderStatusHistory
-from products.serializers import ProductListSerializer
 from stock.serializers import StockItemListSerializer
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
     """Serializer for Order Items"""
     
-    product_detail = ProductListSerializer(source='product', read_only=True)
-    product_primary_location = serializers.SerializerMethodField(read_only=True)
-    product_secondary_location = serializers.SerializerMethodField(read_only=True)
     stock_detail = StockItemListSerializer(source='stock_item', read_only=True)
     
     class Meta:
         model = OrderItem
         fields = [
-            'id', 'order', 'product', 'stock_item', 'product_detail', 'stock_detail',
+            'id', 'order', 'stock_item', 'stock_detail',
             'sku', 'product_name', 'product_type', 'color_code',
             'quantity', 'unit_price', 'line_total', 'tax_rate', 'discount_amount',
-            'notes', 'created_at', 'updated_at',
-            'product_primary_location', 'product_secondary_location'
+            'notes', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'line_total', 'created_at', 'updated_at', 'product_primary_location', 'product_secondary_location']
+        read_only_fields = ['id', 'line_total', 'created_at', 'updated_at']
 
-    def get_product_primary_location(self, obj):
-        # Always fetch primary location from the related product
-        product = obj.product
-        if product and product.primary_location:
-            return {
-                'id': product.primary_location.id,
-                'name': product.primary_location.name,
-                'description': product.primary_location.description,
-            }
-        # If product is not set, try to find by SKU (child_reference)
-        from products.models import Product
-        if not product and obj.sku:
-            try:
-                product = Product.objects.get(child_reference=obj.sku)
-                if product.primary_location:
-                    return {
-                        'id': product.primary_location.id,
-                        'name': product.primary_location.name,
-                        'description': product.primary_location.description,
-                    }
-            except Product.DoesNotExist:
-                pass
-        # If still not found, try to find by product_name (child_product_title)
-        if not product and obj.product_name:
-            try:
-                product = Product.objects.filter(child_product_title=obj.product_name).first()
-                if product and product.primary_location:
-                    return {
-                        'id': product.primary_location.id,
-                        'name': product.primary_location.name,
-                        'description': product.primary_location.description,
-                    }
-            except Exception:
-                pass
-        return None
-    
-    def get_product_secondary_location(self, obj):
-        # Always fetch secondary location from the related product
-        product = obj.product
-        if product and product.secondary_location:
-            return {
-                'id': product.secondary_location.id,
-                'name': product.secondary_location.name,
-                'description': product.secondary_location.description,
-            }
-        # If product is not set, try to find by SKU (child_reference)
-        from products.models import Product
-        if not product and obj.sku:
-            try:
-                product = Product.objects.get(child_reference=obj.sku)
-                if product.secondary_location:
-                    return {
-                        'id': product.secondary_location.id,
-                        'name': product.secondary_location.name,
-                        'description': product.secondary_location.description,
-                    }
-            except Product.DoesNotExist:
-                pass
-        # If still not found, try to find by product_name (child_product_title)
-        if not product and obj.product_name:
-            try:
-                product = Product.objects.filter(child_product_title=obj.product_name).first()
-                if product and product.secondary_location:
-                    return {
-                        'id': product.secondary_location.id,
-                        'name': product.secondary_location.name,
-                        'description': product.secondary_location.description,
-                    }
-            except Exception:
-                pass
-        return None
+    # Removed product location methods
     
     def validate_quantity(self, value):
         """Validate quantity is positive"""
@@ -110,16 +35,14 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
         fields = [
-            'product', 'stock_item', 'sku', 'product_name', 
+            'stock_item', 'sku', 'product_name', 
             'product_type', 'color_code', 'quantity', 'unit_price', 
             'tax_rate', 'discount_amount', 'notes'
         ]
     
     def validate(self, data):
-        """Auto-populate fields from product or stock_item if not provided"""
-        product = data.get('product')
+        """Auto-populate fields from stock_item if not provided"""
         stock_item = data.get('stock_item')
-        
         # Auto-populate from stock_item if provided and fields are missing
         if stock_item:
             if not data.get('sku'):
@@ -132,16 +55,6 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
                 data['unit_price'] = stock_item.unit_cost
             if not data.get('product_name'):
                 data['product_name'] = f"{stock_item.product_type} - {stock_item.color.color_name}"
-        
-        # Auto-populate from product if provided and fields are missing
-        elif product:
-            if not data.get('sku'):
-                data['sku'] = f"PROD-{product.vs_child_id}"
-            if not data.get('product_name'):
-                data['product_name'] = product.child_product_title
-            if not data.get('unit_price'):
-                data['unit_price'] = product.rrp_price_inc_vat
-        
         # Ensure required fields are present
         if not data.get('sku'):
             raise serializers.ValidationError("SKU is required")

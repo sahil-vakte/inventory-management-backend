@@ -4,7 +4,6 @@ from django.db import transaction
 from django.utils import timezone
 from ..models import Order, OrderItem
 from stock.models import StockItem
-from products.models import Product
 
 
 class XMLOrderParser:
@@ -287,13 +286,7 @@ class XMLOrderParser:
             'notes': self._get_text(item_elem, 'Notes'),
         }
 
-        # Try to find product by SKU and assign locations if available
-        try:
-            product = Product.objects.get(child_reference=sku)
-            item_data['product'] = product
-            # Location info (primary_location, secondary_location) is retrieved via OrderItemSerializer
-        except Product.DoesNotExist:
-            pass
+        # Product lookup removed; only stock_item is used for OrderItem
 
         # Try to find stock item by SKU
         try:

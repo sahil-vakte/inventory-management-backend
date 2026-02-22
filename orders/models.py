@@ -401,8 +401,7 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     
     # Product References
-    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True,
-                               help_text="Reference to product (optional)")
+    # product field removed: OrderItem now only references stock_item
     stock_item = models.ForeignKey(StockItem, on_delete=models.SET_NULL, null=True, blank=True,
                                   help_text="Reference to stock item (optional)")
     

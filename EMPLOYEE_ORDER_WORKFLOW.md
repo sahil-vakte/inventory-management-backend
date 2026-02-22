@@ -2,7 +2,10 @@
 
 ## Overview
 
-The order management system now supports **manual employee assignment** and **manual stock management**. Automatic stock reservation and fulfillment have been removed in favor of a more controlled, employee-driven workflow.
+
+**Order Items are now directly linked to Stock (SKU) and not to Product.**
+
+The order management system now supports **manual employee assignment** and **manual stock management**. Automatic stock reservation and fulfillment have been removed in favor of a more controlled, employee-driven workflow. All order item operations are SKU-centric, and every order item must reference a StockItem (SKU). Product references have been removed from the order workflow.
 
 ---
 
