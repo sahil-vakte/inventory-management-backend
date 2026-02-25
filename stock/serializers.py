@@ -15,6 +15,8 @@ class StockMovementSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'deleted_at']
 
 class StockItemListSerializer(serializers.ModelSerializer):
+    primary_location = serializers.CharField(source='primary_location.id', read_only=True)
+    secondary_location = serializers.CharField(source='secondary_location.id', read_only=True)
     """Simplified serializer for stock list views"""
     color = ColorListSerializer(read_only=True)
     stock_status = serializers.ReadOnlyField()
@@ -26,10 +28,13 @@ class StockItemListSerializer(serializers.ModelSerializer):
         fields = [
             'sku', 'product_type', 'color', 'available_stock_rolls',
             'reserved_stock', 'total_available_stock', 'stock_status',
-            'is_low_stock', 'is_active', 'is_deleted'
+            'is_low_stock', 'is_active', 'is_deleted',
+            'primary_location', 'secondary_location'
         ]
 
 class StockItemDetailSerializer(serializers.ModelSerializer):
+    primary_location = serializers.CharField(source='primary_location.id', read_only=True)
+    secondary_location = serializers.CharField(source='secondary_location.id', read_only=True)
     """Detailed serializer for single stock item views"""
     color = ColorListSerializer(read_only=True)
     stock_status = serializers.ReadOnlyField()
@@ -41,6 +46,7 @@ class StockItemDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockItem
         fields = '__all__'
+        # primary_location and secondary_location now included
         read_only_fields = ['created_at', 'updated_at', 'last_stock_update', 'deleted_at']
 
 class StockItemCreateUpdateSerializer(serializers.ModelSerializer):

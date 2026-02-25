@@ -18,6 +18,8 @@ class StockManager(models.Manager):
         return super().get_queryset().filter(is_deleted=True)
 
 class StockItem(models.Model):
+    primary_location = models.ForeignKey('products.Location', on_delete=models.SET_NULL, blank=True, null=True, related_name='primary_stock_items', help_text="Primary location where the stock item is stored")
+    secondary_location = models.ForeignKey('products.Location', on_delete=models.SET_NULL, blank=True, null=True, related_name='secondary_stock_items', help_text="Secondary/backup location for the stock item")
     """Stock management model based on Current Stock Excel sheet"""
     
     # Product identification
