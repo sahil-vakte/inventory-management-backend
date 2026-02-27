@@ -35,11 +35,11 @@ class StockItemViewSet(viewsets.ModelViewSet):
         include_deleted = self.request.query_params.get('include_deleted', 'false').lower()
         
         if include_deleted == 'true':
-            queryset = StockItem.all_objects.select_related('color').prefetch_related('movements')
+            queryset = StockItem.all_objects.select_related('color', 'product').prefetch_related('movements')
         elif self.request.query_params.get('only_deleted', 'false').lower() == 'true':
-            queryset = StockItem.all_objects.filter(is_deleted=True).select_related('color').prefetch_related('movements')
+            queryset = StockItem.all_objects.filter(is_deleted=True).select_related('color', 'product').prefetch_related('movements')
         else:
-            queryset = StockItem.objects.select_related('color').prefetch_related('movements')
+            queryset = StockItem.objects.select_related('color', 'product').prefetch_related('movements')
         
         # Filter by stock status
         stock_status = self.request.query_params.get('stock_status', None)

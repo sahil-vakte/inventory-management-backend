@@ -4,16 +4,17 @@ from .models import StockItem, StockMovement
 @admin.register(StockItem)
 class StockItemAdmin(admin.ModelAdmin):
     list_display = [
-        'sku', 'product_type', 'color', 'available_stock_rolls',
+        'sku', 'product_type', 'product', 'color', 'available_stock_rolls',
         'reserved_stock', 'stock_status', 'is_active', 'is_deleted'
     ]
     list_filter = [
-        'product_type', 'color', 'is_active', 'is_discontinued',
+        'product_type', 'product', 'color', 'is_active', 'is_discontinued',
         'warehouse_location', 'supplier', 'is_deleted'
     ]
     search_fields = ['sku', 'product_type', 'color__color_name', 'supplier']
     ordering = ['sku']
     readonly_fields = ['created_at', 'updated_at', 'deleted_at', 'last_stock_update', 'stock_status']
+    raw_id_fields = ('product',)
     
     def get_queryset(self, request):
         """Override to show all objects including deleted ones in admin"""
@@ -21,7 +22,7 @@ class StockItemAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('sku', 'product_type', 'color')
+            'fields': ('sku', 'product_type', 'product', 'color')
         }),
         ('Stock Levels', {
             'fields': (

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import StockItem, StockMovement
 from colors.serializers import ColorListSerializer
+from products.serializers import ProductListSerializer, ProductDetailSerializer
 
 class StockMovementSerializer(serializers.ModelSerializer):
     """Serializer for Stock Movement model"""
@@ -19,6 +20,7 @@ class StockItemListSerializer(serializers.ModelSerializer):
     secondary_location = serializers.CharField(source='secondary_location.id', read_only=True)
     """Simplified serializer for stock list views"""
     color = ColorListSerializer(read_only=True)
+    product = ProductListSerializer(read_only=True)
     stock_status = serializers.ReadOnlyField()
     total_available_stock = serializers.ReadOnlyField()
     is_low_stock = serializers.ReadOnlyField()
@@ -29,7 +31,7 @@ class StockItemListSerializer(serializers.ModelSerializer):
             'sku', 'product_type', 'color', 'available_stock_rolls',
             'reserved_stock', 'total_available_stock', 'stock_status',
             'is_low_stock', 'is_active', 'is_deleted',
-            'primary_location', 'secondary_location'
+            'primary_location', 'secondary_location', 'product'
         ]
 
 class StockItemDetailSerializer(serializers.ModelSerializer):
@@ -37,6 +39,7 @@ class StockItemDetailSerializer(serializers.ModelSerializer):
     secondary_location = serializers.CharField(source='secondary_location.id', read_only=True)
     """Detailed serializer for single stock item views"""
     color = ColorListSerializer(read_only=True)
+    product = ProductDetailSerializer(read_only=True)
     stock_status = serializers.ReadOnlyField()
     total_available_stock = serializers.ReadOnlyField()
     is_low_stock = serializers.ReadOnlyField()

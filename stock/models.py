@@ -24,6 +24,11 @@ class StockItem(models.Model):
     
     # Product identification
     product_type = models.CharField(max_length=20, help_text="Product Type (e.g., 109LT)")
+    # Optional relation to Product model. Nullable to avoid immediate mandatory migrations
+    product = models.ForeignKey(
+        'products.Product', on_delete=models.PROTECT,
+        related_name='stock_items', help_text="Linked Product (required)"
+    )
     color = models.ForeignKey(Color, on_delete=models.CASCADE, 
                              to_field='color_code', db_column='color_code')
     sku = models.CharField(max_length=50, unique=True, primary_key=True,
