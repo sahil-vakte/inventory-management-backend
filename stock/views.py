@@ -69,6 +69,22 @@ class StockItemViewSet(viewsets.ModelViewSet):
         elif self.action in ['create', 'update', 'partial_update']:
             return StockItemCreateUpdateSerializer
         return StockItemDetailSerializer
+
+    def update(self, request, *args, **kwargs):
+        """Use create/update serializer for validation but return detail serializer"""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        # Return full detail serializer in response
+        detail_serializer = StockItemDetailSerializer(instance)
+        return Response(detail_serializer.data)
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
     
     def destroy(self, request, *args, **kwargs):
         """Override destroy to perform soft delete by default"""
@@ -180,6 +196,49 @@ class StockItemViewSet(viewsets.ModelViewSet):
                 {'error': 'Invalid quantity'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    @action(detail=True, methods=['patch'], url_path='locations')
+    def update_locations(self, request, pk=None):
+        """Update primary and/or secondary location for a stock item.
+
+        Accepts JSON body with optional keys `primary_location` and
+        `secondary_location`. Use `null` to clear a location.
+        """
+        stock_item = self.get_object()
+        data = request.data
+
+        from products.models import Location
+
+        errors = {}
+
+        if 'primary_location' in data:
+            val = data.get('primary_location')
+            if val in [None, 'null', '']:
+                stock_item.primary_location = None
+            else:
+                try:
+                    loc = Location.objects.get(id=val)
+                    stock_item.primary_location = loc
+                except Location.DoesNotExist:
+                    errors['primary_location'] = f"Location '{val}' not found"
+
+        if 'secondary_location' in data:
+            val = data.get('secondary_location')
+            if val in [None, 'null', '']:
+                stock_item.secondary_location = None
+            else:
+                try:
+                    loc = Location.objects.get(id=val)
+                    stock_item.secondary_location = loc
+                except Location.DoesNotExist:
+                    errors['secondary_location'] = f"Location '{val}' not found"
+
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        stock_item.save()
+        serializer = StockItemDetailSerializer(stock_item)
+        return Response(serializer.data)
     
     @action(detail=False, methods=['post'], url_path='import-excel')
     def import_excel(self, request):

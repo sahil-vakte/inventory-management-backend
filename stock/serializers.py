@@ -67,6 +67,8 @@ class StockItemDetailSerializer(serializers.ModelSerializer):
 class StockItemCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating stock items"""
     color_code = serializers.CharField(write_only=True, help_text="Color code to associate")
+    primary_location = serializers.CharField(required=False, allow_null=True, write_only=True)
+    secondary_location = serializers.CharField(required=False, allow_null=True, write_only=True)
     
     class Meta:
         model = StockItem
@@ -75,7 +77,8 @@ class StockItemCreateUpdateSerializer(serializers.ModelSerializer):
             'reserved_stock', 'minimum_stock_level', 'maximum_stock_level',
             'warehouse_location', 'supplier', 'lead_time_days',
             'unit_cost', 'last_purchase_price', 'last_purchase_date',
-            'is_active', 'is_discontinued', 'notes'
+            'is_active', 'is_discontinued', 'notes',
+            'primary_location', 'secondary_location'
         ]
     
     def validate_color_code(self, value):
@@ -106,6 +109,17 @@ class StockItemCreateUpdateSerializer(serializers.ModelSerializer):
         color_code = validated_data.pop('color_code')
         color = Color.objects.get(color_code=color_code)
         validated_data['color'] = color
+
+        # handle locations if provided
+        from products.models import Location
+        primary = validated_data.pop('primary_location', None)
+        secondary = validated_data.pop('secondary_location', None)
+
+        if primary:
+            validated_data['primary_location'] = Location.objects.get(id=primary)
+        if secondary:
+            validated_data['secondary_location'] = Location.objects.get(id=secondary)
+
         return super().create(validated_data)
     
     def update(self, instance, validated_data):
@@ -115,6 +129,23 @@ class StockItemCreateUpdateSerializer(serializers.ModelSerializer):
             color_code = validated_data.pop('color_code')
             color = Color.objects.get(color_code=color_code)
             validated_data['color'] = color
+
+        # handle location updates
+        from products.models import Location
+        if 'primary_location' in validated_data:
+            primary = validated_data.pop('primary_location')
+            if primary in [None, 'null', '']:
+                instance.primary_location = None
+            else:
+                instance.primary_location = Location.objects.get(id=primary)
+
+        if 'secondary_location' in validated_data:
+            secondary = validated_data.pop('secondary_location')
+            if secondary in [None, 'null', '']:
+                instance.secondary_location = None
+            else:
+                instance.secondary_location = Location.objects.get(id=secondary)
+
         return super().update(instance, validated_data)
 
 class StockAdjustmentSerializer(serializers.Serializer):
