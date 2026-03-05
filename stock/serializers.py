@@ -16,8 +16,8 @@ class StockMovementSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'deleted_at']
 
 class StockItemListSerializer(serializers.ModelSerializer):
-    primary_location = serializers.CharField(source='primary_location.id', read_only=True)
-    secondary_location = serializers.CharField(source='secondary_location.id', read_only=True)
+    primary_location = serializers.SerializerMethodField()
+    secondary_location = serializers.SerializerMethodField()
     """Simplified serializer for stock list views"""
     color = ColorListSerializer(read_only=True)
     product = ProductListSerializer(read_only=True)
@@ -34,9 +34,15 @@ class StockItemListSerializer(serializers.ModelSerializer):
             'primary_location', 'secondary_location', 'product'
         ]
 
+    def get_primary_location(self, obj):
+        return getattr(obj.primary_location, 'id', None)
+
+    def get_secondary_location(self, obj):
+        return getattr(obj.secondary_location, 'id', None)
+
 class StockItemDetailSerializer(serializers.ModelSerializer):
-    primary_location = serializers.CharField(source='primary_location.id', read_only=True)
-    secondary_location = serializers.CharField(source='secondary_location.id', read_only=True)
+    primary_location = serializers.SerializerMethodField()
+    secondary_location = serializers.SerializerMethodField()
     """Detailed serializer for single stock item views"""
     color = ColorListSerializer(read_only=True)
     product = ProductDetailSerializer(read_only=True)
@@ -51,6 +57,12 @@ class StockItemDetailSerializer(serializers.ModelSerializer):
         fields = '__all__'
         # primary_location and secondary_location now included
         read_only_fields = ['created_at', 'updated_at', 'last_stock_update', 'deleted_at']
+
+    def get_primary_location(self, obj):
+        return getattr(obj.primary_location, 'id', None)
+
+    def get_secondary_location(self, obj):
+        return getattr(obj.secondary_location, 'id', None)
 
 class StockItemCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating stock items"""
