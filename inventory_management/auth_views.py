@@ -11,6 +11,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.utils.crypto import get_random_string
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -98,20 +99,35 @@ def jwt_logout(request):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def jwt_register(request):
     """
-    Register a new user and return JWT tokens
+    Register a new user and return JWT tokens.
+    Only authenticated admin users (`is_staff` or `is_superuser`) may create users.
     """
+    # require admin privileges
+    if not (request.user and (request.user.is_staff or request.user.is_superuser)):
+        return Response({'error': 'Admin privileges required to register users.'}, status=status.HTTP_403_FORBIDDEN)
     username = request.data.get('username')
     email = request.data.get('email')
     password = request.data.get('password')
-    
-    if not username or not email or not password:
+    # accept either first_name/last_name or fname/lname keys
+    first_name = request.data.get('first_name') or request.data.get('fname') or ''
+    last_name = request.data.get('last_name') or request.data.get('lname') or ''
+    # position is the UserType PK (admins manage user types); accept either 'position' or 'usertype'
+    position = request.data.get('position') or request.data.get('usertype')
+
+    if not username or not email:
         return Response(
-            {'error': 'Username, email, and password are required'},
+            {'error': 'Username and email are required'},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+    # generate a secure random password if not provided
+    generated_password = None
+    if not password:
+        generated_password = get_random_string(12)
+        password = generated_password
     
     if User.objects.filter(username=username).exists():
         return Response(
@@ -129,28 +145,54 @@ def jwt_register(request):
         user = User.objects.create_user(
             username=username,
             email=email,
-            password=password
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+            is_staff=True,
         )
+
+        # attach UserType via Profile (creates Profile if needed)
+        if position:
+            try:
+                from django.apps import apps
+                from django.conf import settings
+                UserType = apps.get_model('accounts', 'UserType')
+                user_type = UserType.objects.get(pk=position)
+                # create or update profile
+                Profile = apps.get_model('accounts', 'Profile')
+                profile, _ = Profile.objects.get_or_create(user=user)
+                profile.usertype = user_type
+                profile.save()
+            except Exception:
+                # ignore usertype attachment errors (missing model or bad id)
+                pass
         
-        refresh = RefreshToken.for_user(user)
-        access_token = refresh.access_token
-        
-        # Add custom claims
-        access_token['username'] = user.username
-        access_token['email'] = user.email
-        access_token['is_staff'] = user.is_staff
-        access_token['is_superuser'] = user.is_superuser
-        
-        return Response({
-            'refresh': str(refresh),
-            'access': str(access_token),
+        resp = {
             'user_id': user.id,
             'username': user.username,
             'email': user.email,
             'is_staff': user.is_staff,
             'is_superuser': user.is_superuser,
             'message': 'User registered successfully'
-        }, status=status.HTTP_201_CREATED)
+        }
+
+        # Include usertype info from Profile if available
+        try:
+            ut = None
+            # prefer profile relation
+            profile = getattr(user, 'profile', None)
+            if profile and getattr(profile, 'usertype', None):
+                ut = profile.usertype
+            if ut:
+                resp['usertype'] = {'id': ut.id, 'name': ut.name}
+        except Exception:
+            pass
+
+        # include generated password in response when we auto-created one
+        if generated_password:
+            resp['password'] = generated_password
+
+        return Response(resp, status=status.HTTP_201_CREATED)
         
     except Exception as e:
         return Response(

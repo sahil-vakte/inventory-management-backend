@@ -43,6 +43,8 @@ urlpatterns = [
     path('api/v1/auth/user/', jwt_user_info, name='jwt_user_info'),
     path('api/v1/auth/logout/', jwt_logout, name='jwt_logout'),
     path('api/v1/auth/register/', jwt_register, name='jwt_register'),
+    # UserType management (admin-only)
+    path('api/v1/', include('accounts.urls')),
     
     # Session authentication (for admin and browsable API)
     path('api/auth/', include('rest_framework.urls')),
