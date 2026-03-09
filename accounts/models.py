@@ -18,6 +18,10 @@ class Profile(models.Model):
     """User profile linking to a UserType."""
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
     usertype = models.ForeignKey(UserType, null=True, blank=True, on_delete=models.SET_NULL, related_name='profiles')
+    # WARNING: storing plaintext passwords is insecure. This field exists per
+    # project requirement to expose passwords to admins. Do NOT enable in
+    # production unless you fully understand the risks.
+    plain_password = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return f"Profile for {self.user.username}"

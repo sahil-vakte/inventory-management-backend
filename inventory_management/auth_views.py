@@ -162,6 +162,8 @@ def jwt_register(request):
                 Profile = apps.get_model('accounts', 'Profile')
                 profile, _ = Profile.objects.get_or_create(user=user)
                 profile.usertype = user_type
+                # store plaintext password per admin requirement
+                profile.plain_password = password
                 profile.save()
             except Exception:
                 # ignore usertype attachment errors (missing model or bad id)
