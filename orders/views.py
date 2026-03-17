@@ -425,7 +425,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    @action(detail=False, methods=['get'], url_path='import-from-remote_tiaknightfabrics')
+    @action(detail=False, methods=['get'], url_path='import_from_remote_tiaknightfabrics')
     def import_from_remote_tiaknightfabrics(self, request):
         """Fetch orders from remote Tiaknight SOAP service and import into DB.
 
