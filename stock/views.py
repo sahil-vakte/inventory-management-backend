@@ -132,6 +132,51 @@ class StockItemViewSet(viewsets.ModelViewSet):
             })
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='increment')
+    def increment_stock(self, request, pk=None):
+        """Increment stock by a positive quantity"""
+        stock_item = self.get_object()
+        qty = request.data.get('quantity', None)
+        reason = request.data.get('reason', 'Increment via API')
+
+        try:
+            qty = int(qty)
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid quantity'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if qty <= 0:
+            return Response({'error': 'Quantity must be a positive integer'}, status=status.HTTP_400_BAD_REQUEST)
+
+        stock_item.adjust_stock(qty, reason)
+        return Response({
+            'message': f'Stock increased by {qty}',
+            'new_stock_level': stock_item.available_stock_rolls,
+            'reason': reason
+        })
+
+    @action(detail=True, methods=['post'], url_path='decrement')
+    def decrement_stock(self, request, pk=None):
+        """Decrement stock by a positive quantity (will subtract from available stock)"""
+        stock_item = self.get_object()
+        qty = request.data.get('quantity', None)
+        reason = request.data.get('reason', 'Decrement via API')
+
+        try:
+            qty = int(qty)
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid quantity'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if qty <= 0:
+            return Response({'error': 'Quantity must be a positive integer'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Use negative quantity for adjustment
+        stock_item.adjust_stock(-qty, reason)
+        return Response({
+            'message': f'Stock decreased by {qty}',
+            'new_stock_level': stock_item.available_stock_rolls,
+            'reason': reason
+        })
     
     @action(detail=True, methods=['post'], url_path='reserve-stock')
     def reserve_stock(self, request, pk=None):

@@ -857,6 +857,50 @@
 					}
 				},
 				{
+					"name": "Increment Stock",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"quantity\": 5,\n  \"reason\": \"Received shipment #12345\"\n}\n\n// Increment stock by positive quantity"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/stock/{{sku}}/increment/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "stock", "{{sku}}", "increment", ""]
+						},
+						"description": "Increment stock by a positive quantity (uses /increment/)"
+					}
+				},
+				{
+					"name": "Decrement Stock",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"quantity\": 3,\n  \"reason\": \"Sold 3 rolls\"\n}\n\n// Decrement stock by positive quantity (uses /decrement/)"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/stock/{{sku}}/decrement/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "stock", "{{sku}}", "decrement", ""]
+						},
+						"description": "Decrement stock by a positive quantity (uses /decrement/)"
+					}
+				},
+				{
 					"name": "Reserve Stock for Order",
 					"request": {
 						"method": "POST",
@@ -1311,6 +1355,19 @@
 							"path": ["api", "v1", "orders", "upload-xml", ""]
 						},
 						"description": "Bulk upload orders from XML file. Stock NOT automatically reserved."
+					}
+				},
+				{
+					"name": "Import Orders from Remote (Tiaknight)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/import-from-remote/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "orders", "import-from-remote", ""]
+						},
+						"description": "Fetch new orders from Tiaknight SOAP service and import into DB. Uses Playwright to bypass anti-bot, extracts orders XML, and runs the same parser as Upload XML. Duplicates are skipped by external_order_id. Requires TIA_URL, TIA_CLIENTID, TIA_USERNAME, TIA_PASSWORD in .env."
 					}
 				},
 				{

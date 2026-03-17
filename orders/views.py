@@ -425,6 +425,133 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+    @action(detail=False, methods=['get'], url_path='import-from-remote')
+    def import_from_remote(self, request):
+        """Fetch orders from remote Tiaknight SOAP service and import into DB.
+
+        Uses Playwright to bypass the anti-bot interstitial, POSTs the SOAP
+        envelope (credentials from .env), extracts the orders XML from the
+        SOAP <Result> value, and feeds it through the SAME parse_and_create_orders
+        logic that upload-xml uses. Duplicates are skipped automatically.
+
+        GET {{base_url}}/api/v1/orders/import-from-remote/
+        Auth: Bearer Token (JWT)
+        """
+        import os
+        import io
+        import argparse
+        import tempfile
+        import xml.etree.ElementTree as ET
+        from dotenv import load_dotenv
+        from django.conf import settings
+
+        load_dotenv()
+
+        # ── 1. Validate credentials ──────────────────────────────────────
+        url      = os.environ.get('TIA_URL')
+        clientid = os.environ.get('TIA_CLIENTID')
+        username = os.environ.get('TIA_USERNAME')
+        password = os.environ.get('TIA_PASSWORD')
+        file_type   = os.environ.get('TIA_FILE_TYPE', 'xml')
+
+        if not all([url, clientid, username, password]):
+            return Response(
+                {'error': 'Missing Tiaknight credentials in .env (TIA_URL, TIA_CLIENTID, TIA_USERNAME, TIA_PASSWORD)'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ── 2. Run Playwright probe ──────────────────────────────────────
+        try:
+            from scripts import query_soap_tiaknight_playwright as probe
+        except Exception as e:
+            return Response(
+                {'error': f'Could not import Playwright probe: {e}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        tmp_raw = tempfile.mktemp(suffix='.xml')
+        args = argparse.Namespace(
+            url=url, clientid=clientid, username=username, password=password,
+            auto_update='false', file_type=file_type,
+            out=tmp_raw, parse=False, parsed_out=None,
+            insecure=False, headful=False,
+            user_agent='InventoryImporter/1.0',
+        )
+
+        try:
+            probe.run(args)
+        except Exception as e:
+            return Response(
+                {'error': f'Playwright probe failed: {e}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # ── 3. Read raw SOAP bytes and clean up temp file ────────────────
+        if not os.path.exists(tmp_raw):
+            return Response(
+                {'error': 'Probe did not produce a response file'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        with open(tmp_raw, 'rb') as f:
+            soap_bytes = f.read()
+
+        # Remove temp file immediately
+        try:
+            os.unlink(tmp_raw)
+        except OSError:
+            pass
+
+        # ── 4. Extract the <Result> value from the SOAP envelope ─────────
+        orders_xml_str = self._extract_result_xml(soap_bytes)
+        if orders_xml_str is None:
+            return Response(
+                {'error': 'Could not find <Result> value in SOAP response'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # ── 5. Feed orders XML through parse_and_create_orders ───────────
+        #    Same code path as upload-xml
+        from .services.xml_parser import XMLOrderParser
+
+        parser = XMLOrderParser()
+        xml_bytes = orders_xml_str.encode('utf-8')
+        xml_file = io.BytesIO(xml_bytes)
+
+        try:
+            result = parser.parse_and_create_orders(xml_file, user=getattr(request, 'user', None))
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        resp_status = status.HTTP_201_CREATED if result['created_count'] > 0 else status.HTTP_200_OK
+        return Response({
+            'message': 'Import from remote completed',
+            'orders_created': result['created_count'],
+            'orders_failed':  result['failed_count'],
+            'orders':  result['orders'],
+            'errors':  result['errors'],
+        }, status=resp_status)
+
+    # ── helper ────────────────────────────────────────────────────────────
+    @staticmethod
+    def _extract_result_xml(soap_bytes):
+        """Parse raw SOAP bytes and return the text content of the <Result>
+        <value> element (the embedded orders XML string), or None."""
+        import xml.etree.ElementTree as ET
+
+        try:
+            root = ET.fromstring(soap_bytes)
+        except ET.ParseError:
+            return None
+
+        # Walk all <item> elements looking for <key>Result</key>
+        for item in root.iter('item'):
+            key_el = item.find('key')
+            val_el = item.find('value')
+            if key_el is not None and (key_el.text or '').strip() == 'Result':
+                return (val_el.text or '').strip() if val_el is not None else None
+        return None
+
 
 class OrderItemViewSet(viewsets.ReadOnlyModelViewSet):
     """Read-only viewset for order items"""

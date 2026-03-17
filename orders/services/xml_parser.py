@@ -69,13 +69,15 @@ class XMLOrderParser:
             for order_elem in order_elements:
                 try:
                     with transaction.atomic():
-                        order = self._parse_order_element(order_elem, user)
+                        order, was_created = self._parse_order_element(order_elem, user)
                         created_orders.append({
                             'order_number': order.order_number,
                             'customer_name': order.customer_name,
-                            'total_amount': str(order.total_amount)
+                            'total_amount': str(order.total_amount),
+                            'created': bool(was_created)
                         })
-                        created_count += 1
+                        if was_created:
+                            created_count += 1
                 except Exception as e:
                     failed_count += 1
                     order_ref = self._get_text(order_elem, 'OrderNumber', 'Unknown')
@@ -119,7 +121,10 @@ class XMLOrderParser:
         if customer_node is not None:
             billing_firstname = self._get_text(customer_node, 'billing_firstname', '')
             billing_lastname = self._get_text(customer_node, 'billing_lastname', '')
-            order_data['customer_name'] = f"{billing_firstname} {billing_lastname}".strip() or self._get_text(customer_node, 'billing_fullname', required=True)
+            full_name = f"{billing_firstname} {billing_lastname}".strip()
+            if not full_name:
+                full_name = self._get_text(customer_node, 'billing_fullname') or 'Unknown Customer'
+            order_data['customer_name'] = full_name
             order_data['customer_email'] = self._get_text(customer_node, 'billing_email') or self._get_text(customer_node, 'email_address')
             order_data['customer_phone'] = self._get_text(customer_node, 'billing_telephone') or self._get_text(customer_node, 'billing_mobile')
             order_data['customer_company'] = self._get_text(customer_node, 'billing_company_name')
@@ -130,7 +135,7 @@ class XMLOrderParser:
             order_data['billing_city'] = self._get_text(customer_node, 'billing_town') or self._get_text(customer_node, 'billing_city')
             order_data['billing_state'] = self._get_text(customer_node, 'billing_county')
             order_data['billing_postal_code'] = self._get_text(customer_node, 'billing_postcode')
-            order_data['billing_country'] = self._get_text(customer_node, 'billing_country_name', 'UK')
+            order_data['billing_country'] = self._get_text(customer_node, 'billing_country_name') or self._get_text(customer_node, 'billing_country', 'UK')
             
             # Shipping address from WIMS
             order_data['shipping_address_line1'] = self._get_text(customer_node, 'delivery_address1')
@@ -138,7 +143,7 @@ class XMLOrderParser:
             order_data['shipping_city'] = self._get_text(customer_node, 'delivery_town') or self._get_text(customer_node, 'delivery_city')
             order_data['shipping_state'] = self._get_text(customer_node, 'delivery_county')
             order_data['shipping_postal_code'] = self._get_text(customer_node, 'delivery_postcode')
-            order_data['shipping_country'] = self._get_text(customer_node, 'delivery_country_name', 'UK')
+            order_data['shipping_country'] = self._get_text(customer_node, 'delivery_country_name') or self._get_text(customer_node, 'delivery_country', 'UK')
         else:
             # Fallback to simple structure
             order_data['customer_name'] = self._get_text(order_elem, 'CustomerName', required=True)
@@ -235,6 +240,20 @@ class XMLOrderParser:
         order_data['customer_notes'] = self._get_text(order_node, 'order_customer_comments') or self._get_text(order_elem, 'CustomerNotes')
         order_data['internal_notes'] = self._get_text(order_node, 'order_notes') or self._get_text(order_elem, 'InternalNotes')
         
+        # Duplicate check: prefer external_order_id (order_reference or order_id)
+        external_id = order_data.get('external_order_id')
+        order_ref = order_data.get('order_number')
+
+        existing = None
+        if external_id:
+            existing = Order.all_objects.filter(external_order_id=str(external_id)).first()
+        if not existing and order_ref:
+            existing = Order.all_objects.filter(order_number=str(order_ref)).first()
+
+        if existing:
+            # Already exists: return existing order without creating duplicates
+            return (existing, False)
+
         # Create order
         order = Order.objects.create(**order_data)
         
@@ -255,13 +274,18 @@ class XMLOrderParser:
             order.calculate_totals()
             order.save()
         
-        return order
+        return (order, True)
     
     def _parse_order_item(self, item_elem, order, is_wims_format=False):
         """Parse a single Item XML element and create OrderItem, assigning location from related product if available"""
 
         if is_wims_format:
-            sku = self._get_text(item_elem, 'reference', required=True)
+            sku = (self._get_text(item_elem, 'product_reference')
+                   or self._get_text(item_elem, 'child_product_reference')
+                   or self._get_text(item_elem, 'reference')
+                   or self._get_text(item_elem, 'model')
+                   or self._get_text(item_elem, 'ean')
+                   or f"PROD-{self._get_text(item_elem, 'order_product_id', 'UNKNOWN')}")
             quantity = int(self._get_text(item_elem, 'quantity', '1'))
             unit_price = self._get_decimal(item_elem, 'price_inc', Decimal('0.00'))
             product_name = self._get_text(item_elem, 'title', sku)
@@ -339,7 +363,11 @@ class XMLOrderParser:
         """Parse datetime string in various formats"""
         from dateutil import parser
         try:
-            return parser.parse(date_string)
+            dt = parser.parse(date_string)
+            # Make timezone-aware if naive
+            if dt.tzinfo is None:
+                dt = timezone.make_aware(dt)
+            return dt
         except:
             # If parsing fails, return current time
             return timezone.now()
