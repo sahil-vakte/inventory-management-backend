@@ -78,13 +78,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         """Return appropriate serializer based on action"""
         if self.action in ['create', 'update', 'partial_update']:
             return OrderCreateUpdateSerializer
+        elif self.action == 'list':
+            return OrderListSerializer
         elif self.action == 'confirm':
             return OrderConfirmSerializer
         elif self.action == 'ship':
             return OrderShipSerializer
         elif self.action == 'cancel':
             return OrderCancelSerializer
-        # Use detailed serializer for both list and retrieve
         return OrderDetailSerializer
     
     def perform_create(self, serializer):
@@ -356,6 +357,24 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
     
+    @action(detail=False, methods=['get'], url_path='statuses', permission_classes=[])
+    def statuses(self, request):
+        """Return all status choices for orders and order items"""
+        return Response({
+            'order_statuses': [
+                {'value': v, 'label': l} for v, l in Order.STATUS_CHOICES
+            ],
+            'payment_statuses': [
+                {'value': v, 'label': l} for v, l in Order.PAYMENT_STATUS_CHOICES
+            ],
+            'order_sources': [
+                {'value': v, 'label': l} for v, l in Order.SOURCE_CHOICES
+            ],
+            'item_processing_statuses': [
+                {'value': v, 'label': l} for v, l in OrderItem.ITEM_STATUS_CHOICES
+            ],
+        })
+
     @action(detail=False, methods=['get'], url_path='stats')
     def stats(self, request):
         """Get order statistics"""
@@ -511,15 +530,105 @@ class OrderViewSet(viewsets.ModelViewSet):
 class OrderItemViewSet(viewsets.ReadOnlyModelViewSet):
     """Read-only viewset for order items"""
     
-    queryset = OrderItem.objects.all()
+    queryset = OrderItem.objects.select_related('assigned_to', 'order').all()
     serializer_class = OrderItemSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     
-    filterset_fields = ['order', 'sku']
+    filterset_fields = ['order', 'sku', 'processing_status', 'assigned_to']
     search_fields = ['sku', 'product_name']
     ordering_fields = ['created_at', 'quantity', 'line_total']
     ordering = ['-created_at']
+
+    @action(detail=True, methods=['patch'], url_path='assign')
+    def assign(self, request, pk=None):
+        """Assign or unassign an employee to this order item"""
+        item = self.get_object()
+        employee_id = request.data.get('assigned_to')
+
+        if employee_id is None:
+            item.assigned_to = None
+            item.save(update_fields=['assigned_to', 'updated_at'])
+            return Response({
+                'id': item.id,
+                'sku': item.sku,
+                'order_number': item.order.order_number,
+                'assigned_to': None,
+                'assigned_to_username': None,
+                'message': 'Item unassigned successfully',
+            })
+
+        from django.contrib.auth.models import User as AuthUser
+        try:
+            employee = AuthUser.objects.get(pk=employee_id)
+        except AuthUser.DoesNotExist:
+            return Response(
+                {'error': f'User with id {employee_id} does not exist'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        item.assigned_to = employee
+        item.save(update_fields=['assigned_to', 'updated_at'])
+        return Response({
+            'id': item.id,
+            'sku': item.sku,
+            'order_number': item.order.order_number,
+            'assigned_to': employee.id,
+            'assigned_to_username': employee.username,
+            'assigned_to_full_name': employee.get_full_name(),
+            'message': f'Item assigned to {employee.username}',
+        })
+
+    @action(detail=True, methods=['patch'], url_path='update-status')
+    def update_status(self, request, pk=None):
+        """Update the processing status of an order item"""
+        item = self.get_object()
+        new_status = request.data.get('processing_status')
+        quantity_processed = request.data.get('quantity_processed')
+
+        if new_status is None:
+            return Response(
+                {'error': 'processing_status is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        valid_statuses = [s[0] for s in OrderItem.ITEM_STATUS_CHOICES]
+        if new_status not in valid_statuses:
+            return Response(
+                {'error': f'Invalid status "{new_status}"', 'valid_statuses': valid_statuses},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if quantity_processed is not None:
+            try:
+                quantity_processed = int(quantity_processed)
+            except (TypeError, ValueError):
+                return Response(
+                    {'error': 'quantity_processed must be an integer'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if quantity_processed < 0 or quantity_processed > item.quantity:
+                return Response(
+                    {'error': f'quantity_processed must be between 0 and {item.quantity}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            item.quantity_processed = quantity_processed
+
+        old_status = item.processing_status
+        item.processing_status = new_status
+        item.save(update_fields=['processing_status', 'quantity_processed', 'updated_at'])
+
+        return Response({
+            'id': item.id,
+            'sku': item.sku,
+            'order_number': item.order.order_number,
+            'previous_status': old_status,
+            'processing_status': item.processing_status,
+            'processing_status_display': item.get_processing_status_display(),
+            'quantity': item.quantity,
+            'quantity_processed': item.quantity_processed,
+            'completion_pct': round((item.quantity_processed / item.quantity) * 100) if item.quantity else 0,
+        })
 
 
 class OrderStatusHistoryViewSet(viewsets.ReadOnlyModelViewSet):

@@ -9,13 +9,23 @@ class OrderItemSerializer(serializers.ModelSerializer):
     """Serializer for Order Items"""
     
     stock_detail = StockItemListSerializer(source='stock_item', read_only=True)
+    assigned_to_username = serializers.SerializerMethodField()
+    processing_status_display = serializers.CharField(source='get_processing_status_display', read_only=True)
+
+    def get_assigned_to_username(self, obj):
+        if obj.assigned_to_id:
+            return obj.assigned_to.username
+        return None
     
     class Meta:
         model = OrderItem
         fields = [
             'id', 'order', 'stock_item', 'stock_detail',
             'sku', 'product_name', 'product_type', 'color_code',
-            'quantity', 'unit_price', 'line_total', 'tax_rate', 'discount_amount',
+            'quantity', 'quantity_ordered', 'quantity_processed',
+            'unit_price', 'line_total', 'tax_rate', 'discount_amount',
+            'assigned_to', 'assigned_to_username',
+            'processing_status', 'processing_status_display',
             'notes', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'line_total', 'created_at', 'updated_at']
@@ -92,6 +102,31 @@ class OrderListSerializer(serializers.ModelSerializer):
     assigned_to_username = serializers.CharField(source='assigned_to.username', read_only=True)
     item_count = serializers.IntegerField(read_only=True)
     total_quantity = serializers.IntegerField(read_only=True)
+    completion_percentage = serializers.SerializerMethodField()
+    items_total = serializers.SerializerMethodField()
+    items_completed = serializers.SerializerMethodField()
+    items_assigned = serializers.SerializerMethodField()
+    items_pending = serializers.SerializerMethodField()
+
+    def get_completion_percentage(self, obj):
+        items = obj.items.all()
+        total = items.count()
+        if total == 0:
+            return 0
+        completed = items.filter(processing_status__in=['PICKED', 'COMPLETED']).count()
+        return round((completed / total) * 100)
+
+    def get_items_total(self, obj):
+        return obj.items.count()
+
+    def get_items_completed(self, obj):
+        return obj.items.filter(processing_status__in=['PICKED', 'COMPLETED']).count()
+
+    def get_items_assigned(self, obj):
+        return obj.items.filter(assigned_to__isnull=False).count()
+
+    def get_items_pending(self, obj):
+        return obj.items.filter(processing_status='PENDING').count()
     
     class Meta:
         model = Order
@@ -101,7 +136,9 @@ class OrderListSerializer(serializers.ModelSerializer):
             'payment_status', 'payment_status_display', 'order_date',
             'total_amount', 'item_count', 'total_quantity',
             'created_by_username', 'assigned_to', 'assigned_to_username',
-            'order_source', 'created_at'
+            'order_source', 'created_at',
+            'completion_percentage', 'items_total', 'items_completed',
+            'items_assigned', 'items_pending',
         ]
         read_only_fields = ['id', 'order_number', 'created_at']
 
@@ -124,6 +161,31 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     is_paid = serializers.BooleanField(read_only=True)
     shipping_address = serializers.CharField(read_only=True)
     billing_address = serializers.CharField(read_only=True)
+    completion_percentage = serializers.SerializerMethodField()
+    items_total = serializers.SerializerMethodField()
+    items_completed = serializers.SerializerMethodField()
+    items_assigned = serializers.SerializerMethodField()
+    items_pending = serializers.SerializerMethodField()
+
+    def get_completion_percentage(self, obj):
+        items = obj.items.all()
+        total = items.count()
+        if total == 0:
+            return 0
+        completed = items.filter(processing_status__in=['PICKED', 'COMPLETED']).count()
+        return round((completed / total) * 100)
+
+    def get_items_total(self, obj):
+        return obj.items.count()
+
+    def get_items_completed(self, obj):
+        return obj.items.filter(processing_status__in=['PICKED', 'COMPLETED']).count()
+
+    def get_items_assigned(self, obj):
+        return obj.items.filter(assigned_to__isnull=False).count()
+
+    def get_items_pending(self, obj):
+        return obj.items.filter(processing_status='PENDING').count()
     
     class Meta:
         model = Order

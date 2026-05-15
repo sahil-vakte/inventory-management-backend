@@ -1,6 +1,6 @@
 # Database Schema Overview
 
-**Last Updated:** February 12, 2026  
+**Last Updated:** April 9, 2026  
 **Project:** Inventory Management System
 
 ## Table of Contents
@@ -15,14 +15,15 @@
 
 ## System Architecture
 
-The Inventory Management System is built on Django and consists of **4 main modules**:
+The Inventory Management System is built on Django and consists of **5 main modules**:
 
-1. **Products Module** - Product catalog, categories, brands, and locations
-2. **Colors Module** - Color definitions for stock items
-3. **Stock Module** - Inventory tracking and stock movements
-4. **Orders Module** - Order processing and fulfillment
+1. **Accounts Module** - User profiles and user types
+2. **Products Module** - Product catalog, categories, brands, and locations
+3. **Colors Module** - Color definitions for stock items
+4. **Stock Module** - Inventory tracking and stock movements
+5. **Orders Module** - Order processing and fulfillment
 
-All tables implement **soft delete** functionality for data retention and audit compliance.
+All major tables implement **soft delete** functionality for data retention and audit compliance.
 
 ---
 
@@ -30,15 +31,20 @@ All tables implement **soft delete** functionality for data retention and audit 
 
 ```mermaid
 erDiagram
+    %% Accounts Module
+    USERS ||--|| PROFILES : "has"
+    USER_TYPES ||--o{ PROFILES : "categorizes"
+    
     %% Products Module
-    LOCATIONS ||--o{ PRODUCTS : "primary_location"
-    LOCATIONS ||--o{ PRODUCTS : "secondary_location"
     BRANDS ||--o{ PRODUCTS : "has"
     CATEGORIES ||--o{ CATEGORIES : "parent"
     PRODUCTS }o--o{ CATEGORIES : "belongs_to"
     
     %% Stock Module
+    PRODUCTS ||--o{ STOCK_ITEMS : "has"
     COLORS ||--o{ STOCK_ITEMS : "has"
+    LOCATIONS ||--o{ STOCK_ITEMS : "primary_location"
+    LOCATIONS ||--o{ STOCK_ITEMS : "secondary_location"
     STOCK_ITEMS ||--o{ STOCK_MOVEMENTS : "tracks"
     
     %% Orders Module
@@ -51,8 +57,21 @@ erDiagram
     ORDERS ||--o{ ORDER_ITEMS : "contains"
     ORDERS ||--o{ ORDER_STATUS_HISTORY : "tracks"
     
-    PRODUCTS ||--o{ ORDER_ITEMS : "references"
     STOCK_ITEMS ||--o{ ORDER_ITEMS : "references"
+    
+    %% Accounts Module Tables
+    USER_TYPES {
+        int id PK
+        varchar name UK
+        text description
+    }
+    
+    PROFILES {
+        int id PK
+        int user FK "OneToOne -> auth_user"
+        int usertype FK "Optional"
+        varchar plain_password "Admin use only"
+    }
     
     %% Locations Table
     LOCATIONS {
@@ -89,8 +108,6 @@ erDiagram
         varchar parent_product_title
         varchar child_product_title
         int brand FK
-        int primary_location FK
-        int secondary_location FK
         decimal rrp_price_inc_vat
         decimal cost_price_inc_vat
         decimal vat_rate
@@ -117,7 +134,10 @@ erDiagram
     STOCK_ITEMS {
         varchar sku PK "Unique SKU"
         varchar product_type
+        int product FK "FK -> products"
         varchar color_code FK
+        varchar primary_location FK "FK -> locations"
+        varchar secondary_location FK "FK -> locations"
         int available_stock_rolls
         int reserved_stock
         int minimum_stock_level
@@ -175,16 +195,19 @@ erDiagram
     ORDER_ITEMS {
         int id PK
         int order FK
-        int product FK "Optional"
         varchar stock_item FK "Optional"
         varchar sku "Denormalized"
         varchar product_name "Denormalized"
+        varchar product_type
+        varchar color_code
         varchar ebay_item_id
         int quantity
         int quantity_ordered
         decimal unit_price
         decimal line_total
         decimal tax_rate
+        decimal discount_amount
+        text notes
         datetime created_at
         datetime updated_at
     }
@@ -215,9 +238,45 @@ erDiagram
 
 ## Table Details
 
-### 1. Products Module
+### 1. Accounts Module
 
-#### 1.1 Locations Table (`locations`)
+#### 1.1 User Types Table (`accounts_usertype`)
+**Purpose:** Define different user type categories
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | INTEGER PK | Auto-increment |
+| `name` | VARCHAR(100) UNIQUE | User type name |
+| `description` | TEXT | Optional description |
+
+**Relationships:**
+- Has many Profiles (One-to-Many)
+
+---
+
+#### 1.2 Profiles Table (`accounts_profile`)
+**Purpose:** Extended user profile linking to user types
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | INTEGER PK | Auto-increment |
+| `user` | INTEGER FK UNIQUE | OneToOne to auth_user |
+| `usertype` | INTEGER FK | Optional FK to UserType |
+| `plain_password` | VARCHAR(255) | Plain password (admin use only) |
+
+**Relationships:**
+- OneToOne with User (auth_user)
+- Belongs to UserType (Many-to-One, optional)
+
+**Key Features:**
+- One profile per user (OneToOneField)
+- UserType is optional (SET_NULL on delete)
+
+---
+
+### 2. Products Module
+
+#### 2.1 Locations Table (`locations`)
 **Purpose:** Manage physical storage locations for products
 
 | Field | Type | Description |
@@ -235,7 +294,7 @@ erDiagram
 
 ---
 
-#### 1.2 Brands Table (`brands`)
+#### 2.2 Brands Table (`brands`)
 **Purpose:** Product brand management
 
 | Field | Type | Description |
@@ -256,7 +315,7 @@ erDiagram
 
 ---
 
-#### 1.3 Categories Table (`categories`)
+#### 2.3 Categories Table (`categories`)
 **Purpose:** Hierarchical product categorization
 
 | Field | Type | Description |
@@ -279,7 +338,7 @@ erDiagram
 
 ---
 
-#### 1.4 Products Table (`products`)
+#### 2.4 Products Table (`products`)
 **Purpose:** Main product catalog (based on Product Master Excel)
 
 | Field | Type | Description |
@@ -291,8 +350,6 @@ erDiagram
 | `parent_product_title` | VARCHAR(500) | Parent product name |
 | `child_product_title` | VARCHAR(500) | Specific product variant name |
 | `brand` | INTEGER FK | Foreign key to Brands |
-| `primary_location` | VARCHAR(10) FK | Main storage location |
-| `secondary_location` | VARCHAR(10) FK | Backup storage location |
 | `rrp_price_inc_vat` | DECIMAL(10,2) | Retail price |
 | `cost_price_inc_vat` | DECIMAL(10,2) | Cost price |
 | `vat_rate` | DECIMAL(5,2) | VAT percentage (default 20%) |
@@ -302,10 +359,9 @@ erDiagram
 
 **Relationships:**
 - Belongs to Brand (Many-to-One)
-- Has primary Location (Many-to-One)
-- Has secondary Location (Many-to-One)
 - Has many Categories (Many-to-Many)
-- Referenced by OrderItems (One-to-Many)
+- Has many StockItems (One-to-Many)
+- Referenced by OrderItems via StockItem
 
 **Key Properties:**
 - `is_active` - Returns True if both parent and child active
@@ -317,9 +373,9 @@ erDiagram
 
 ---
 
-### 2. Colors Module
+### 3. Colors Module
 
-#### 2.1 Colors Table (`colors`)
+#### 3.1 Colors Table (`colors`)
 **Purpose:** Color definitions for stock items (based on Excel Colours sheet)
 
 | Field | Type | Description |
@@ -339,16 +395,19 @@ erDiagram
 
 ---
 
-### 3. Stock Module
+### 4. Stock Module
 
-#### 3.1 Stock Items Table (`stock`)
+#### 4.1 Stock Items Table (`stock`)
 **Purpose:** Inventory management (based on Current Stock Excel)
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `sku` | VARCHAR(50) PK | Unique stock keeping unit |
 | `product_type` | VARCHAR(20) | Product type identifier |
+| `product` | INTEGER FK | Foreign key to Products (PROTECT) |
 | `color_code` | VARCHAR(10) FK | Foreign key to Colors |
+| `primary_location` | VARCHAR(10) FK | Primary storage location (FK to Locations) |
+| `secondary_location` | VARCHAR(10) FK | Secondary storage location (FK to Locations) |
 | `available_stock_rolls` | INTEGER | Current available stock |
 | `reserved_stock` | INTEGER | Stock reserved for orders |
 | `minimum_stock_level` | INTEGER | Reorder threshold |
@@ -359,7 +418,10 @@ erDiagram
 | `is_discontinued` | BOOLEAN | Discontinued flag |
 
 **Relationships:**
+- Belongs to Product (Many-to-One, PROTECT)
 - Belongs to Color (Many-to-One)
+- Has primary Location (Many-to-One, optional)
+- Has secondary Location (Many-to-One, optional)
 - Has many StockMovements (One-to-Many)
 - Referenced by OrderItems (One-to-Many)
 
@@ -379,7 +441,7 @@ erDiagram
 
 ---
 
-#### 3.2 Stock Movements Table (`stock_movements`)
+#### 4.2 Stock Movements Table (`stock_movements`)
 **Purpose:** Audit trail for all stock changes
 
 | Field | Type | Description |
@@ -409,9 +471,9 @@ erDiagram
 
 ---
 
-### 4. Orders Module
+### 5. Orders Module
 
-#### 4.1 Orders Table (`orders`)
+#### 5.1 Orders Table (`orders`)
 **Purpose:** Customer order management
 
 | Field | Type | Description |
@@ -482,14 +544,13 @@ erDiagram
 
 ---
 
-#### 4.2 Order Items Table (`order_items`)
+#### 5.2 Order Items Table (`order_items`)
 **Purpose:** Individual line items within orders
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | INTEGER PK | Auto-increment |
 | `order` | INTEGER FK | Foreign key to Orders |
-| `product` | INTEGER FK | Optional reference to Products |
 | `stock_item` | VARCHAR(50) FK | Optional reference to StockItems |
 | `sku` | VARCHAR(50) | SKU at time of order (denormalized) |
 | `product_name` | VARCHAR(500) | Product name (denormalized) |
@@ -501,10 +562,13 @@ erDiagram
 | `unit_price` | DECIMAL(10,2) | Price per unit |
 | `line_total` | DECIMAL(12,2) | Total for line item |
 | `tax_rate` | DECIMAL(5,2) | Tax rate |
+| `discount_amount` | DECIMAL(10,2) | Discount for this item |
+| `notes` | TEXT | Item-specific notes |
+| `created_at` | DATETIME | Creation timestamp |
+| `updated_at` | DATETIME | Last update timestamp |
 
 **Relationships:**
 - Belongs to Order (Many-to-One)
-- References Product (Many-to-One, optional)
 - References StockItem (Many-to-One, optional)
 
 **Key Features:**
@@ -517,7 +581,7 @@ erDiagram
 
 ---
 
-#### 4.3 Order Status History Table (`order_status_history`)
+#### 5.3 Order Status History Table (`order_status_history`)
 **Purpose:** Audit trail for order status changes
 
 | Field | Type | Description |
@@ -629,11 +693,12 @@ PRODUCTS (Catalog)
 
 STOCK_ITEMS (Inventory)
    ├─ Defines: What is physically available
+   ├─ Links to: Product (required), Color, Locations
    ├─ Attributes: Quantities, location, cost
    └─ SKU: Unique inventory identifier
 
 ORDER_ITEMS (Transactions)
-   ├─ References: Both Product & StockItem (optional)
+   ├─ References: StockItem (optional)
    ├─ Denormalized: SKU, product_name, unit_price
    └─ Purpose: Historical accuracy of order
 ```
@@ -674,6 +739,8 @@ Model.objects.only_deleted()  # Deleted records only
 - ✅ `orders`
 
 ### Tables WITHOUT Soft Delete
+- ❌ `accounts_usertype` (simple reference data)
+- ❌ `accounts_profile` (linked to auth_user)
 - ❌ `locations` (permanent infrastructure)
 - ❌ `order_items` (cascade with order)
 - ❌ `order_status_history` (permanent audit trail)
@@ -699,52 +766,60 @@ instance.hard_delete()
 
 ### Foreign Key Relationships
 
-1. **Products → Brands**
+1. **Profile → User**
+   - Type: One-to-One
+   - Constraint: CASCADE
+
+2. **Profile → UserType**
+   - Type: Many-to-One
+   - Constraint: SET_NULL (optional)
+
+3. **Products → Brands**
    - Type: Many-to-One
    - Constraint: SET_NULL (preserves products if brand deleted)
-   
-2. **Products → Locations** (2 relationships)
-   - Primary Location: Many-to-One
-   - Secondary Location: Many-to-One
-   - Constraint: SET_NULL
 
-3. **Products ←→ Categories**
+4. **Products ←→ Categories**
    - Type: Many-to-Many
    - Junction table: `products_categories`
 
-4. **StockItems → Colors**
+5. **StockItems → Products**
+   - Type: Many-to-One
+   - Constraint: PROTECT (prevents deleting product with stock)
+
+6. **StockItems → Colors**
    - Type: Many-to-One
    - Constraint: CASCADE
    - Uses: `color_code` as foreign key
 
-5. **StockMovements → StockItems**
+7. **StockItems → Locations** (2 relationships)
+   - Primary Location: Many-to-One
+   - Secondary Location: Many-to-One
+   - Constraint: SET_NULL
+
+8. **StockMovements → StockItems**
    - Type: Many-to-One
    - Constraint: CASCADE
 
-6. **Orders → Users** (4 relationships)
+9. **Orders → Users** (4 relationships)
    - created_by: Many-to-One
    - updated_by: Many-to-One
    - assigned_to: Many-to-One
    - deleted_by: Many-to-One
    - All: SET_NULL
 
-7. **OrderItems → Orders**
-   - Type: Many-to-One
-   - Constraint: CASCADE
-
-8. **OrderItems → Products**
-   - Type: Many-to-One
-   - Constraint: SET_NULL (optional, denormalized data preserved)
-
-9. **OrderItems → StockItems**
-   - Type: Many-to-One
-   - Constraint: SET_NULL (optional)
-
-10. **OrderStatusHistory → Orders**
+10. **OrderItems → Orders**
     - Type: Many-to-One
     - Constraint: CASCADE
 
-11. **OrderStatusHistory → Users**
+11. **OrderItems → StockItems**
+    - Type: Many-to-One
+    - Constraint: SET_NULL (optional, denormalized data preserved)
+
+12. **OrderStatusHistory → Orders**
+    - Type: Many-to-One
+    - Constraint: CASCADE
+
+13. **OrderStatusHistory → Users**
     - Type: Many-to-One
     - Constraint: SET_NULL
 
@@ -752,13 +827,16 @@ instance.hard_delete()
 
 | Relationship | On Delete |
 |--------------|-----------|
+| Profile → User | CASCADE |
+| Profile → UserType | SET_NULL |
 | Product → Brand | SET_NULL |
-| Product → Location | SET_NULL |
+| StockItem → Product | PROTECT |
 | StockItem → Color | CASCADE |
+| StockItem → Location | SET_NULL |
+| Category → Category (self) | CASCADE |
 | StockMovement → StockItem | CASCADE |
 | Order → User (all) | SET_NULL |
 | OrderItem → Order | CASCADE |
-| OrderItem → Product | SET_NULL |
 | OrderItem → StockItem | SET_NULL |
 | OrderStatusHistory → Order | CASCADE |
 | OrderStatusHistory → User | SET_NULL |
@@ -826,13 +904,14 @@ instance.hard_delete()
 
 | Module | Tables | Soft Delete | Foreign Keys |
 |--------|--------|-------------|--------------|
-| Products | 4 | 3 of 4 | 5 |
+| Accounts | 2 | 0 of 2 | 2 |
+| Products | 4 | 3 of 4 | 3 |
 | Colors | 1 | 1 of 1 | 0 |
-| Stock | 2 | 2 of 2 | 2 |
-| Orders | 3 | 1 of 3 | 11 |
-| **Total** | **10** | **7 of 10** | **18** |
+| Stock | 2 | 2 of 2 | 5 |
+| Orders | 3 | 1 of 3 | 8 |
+| **Total** | **12** | **7 of 12** | **18** |
 
 ---
 
-**Document Version:** 1.0  
-**Generated:** February 12, 2026
+**Document Version:** 2.0  
+**Generated:** April 9, 2026

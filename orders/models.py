@@ -430,7 +430,35 @@ class OrderItem(models.Model):
     
     # Additional Info
     notes = models.TextField(blank=True, null=True, help_text="Item-specific notes")
-    
+
+    # Item-level processing
+    ITEM_STATUS_PENDING = 'PENDING'
+    ITEM_STATUS_IN_PROGRESS = 'IN_PROGRESS'
+    ITEM_STATUS_PICKED = 'PICKED'
+    ITEM_STATUS_EXCEPTION = 'EXCEPTION'
+    ITEM_STATUS_COMPLETED = 'COMPLETED'
+
+    ITEM_STATUS_CHOICES = [
+        (ITEM_STATUS_PENDING, 'Pending'),
+        (ITEM_STATUS_IN_PROGRESS, 'In Progress'),
+        (ITEM_STATUS_PICKED, 'Picked'),
+        (ITEM_STATUS_EXCEPTION, 'Exception'),
+        (ITEM_STATUS_COMPLETED, 'Completed'),
+    ]
+
+    assigned_to = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assigned_order_items',
+        help_text="Employee assigned to pick/process this item"
+    )
+    processing_status = models.CharField(
+        max_length=20, choices=ITEM_STATUS_CHOICES, default=ITEM_STATUS_PENDING,
+        help_text="Current processing status of this item"
+    )
+    quantity_processed = models.PositiveIntegerField(
+        default=0, help_text="Quantity already picked/processed"
+    )
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
