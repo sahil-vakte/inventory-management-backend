@@ -1115,6 +1115,39 @@
 					}
 				},
 				{
+					"name": "List Orders With Items",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/orders/with-items/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "orders", "with-items", ""],
+							"query": [
+								{
+									"key": "order_status",
+									"value": "PENDING",
+									"description": "Optional filter: PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, ON_HOLD",
+									"disabled": true
+								},
+								{
+									"key": "search",
+									"value": "customer name",
+									"description": "Optional search by order number, external order id, customer name/email/phone, or tracking number",
+									"disabled": true
+								},
+								{
+									"key": "ordering",
+									"value": "-order_date",
+									"description": "Optional ordering field",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get a paginated list of orders with nested order items in each order. Supports the same filters, search, ordering, and pagination as List Orders."
+					}
+				},
+				{
 					"name": "Create Order",
 					"request": {
 						"method": "POST",

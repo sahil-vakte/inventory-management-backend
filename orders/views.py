@@ -4,12 +4,13 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
-from django.db.models import Sum, Count, Avg, Q
+from django.db.models import Sum, Count, Avg, Q, Prefetch
 from django.utils import timezone
 from decimal import Decimal
 from .models import Order, OrderItem, OrderStatusHistory
 from .serializers import (
     OrderListSerializer, OrderDetailSerializer, OrderCreateUpdateSerializer,
+    OrderListWithItemsSerializer,
     OrderItemSerializer, OrderItemCreateSerializer, OrderStatusHistorySerializer,
     OrderConfirmSerializer, OrderShipSerializer, OrderCancelSerializer,
     OrderStatsSerializer
@@ -190,6 +191,24 @@ class OrderViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         
         serializer = self.get_serializer(orders, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='with-items')
+    def with_items(self, request):
+        """List orders with their nested order items"""
+        item_queryset = OrderItem.objects.select_related(
+            'assigned_to', 'stock_item', 'stock_item__color'
+        )
+        orders = self.filter_queryset(
+            self.get_queryset().prefetch_related(Prefetch('items', queryset=item_queryset))
+        )
+
+        page = self.paginate_queryset(orders)
+        if page is not None:
+            serializer = OrderListWithItemsSerializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(serializer.data)
+
+        serializer = OrderListWithItemsSerializer(orders, many=True, context={'request': request})
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'], url_path='confirm')

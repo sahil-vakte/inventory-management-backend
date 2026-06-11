@@ -143,6 +143,15 @@ class OrderListSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'order_number', 'created_at']
 
 
+class OrderListWithItemsSerializer(OrderListSerializer):
+    """Order list serializer that includes nested order items"""
+
+    items = OrderItemSerializer(many=True, read_only=True)
+
+    class Meta(OrderListSerializer.Meta):
+        fields = OrderListSerializer.Meta.fields + ['items']
+
+
 class OrderDetailSerializer(serializers.ModelSerializer):
     """Detailed serializer for retrieving full order information"""
     

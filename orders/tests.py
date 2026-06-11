@@ -2,6 +2,7 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
 from decimal import Decimal
+from rest_framework.test import APIClient
 from .models import Order, OrderItem
 from stock.models import StockItem
 
@@ -136,4 +137,60 @@ class StockManagementTest(TestCase):
     def test_stock_item_has_adjust_method(self):
         """Test that StockItem still has adjust_stock method"""
         self.assertTrue(hasattr(StockItem, 'adjust_stock'))
+
+
+class OrderWithItemsAPITest(TestCase):
+    """Test order list endpoint with nested order items"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='api_user',
+            password='test123'
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_with_items_returns_orders_with_nested_items(self):
+        order = Order.objects.create(
+            customer_name='Test Customer',
+            customer_email='test@example.com',
+            total_amount=Decimal('25.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-001',
+            product_name='Test Product',
+            quantity=2,
+            quantity_ordered=2,
+            unit_price=Decimal('12.50'),
+        )
+
+        response = self.client.get('/api/v1/orders/with-items/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['id'], order.id)
+        self.assertEqual(len(response.data['results'][0]['items']), 1)
+        self.assertEqual(response.data['results'][0]['items'][0]['sku'], 'SKU-001')
+
+    def test_with_items_keeps_order_filters(self):
+        pending_order = Order.objects.create(
+            customer_name='Pending Customer',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_PENDING,
+            created_by=self.user,
+        )
+        Order.objects.create(
+            customer_name='Shipped Customer',
+            total_amount=Decimal('20.00'),
+            order_status=Order.STATUS_SHIPPED,
+            created_by=self.user,
+        )
+
+        response = self.client.get('/api/v1/orders/with-items/?order_status=PENDING')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['id'], pending_order.id)
 
