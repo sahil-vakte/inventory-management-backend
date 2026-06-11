@@ -286,6 +286,8 @@ class Command(BaseCommand):
                 related_stats['brands_created'] += 1
             else:
                 related_stats['brands_updated'] += 1
+        child_active = self._active_flag(row_data.get('Child Active'), row_data.get('Available On This Website'))
+        parent_active = self._active_flag(row_data.get('Parent Active'), row_data.get('Available On This Website'))
         defaults = {
             'vs_parent_id': vs_parent_id,
             'parent_reference': self._clean(row_data.get('Parent Reference')) or '',
@@ -321,6 +323,8 @@ class Command(BaseCommand):
             'meta_title': self._clean(row_data.get('Meta Title')),
             'meta_keywords': self._clean(row_data.get('Meta Keywords')),
             'meta_description': self._clean(row_data.get('Meta Description')),
+            'child_active': child_active,
+            'parent_active': parent_active,
         }
 
         for number in range(1, 6):
@@ -366,7 +370,7 @@ class Command(BaseCommand):
             'locations_created': 0,
             'locations_updated': 0,
         }
-        sku = self._stock_sku(row_data)
+        sku = self._stock_sku(row_data, product)
         available_stock = self._to_int(row_data.get('Stock Value')) or 0
         if not sku:
             return None, False, related_stats
@@ -398,7 +402,7 @@ class Command(BaseCommand):
             'primary_location': location,
             'unit_cost': self._to_decimal(row_data.get('Cost Price (Inc VAT)')) or Decimal('0.00'),
             'last_purchase_price': self._to_decimal(row_data.get('Cost Price (Inc VAT)')) or Decimal('0.00'),
-            'is_active': True,
+            'is_active': product.is_active,
             'is_deleted': False,
         }
 
@@ -495,12 +499,14 @@ class Command(BaseCommand):
             if key in target:
                 target[key] += value
 
-    def _stock_sku(self, row_data):
+    def _stock_sku(self, row_data, product=None):
         sku = (
             self._clean(row_data.get('Child Reference'))
             or self._clean(row_data.get('Parent Reference'))
             or self._clean(row_data.get('VS Child ID'))
         )
+        if not sku and product is not None:
+            sku = str(product.vs_child_id)
         return sku[:50] if sku else None
 
     def _first_list_value(self, value):
@@ -673,3 +679,10 @@ class Command(BaseCommand):
         if normalized in {'n', 'no', 'false', '0'}:
             return False
         return None
+
+    def _active_flag(self, primary_value, fallback_value):
+        parsed = self._to_bool(primary_value)
+        if parsed is not None:
+            return parsed
+        fallback = self._to_bool(fallback_value)
+        return fallback if fallback is not None else True
