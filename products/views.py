@@ -9,6 +9,7 @@ import pandas as pd
 from django.db import transaction
 from django.db import models
 from django.db import close_old_connections
+from django.db.utils import OperationalError
 from django.core.management.base import CommandError
 from decimal import Decimal
 import logging
@@ -436,18 +437,27 @@ class ProductViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        rows = ProductExtendedData.objects.filter(import_batch_id=batch_id)
-        summary = rows.aggregate(
-            total_rows=models.Count('id'),
-            linked_products=models.Count('product', distinct=True),
-            latest_row_number=models.Max('row_number'),
-            latest_created_at=models.Max('created_at'),
-            latest_updated_at=models.Max('updated_at'),
-        )
-        return Response({
-            'batch_id': batch_id,
-            **summary,
-        })
+        try:
+            rows = ProductExtendedData.objects.filter(import_batch_id=batch_id)
+            summary = rows.aggregate(
+                total_rows=models.Count('id'),
+                linked_products=models.Count('product', distinct=True),
+                latest_row_number=models.Max('row_number'),
+                latest_created_at=models.Max('created_at'),
+                latest_updated_at=models.Max('updated_at'),
+            )
+            return Response({
+                'batch_id': batch_id,
+                **summary,
+            })
+        except OperationalError as exc:
+            if 'database is locked' in str(exc).lower():
+                return Response({
+                    'batch_id': batch_id,
+                    'status': 'database_busy',
+                    'message': 'Import is still writing records. Please retry status check in a few seconds.',
+                }, status=status.HTTP_202_ACCEPTED)
+            raise
 
     def _to_bool(self, value):
         if value is None:
