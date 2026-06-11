@@ -226,12 +226,12 @@ class XMLOrderParser:
         # Parse status - WIMS uses order_state
         order_state = self._get_text(order_node, 'order_state', '')
         if 'payment received' in order_state.lower() or 'paid' in order_state.lower():
-            order_data['order_status'] = 'CONFIRMED'
+            order_data['order_status'] = Order.STATUS_LABEL_PRINTED
             order_data['payment_status'] = 'PAID'
         elif 'dispatch' in order_state.lower() or 'ship' in order_state.lower():
-            order_data['order_status'] = 'SHIPPED'
+            order_data['order_status'] = Order.STATUS_SHIPPED
         else:
-            order_status = self._get_text(order_elem, 'OrderStatus', 'PENDING').upper()
+            order_status = self._get_text(order_elem, 'OrderStatus', Order.STATUS_NEW).upper()
             if order_status in dict(Order.STATUS_CHOICES).keys():
                 order_data['order_status'] = order_status
         

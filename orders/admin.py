@@ -107,18 +107,17 @@ class OrderAdmin(admin.ModelAdmin):
     
     inlines = [OrderItemInline, OrderStatusHistoryInline]
     
-    actions = ['confirm_orders', 'cancel_orders', 'mark_as_shipped', 'soft_delete_orders', 'restore_orders']
+    actions = ['mark_labels_printed', 'cancel_orders', 'mark_as_shipped', 'soft_delete_orders', 'restore_orders']
     
     def order_status_badge(self, obj):
         """Display order status with color badge"""
         colors = {
-            'PENDING': '#FFA500',
-            'CONFIRMED': '#4CAF50',
-            'PROCESSING': '#2196F3',
+            'NEW': '#FFA500',
+            'LABEL_PRINTED': '#607D8B',
+            'IN_PROGRESS': '#2196F3',
+            'COMPLETED': '#4CAF50',
             'SHIPPED': '#9C27B0',
-            'DELIVERED': '#4CAF50',
             'CANCELLED': '#F44336',
-            'ON_HOLD': '#FF9800',
         }
         color = colors.get(obj.order_status, '#999')
         return format_html(
@@ -143,17 +142,17 @@ class OrderAdmin(admin.ModelAdmin):
         )
     payment_status_badge.short_description = 'Payment'
     
-    def confirm_orders(self, request, queryset):
-        """Bulk confirm orders"""
+    def mark_labels_printed(self, request, queryset):
+        """Bulk mark labels printed"""
         count = 0
         for order in queryset:
             try:
-                order.confirm(user=request.user)
+                order.mark_label_printed(user=request.user)
                 count += 1
             except ValueError:
                 pass
-        self.message_user(request, f'{count} orders confirmed.')
-    confirm_orders.short_description = 'Confirm selected orders'
+        self.message_user(request, f'{count} orders marked as label printed.')
+    mark_labels_printed.short_description = 'Mark labels printed'
     
     def cancel_orders(self, request, queryset):
         """Bulk cancel orders"""

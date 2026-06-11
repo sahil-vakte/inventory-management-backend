@@ -81,7 +81,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             return OrderCreateUpdateSerializer
         elif self.action == 'list':
             return OrderListSerializer
-        elif self.action == 'confirm':
+        elif self.action in ['confirm', 'label_printed']:
             return OrderConfirmSerializer
         elif self.action == 'ship':
             return OrderShipSerializer
@@ -196,11 +196,10 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='with-items')
     def with_items(self, request):
         """List orders with their nested order items"""
-        item_queryset = OrderItem.objects.select_related(
-            'assigned_to', 'stock_item', 'stock_item__color'
-        )
+        item_queryset = OrderItem.objects.select_related('assigned_to')
+        base_queryset = self.get_queryset().prefetch_related(None)
         orders = self.filter_queryset(
-            self.get_queryset().prefetch_related(Prefetch('items', queryset=item_queryset))
+            base_queryset.prefetch_related(Prefetch('items', queryset=item_queryset))
         )
 
         page = self.paginate_queryset(orders)
@@ -213,7 +212,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], url_path='confirm')
     def confirm(self, request, pk=None):
-        """Confirm an order"""
+        """Backward-compatible alias for marking an order label as printed"""
         order = self.get_object()
         serializer = OrderConfirmSerializer(data=request.data)
         
@@ -221,7 +220,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             try:
                 order.confirm(user=request.user)
                 return Response({
-                    'message': 'Order confirmed successfully',
+                    'message': 'Order label printed successfully',
                     'order': OrderDetailSerializer(order).data
                 })
             except ValueError as e:
@@ -231,6 +230,27 @@ class OrderViewSet(viewsets.ModelViewSet):
                 )
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='label-printed')
+    def label_printed(self, request, pk=None):
+        """Mark an order as label printed"""
+        order = self.get_object()
+        serializer = OrderConfirmSerializer(data=request.data)
+
+        if serializer.is_valid():
+            try:
+                order.mark_label_printed(user=request.user)
+                return Response({
+                    'message': 'Order label printed successfully',
+                    'order': OrderDetailSerializer(order).data
+                })
+            except ValueError as e:
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=True, methods=['post'], url_path='start-processing')
     def start_processing(self, request, pk=None):
@@ -238,11 +258,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
         
         try:
-            order.start_processing(user=request.user)
-            return Response({
-                'message': 'Order processing started',
-                'order': OrderDetailSerializer(order).data
-            })
+                order.start_processing(user=request.user)
+                return Response({
+                    'message': 'Order moved to in progress',
+                    'order': OrderDetailSerializer(order).data
+                })
         except ValueError as e:
             return Response(
                 {'error': str(e)}, 
@@ -276,7 +296,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], url_path='deliver')
     def deliver(self, request, pk=None):
-        """Mark an order as delivered"""
+        """Deprecated: delivered status was replaced by shipped"""
         order = self.get_object()
         
         try:
@@ -320,9 +340,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         """Add an item to an existing order"""
         order = self.get_object()
         
-        if order.order_status not in [Order.STATUS_PENDING, Order.STATUS_CONFIRMED]:
+        if order.order_status not in [Order.STATUS_NEW, Order.STATUS_LABEL_PRINTED]:
             return Response(
-                {'error': 'Cannot add items to order in current status'},
+                {'error': 'Cannot add items unless order is New or Label Printed'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -350,9 +370,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         """Remove an item from an order"""
         order = self.get_object()
         
-        if order.order_status not in [Order.STATUS_PENDING, Order.STATUS_CONFIRMED]:
+        if order.order_status not in [Order.STATUS_NEW, Order.STATUS_LABEL_PRINTED]:
             return Response(
-                {'error': 'Cannot remove items from order in current status'},
+                {'error': 'Cannot remove items unless order is New or Label Printed'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -401,11 +421,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         stats = {
             'total_orders': queryset.count(),
-            'pending_orders': queryset.filter(order_status=Order.STATUS_PENDING).count(),
-            'confirmed_orders': queryset.filter(order_status=Order.STATUS_CONFIRMED).count(),
-            'processing_orders': queryset.filter(order_status=Order.STATUS_PROCESSING).count(),
+            'new_orders': queryset.filter(order_status=Order.STATUS_NEW).count(),
+            'label_printed_orders': queryset.filter(order_status=Order.STATUS_LABEL_PRINTED).count(),
+            'in_progress_orders': queryset.filter(order_status=Order.STATUS_IN_PROGRESS).count(),
+            'completed_orders': queryset.filter(order_status=Order.STATUS_COMPLETED).count(),
             'shipped_orders': queryset.filter(order_status=Order.STATUS_SHIPPED).count(),
-            'delivered_orders': queryset.filter(order_status=Order.STATUS_DELIVERED).count(),
             'cancelled_orders': queryset.filter(order_status=Order.STATUS_CANCELLED).count(),
         }
         
@@ -632,15 +652,25 @@ class OrderItemViewSet(viewsets.ReadOnlyModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             item.quantity_processed = quantity_processed
+        elif new_status in [OrderItem.ITEM_STATUS_PICKED, OrderItem.ITEM_STATUS_COMPLETED]:
+            item.quantity_processed = item.quantity
+        elif new_status == OrderItem.ITEM_STATUS_PENDING:
+            item.quantity_processed = 0
 
         old_status = item.processing_status
         item.processing_status = new_status
         item.save(update_fields=['processing_status', 'quantity_processed', 'updated_at'])
+        order_status_changed = item.order.sync_status_with_completion(user=request.user)
+        item.order.refresh_from_db()
 
         return Response({
             'id': item.id,
             'sku': item.sku,
             'order_number': item.order.order_number,
+            'order_status': item.order.order_status,
+            'order_status_display': item.order.get_order_status_display(),
+            'order_status_changed': order_status_changed,
+            'order_completion_percentage': item.order.get_completion_percentage(),
             'previous_status': old_status,
             'processing_status': item.processing_status,
             'processing_status_display': item.get_processing_status_display(),

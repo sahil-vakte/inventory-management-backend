@@ -33,6 +33,7 @@ staticfiles/
 # Django migrations (except __init__.py)
 **/migrations/*.py
 !**/migrations/__init__.py
+!orders/migrations/0002_order_status_flow.py
 
 # Virtual Environment
 .venv/

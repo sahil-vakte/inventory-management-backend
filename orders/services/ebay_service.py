@@ -272,12 +272,12 @@ class EbayService:
     def _map_ebay_status(self, ebay_status):
         """Map eBay order status to our Order status"""
         status_map = {
-            'Active': Order.STATUS_PROCESSING,
-            'Completed': Order.STATUS_DELIVERED,
+            'Active': Order.STATUS_LABEL_PRINTED,
+            'Completed': Order.STATUS_SHIPPED,
             'Cancelled': Order.STATUS_CANCELLED,
             'Inactive': Order.STATUS_CANCELLED,
         }
-        return status_map.get(ebay_status, Order.STATUS_PENDING)
+        return status_map.get(ebay_status, Order.STATUS_NEW)
     
     def _map_payment_status(self, ebay_payment_status):
         """Map eBay payment status to our payment status"""

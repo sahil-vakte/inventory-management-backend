@@ -26,22 +26,20 @@ class Order(models.Model):
     """Main order model for managing customer orders"""
     
     # Order Status Choices
-    STATUS_PENDING = 'PENDING'
-    STATUS_CONFIRMED = 'CONFIRMED'
-    STATUS_PROCESSING = 'PROCESSING'
+    STATUS_NEW = 'NEW'
+    STATUS_LABEL_PRINTED = 'LABEL_PRINTED'
+    STATUS_IN_PROGRESS = 'IN_PROGRESS'
+    STATUS_COMPLETED = 'COMPLETED'
     STATUS_SHIPPED = 'SHIPPED'
-    STATUS_DELIVERED = 'DELIVERED'
     STATUS_CANCELLED = 'CANCELLED'
-    STATUS_ON_HOLD = 'ON_HOLD'
     
     STATUS_CHOICES = [
-        (STATUS_PENDING, 'Pending'),
-        (STATUS_CONFIRMED, 'Confirmed'),
-        (STATUS_PROCESSING, 'Processing'),
+        (STATUS_NEW, 'New'),
+        (STATUS_LABEL_PRINTED, 'Label Printed'),
+        (STATUS_IN_PROGRESS, 'In Progress'),
+        (STATUS_COMPLETED, 'Completed'),
         (STATUS_SHIPPED, 'Shipped'),
-        (STATUS_DELIVERED, 'Delivered'),
         (STATUS_CANCELLED, 'Cancelled'),
-        (STATUS_ON_HOLD, 'On Hold'),
     ]
     
     # Payment Status Choices
@@ -103,7 +101,7 @@ class Order(models.Model):
     
     # Order Status
     order_status = models.CharField(max_length=20, choices=STATUS_CHOICES, 
-                                   default=STATUS_PENDING)
+                                   default=STATUS_NEW)
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES,
                                      default=PAYMENT_UNPAID)
     
@@ -250,48 +248,102 @@ class Order(models.Model):
         """Permanently delete the order"""
         super().delete()
     
-    def confirm(self, user=None):
-        """Confirm the order"""
-        if self.order_status != self.STATUS_PENDING:
-            raise ValueError(f"Cannot confirm order in {self.order_status} status")
+    def get_completion_percentage(self):
+        """Return picking completion percentage based on completed order items."""
+        items = self.items.all()
+        total = items.count()
+        if total == 0:
+            return 0
+        completed = items.filter(processing_status__in=[
+            OrderItem.ITEM_STATUS_PICKED,
+            OrderItem.ITEM_STATUS_COMPLETED,
+        ]).count()
+        return round((completed / total) * 100)
+
+    def _record_status_change(self, old_status, new_status, user=None, reason=None):
+        if old_status == new_status:
+            return
+        OrderStatusHistory.objects.create(
+            order=self,
+            from_status=old_status,
+            to_status=new_status,
+            changed_by=user,
+            change_reason=reason or f"Order status changed to {self.get_order_status_display()}"
+        )
+
+    def mark_label_printed(self, user=None):
+        """Mark the order as label printed."""
+        if self.order_status in [self.STATUS_SHIPPED, self.STATUS_CANCELLED]:
+            raise ValueError(f"Cannot print label for order in {self.order_status} status")
+        if self.order_status in [self.STATUS_IN_PROGRESS, self.STATUS_COMPLETED]:
+            raise ValueError(f"Cannot move order back to label printed from {self.order_status} status")
         
-        self.order_status = self.STATUS_CONFIRMED
+        old_status = self.order_status
+        self.order_status = self.STATUS_LABEL_PRINTED
         self.confirmed_date = timezone.now()
         if user:
             self.updated_by = user
         self.save()
-        
-        # Create status history
-        OrderStatusHistory.objects.create(
-            order=self,
-            from_status=self.STATUS_PENDING,
-            to_status=self.STATUS_CONFIRMED,
-            changed_by=user,
-            change_reason="Order confirmed"
-        )
+
+        self._record_status_change(old_status, self.STATUS_LABEL_PRINTED, user, "Order label printed")
+
+    def confirm(self, user=None):
+        """Backward-compatible alias for marking the order label as printed."""
+        self.mark_label_printed(user=user)
     
     def start_processing(self, user=None):
-        """Mark order as processing"""
-        if self.order_status not in [self.STATUS_PENDING, self.STATUS_CONFIRMED]:
+        """Mark order as in progress when item completion is greater than 0%."""
+        if self.order_status in [self.STATUS_SHIPPED, self.STATUS_CANCELLED]:
             raise ValueError(f"Cannot process order in {self.order_status} status")
+
+        completion = self.get_completion_percentage()
+        if completion == 0:
+            raise ValueError("Cannot mark order in progress until completion is greater than 0%")
+        if completion == 100:
+            return self.sync_status_with_completion(user=user)
         
         old_status = self.order_status
-        self.order_status = self.STATUS_PROCESSING
+        self.order_status = self.STATUS_IN_PROGRESS
         if user:
             self.updated_by = user
         self.save()
         
-        OrderStatusHistory.objects.create(
-            order=self,
-            from_status=old_status,
-            to_status=self.STATUS_PROCESSING,
-            changed_by=user,
-            change_reason="Order processing started"
-        )
+        self._record_status_change(old_status, self.STATUS_IN_PROGRESS, user, "Order processing started")
+
+    def sync_status_with_completion(self, user=None):
+        """Keep order status aligned with item completion percentage."""
+        if self.order_status in [self.STATUS_SHIPPED, self.STATUS_CANCELLED]:
+            return False
+
+        completion = self.get_completion_percentage()
+        if completion == 100:
+            new_status = self.STATUS_COMPLETED
+            reason = "Order completed from item completion"
+        elif completion > 0:
+            new_status = self.STATUS_IN_PROGRESS
+            reason = "Order moved in progress from item completion"
+        elif self.order_status in [self.STATUS_IN_PROGRESS, self.STATUS_COMPLETED]:
+            new_status = self.STATUS_LABEL_PRINTED
+            reason = "Order reset to label printed because completion is 0%"
+        else:
+            return False
+
+        if self.order_status == new_status:
+            return False
+
+        old_status = self.order_status
+        self.order_status = new_status
+        if user:
+            self.updated_by = user
+        self.save()
+        self._record_status_change(old_status, new_status, user, reason)
+        return True
     
     def mark_shipped(self, tracking_number=None, carrier=None, user=None):
-        """Mark order as shipped"""
-        if self.order_status not in [self.STATUS_CONFIRMED, self.STATUS_PROCESSING]:
+        """Mark order as shipped after shipping has been booked."""
+        if self.order_status == self.STATUS_CANCELLED:
+            raise ValueError(f"Cannot ship order in {self.order_status} status")
+        if self.order_status != self.STATUS_COMPLETED:
             raise ValueError(f"Cannot ship order in {self.order_status} status")
         
         old_status = self.order_status
@@ -307,36 +359,20 @@ class Order(models.Model):
         
         self.save()
         
-        OrderStatusHistory.objects.create(
-            order=self,
-            from_status=old_status,
-            to_status=self.STATUS_SHIPPED,
-            changed_by=user,
-            change_reason=f"Order shipped{f' via {carrier}' if carrier else ''}"
+        self._record_status_change(
+            old_status,
+            self.STATUS_SHIPPED,
+            user,
+            f"Shipping booked{f' via {carrier}' if carrier else ''}"
         )
     
     def mark_delivered(self, user=None):
-        """Mark order as delivered"""
-        if self.order_status != self.STATUS_SHIPPED:
-            raise ValueError(f"Cannot deliver order in {self.order_status} status")
-        
-        self.order_status = self.STATUS_DELIVERED
-        self.delivered_date = timezone.now()
-        if user:
-            self.updated_by = user
-        self.save()
-        
-        OrderStatusHistory.objects.create(
-            order=self,
-            from_status=self.STATUS_SHIPPED,
-            to_status=self.STATUS_DELIVERED,
-            changed_by=user,
-            change_reason="Order delivered"
-        )
+        """Deprecated: delivered status was replaced by shipped."""
+        raise ValueError("Delivered status has been removed. Use shipped once shipping is booked.")
     
     def cancel(self, reason=None, user=None):
         """Cancel the order - stock must be released manually by assigned employee"""
-        if self.order_status in [self.STATUS_DELIVERED, self.STATUS_CANCELLED]:
+        if self.order_status in [self.STATUS_SHIPPED, self.STATUS_CANCELLED]:
             raise ValueError(f"Cannot cancel order in {self.order_status} status")
         
         old_status = self.order_status
@@ -345,13 +381,7 @@ class Order(models.Model):
             self.updated_by = user
         self.save()
         
-        OrderStatusHistory.objects.create(
-            order=self,
-            from_status=old_status,
-            to_status=self.STATUS_CANCELLED,
-            changed_by=user,
-            change_reason=reason or "Order cancelled"
-        )
+        self._record_status_change(old_status, self.STATUS_CANCELLED, user, reason or "Order cancelled")
     
     @property
     def item_count(self):

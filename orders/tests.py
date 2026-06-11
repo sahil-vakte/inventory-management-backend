@@ -100,7 +100,7 @@ class EmployeeOrderAssignmentTest(TestCase):
             customer_name="Test Customer",
             total_amount=Decimal('100.00'),
             created_by=self.admin,
-            order_status=Order.STATUS_CONFIRMED
+            order_status=Order.STATUS_LABEL_PRINTED
         )
         
         # Cancel order - should not raise any stock-related errors
@@ -178,7 +178,7 @@ class OrderWithItemsAPITest(TestCase):
         pending_order = Order.objects.create(
             customer_name='Pending Customer',
             total_amount=Decimal('10.00'),
-            order_status=Order.STATUS_PENDING,
+            order_status=Order.STATUS_NEW,
             created_by=self.user,
         )
         Order.objects.create(
@@ -188,9 +188,66 @@ class OrderWithItemsAPITest(TestCase):
             created_by=self.user,
         )
 
-        response = self.client.get('/api/v1/orders/with-items/?order_status=PENDING')
+        response = self.client.get('/api/v1/orders/with-items/?order_status=NEW')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['results'][0]['id'], pending_order.id)
+
+    def test_label_printed_endpoint_updates_order_status(self):
+        order = Order.objects.create(
+            customer_name='Label Customer',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+
+        response = self.client.post(f'/api/v1/orders/{order.id}/label-printed/', {})
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, Order.STATUS_LABEL_PRINTED)
+
+    def test_item_status_updates_parent_order_progress_status(self):
+        order = Order.objects.create(
+            customer_name='Progress Customer',
+            total_amount=Decimal('25.00'),
+            created_by=self.user,
+            order_status=Order.STATUS_LABEL_PRINTED,
+        )
+        first_item = OrderItem.objects.create(
+            order=order,
+            sku='SKU-001',
+            product_name='First Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+        second_item = OrderItem.objects.create(
+            order=order,
+            sku='SKU-002',
+            product_name='Second Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('15.00'),
+        )
+
+        first_response = self.client.patch(
+            f'/api/v1/order-items/{first_item.id}/update-status/',
+            {'processing_status': OrderItem.ITEM_STATUS_PICKED},
+            format='json',
+        )
+        self.assertEqual(first_response.status_code, 200)
+        order.refresh_from_db()
+        first_item.refresh_from_db()
+        self.assertEqual(first_item.quantity_processed, first_item.quantity)
+        self.assertEqual(order.order_status, Order.STATUS_IN_PROGRESS)
+
+        second_response = self.client.patch(
+            f'/api/v1/order-items/{second_item.id}/update-status/',
+            {'processing_status': OrderItem.ITEM_STATUS_PICKED},
+            format='json',
+        )
+        self.assertEqual(second_response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, Order.STATUS_COMPLETED)
 
