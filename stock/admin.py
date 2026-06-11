@@ -4,7 +4,7 @@ from .models import StockItem, StockMovement
 @admin.register(StockItem)
 class StockItemAdmin(admin.ModelAdmin):
     list_display = [
-        'sku', 'product_type', 'product', 'color', 'available_stock_rolls',
+        'sku', 'product_type', 'product', 'color', 'available_stock_in_mtr',
         'reserved_stock', 'stock_status', 'is_active', 'is_deleted'
     ]
     list_filter = [
@@ -26,7 +26,7 @@ class StockItemAdmin(admin.ModelAdmin):
         }),
         ('Stock Levels', {
             'fields': (
-                'available_stock_rolls', 'reserved_stock',
+                'available_stock_in_mtr', 'reserved_stock',
                 'minimum_stock_level', 'maximum_stock_level'
             )
         }),

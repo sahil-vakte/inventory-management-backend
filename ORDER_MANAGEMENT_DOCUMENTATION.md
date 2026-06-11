@@ -358,7 +358,7 @@ Access the admin interface at: `http://localhost:8000/admin/`
 3. Order totals are recalculated
 
 **Stock Fields:**
-- `StockItem.available_stock_rolls` - Physical stock in warehouse
+- `StockItem.available_stock_in_mtr` - Physical stock in warehouse
 - `StockItem.reserved_stock` - Stock reserved for orders
 - `StockItem.total_available_stock` - Calculated: available - reserved
 - `OrderItem.stock_reserved` - Boolean flag indicating reservation status

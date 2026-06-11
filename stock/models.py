@@ -35,8 +35,10 @@ class StockItem(models.Model):
                           help_text="Stock Keeping Unit - unique identifier")
     
     # Stock levels
-    available_stock_rolls = models.IntegerField(default=0, 
-                                               help_text="Available stock in rolls")
+    available_stock_in_mtr = models.IntegerField(
+        default=0,
+        help_text="Available stock in metres",
+    )
     reserved_stock = models.IntegerField(default=0,
                                         help_text="Stock reserved for orders")
     minimum_stock_level = models.IntegerField(default=0,
@@ -88,21 +90,21 @@ class StockItem(models.Model):
             models.Index(fields=['product_type']),
             models.Index(fields=['color']),
             models.Index(fields=['is_active']),
-            models.Index(fields=['available_stock_rolls']),
+            models.Index(fields=['available_stock_in_mtr'], name='stock_availab_95624e_idx'),
         ]
     
     def __str__(self):
-        return f"{self.sku} - {self.available_stock_rolls} rolls"
+        return f"{self.sku} - {self.available_stock_in_mtr} mtr"
     
     @property
     def total_available_stock(self):
         """Returns available stock minus reserved stock"""
-        return max(0, self.available_stock_rolls - self.reserved_stock)
+        return max(0, self.available_stock_in_mtr - self.reserved_stock)
     
     @property
     def is_low_stock(self):
         """Returns True if stock is below minimum level"""
-        return self.available_stock_rolls <= self.minimum_stock_level
+        return self.available_stock_in_mtr <= self.minimum_stock_level
     
     @property
     def stock_status(self):
@@ -111,7 +113,7 @@ class StockItem(models.Model):
             return "Discontinued"
         elif not self.is_active:
             return "Inactive"
-        elif self.available_stock_rolls == 0:
+        elif self.available_stock_in_mtr == 0:
             return "Out of Stock"
         elif self.is_low_stock:
             return "Low Stock"
@@ -121,7 +123,7 @@ class StockItem(models.Model):
     @property
     def stock_value(self):
         """Calculate total value of stock"""
-        return self.available_stock_rolls * self.unit_cost
+        return self.available_stock_in_mtr * self.unit_cost
     
     def reserve_stock(self, quantity):
         """Reserve stock for an order"""
@@ -141,8 +143,8 @@ class StockItem(models.Model):
     
     def adjust_stock(self, quantity, reason="Manual Adjustment"):
         """Adjust stock levels with reason tracking"""
-        old_stock = self.available_stock_rolls
-        self.available_stock_rolls = max(0, self.available_stock_rolls + quantity)
+        old_stock = self.available_stock_in_mtr
+        self.available_stock_in_mtr = max(0, self.available_stock_in_mtr + quantity)
         self.last_stock_update = timezone.now()
         self.save()
         
@@ -152,7 +154,7 @@ class StockItem(models.Model):
             movement_type='ADJUSTMENT',
             quantity=quantity,
             old_stock_level=old_stock,
-            new_stock_level=self.available_stock_rolls,
+            new_stock_level=self.available_stock_in_mtr,
             reason=reason
         )
     

@@ -138,7 +138,7 @@ erDiagram
         varchar color_code FK
         varchar primary_location FK "FK -> locations"
         varchar secondary_location FK "FK -> locations"
-        int available_stock_rolls
+        int available_stock_in_mtr
         int reserved_stock
         int minimum_stock_level
         int maximum_stock_level
@@ -408,7 +408,7 @@ erDiagram
 | `color_code` | VARCHAR(10) FK | Foreign key to Colors |
 | `primary_location` | VARCHAR(10) FK | Primary storage location (FK to Locations) |
 | `secondary_location` | VARCHAR(10) FK | Secondary storage location (FK to Locations) |
-| `available_stock_rolls` | INTEGER | Current available stock |
+| `available_stock_in_mtr` | INTEGER | Current available stock |
 | `reserved_stock` | INTEGER | Stock reserved for orders |
 | `minimum_stock_level` | INTEGER | Reorder threshold |
 | `maximum_stock_level` | INTEGER | Maximum capacity |
@@ -437,7 +437,7 @@ erDiagram
 - `adjust_stock(quantity, reason)` - Manual stock adjustment
 
 **Indexes:**
-- `product_type`, `color`, `is_active`, `available_stock_rolls`
+- `product_type`, `color`, `is_active`, `available_stock_in_mtr`
 
 ---
 
@@ -655,7 +655,7 @@ ALTERNATIVE: ORDER CANCELLATION
    ├─ New stock arrives from supplier
    ├─ StockItem.adjust_stock(+quantity, "Purchase Order XYZ")
    ├─ StockMovement created (IN)
-   └─ available_stock_rolls increased
+   └─ available_stock_in_mtr increased
 
 2. STOCK RESERVATION
    ├─ Order confirmed
@@ -666,7 +666,7 @@ ALTERNATIVE: ORDER CANCELLATION
 
 3. STOCK DISPATCH
    ├─ Order shipped
-   ├─ available_stock_rolls decreased
+   ├─ available_stock_in_mtr decreased
    ├─ reserved_stock decreased
    ├─ StockMovement created (OUT)
    └─ Reference to order_number
@@ -678,7 +678,7 @@ ALTERNATIVE: ORDER CANCELLATION
    └─ Audit trail maintained
 
 5. LOW STOCK ALERTS
-   ├─ System checks: available_stock_rolls <= minimum_stock_level
+   ├─ System checks: available_stock_in_mtr <= minimum_stock_level
    ├─ StockItem.is_low_stock property
    └─ Reorder triggered
 ```
@@ -851,7 +851,7 @@ instance.hard_delete()
 
 ### Stock Items
 - `product_type`, `color`, `is_active`
-- `available_stock_rolls`
+- `available_stock_in_mtr`
 
 ### Orders
 - `order_number` (unique)

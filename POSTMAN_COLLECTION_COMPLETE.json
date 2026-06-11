@@ -1954,7 +1954,7 @@
                 "description": "Create a stock.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"sku\": \"FAB-001-RED\",\n  \"product_type\": \"FABRIC\",\n  \"color_code\": \"RED\",\n  \"available_stock_rolls\": 100,\n  \"reserved_stock\": 0,\n  \"minimum_stock_level\": 10,\n  \"maximum_stock_level\": 500,\n  \"warehouse_location\": \"A1\",\n  \"supplier\": \"Supplier Ltd\",\n  \"lead_time_days\": 7,\n  \"unit_cost\": \"12.50\",\n  \"last_purchase_price\": \"12.00\",\n  \"is_active\": true,\n  \"is_discontinued\": false,\n  \"notes\": \"Initial stock\",\n  \"primary_location\": \"{{location_id}}\",\n  \"secondary_location\": null\n}"
+                  "raw": "{\n  \"sku\": \"FAB-001-RED\",\n  \"product_type\": \"FABRIC\",\n  \"color_code\": \"RED\",\n  \"available_stock_in_mtr\": 100,\n  \"reserved_stock\": 0,\n  \"minimum_stock_level\": 10,\n  \"maximum_stock_level\": 500,\n  \"warehouse_location\": \"A1\",\n  \"supplier\": \"Supplier Ltd\",\n  \"lead_time_days\": 7,\n  \"unit_cost\": \"12.50\",\n  \"last_purchase_price\": \"12.00\",\n  \"is_active\": true,\n  \"is_discontinued\": false,\n  \"notes\": \"Initial stock\",\n  \"primary_location\": \"{{location_id}}\",\n  \"secondary_location\": null\n}"
                 }
               },
               "response": []
@@ -2005,7 +2005,7 @@
                 "description": "Replace a stock.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"sku\": \"FAB-001-RED\",\n  \"product_type\": \"FABRIC\",\n  \"color_code\": \"RED\",\n  \"available_stock_rolls\": 100,\n  \"reserved_stock\": 0,\n  \"minimum_stock_level\": 10,\n  \"maximum_stock_level\": 500,\n  \"warehouse_location\": \"A1\",\n  \"supplier\": \"Supplier Ltd\",\n  \"lead_time_days\": 7,\n  \"unit_cost\": \"12.50\",\n  \"last_purchase_price\": \"12.00\",\n  \"is_active\": true,\n  \"is_discontinued\": false,\n  \"notes\": \"Initial stock\",\n  \"primary_location\": \"{{location_id}}\",\n  \"secondary_location\": null\n}"
+                  "raw": "{\n  \"sku\": \"FAB-001-RED\",\n  \"product_type\": \"FABRIC\",\n  \"color_code\": \"RED\",\n  \"available_stock_in_mtr\": 100,\n  \"reserved_stock\": 0,\n  \"minimum_stock_level\": 10,\n  \"maximum_stock_level\": 500,\n  \"warehouse_location\": \"A1\",\n  \"supplier\": \"Supplier Ltd\",\n  \"lead_time_days\": 7,\n  \"unit_cost\": \"12.50\",\n  \"last_purchase_price\": \"12.00\",\n  \"is_active\": true,\n  \"is_discontinued\": false,\n  \"notes\": \"Initial stock\",\n  \"primary_location\": \"{{location_id}}\",\n  \"secondary_location\": null\n}"
                 }
               },
               "response": []
@@ -2035,7 +2035,7 @@
                 "description": "Partially update a stock.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"sku\": \"FAB-001-RED\",\n  \"product_type\": \"FABRIC\",\n  \"color_code\": \"RED\",\n  \"available_stock_rolls\": 100,\n  \"reserved_stock\": 0,\n  \"minimum_stock_level\": 10,\n  \"maximum_stock_level\": 500,\n  \"warehouse_location\": \"A1\",\n  \"supplier\": \"Supplier Ltd\",\n  \"lead_time_days\": 7,\n  \"unit_cost\": \"12.50\",\n  \"last_purchase_price\": \"12.00\",\n  \"is_active\": true,\n  \"is_discontinued\": false,\n  \"notes\": \"Initial stock\",\n  \"primary_location\": \"{{location_id}}\",\n  \"secondary_location\": null\n}"
+                  "raw": "{\n  \"sku\": \"FAB-001-RED\",\n  \"product_type\": \"FABRIC\",\n  \"color_code\": \"RED\",\n  \"available_stock_in_mtr\": 100,\n  \"reserved_stock\": 0,\n  \"minimum_stock_level\": 10,\n  \"maximum_stock_level\": 500,\n  \"warehouse_location\": \"A1\",\n  \"supplier\": \"Supplier Ltd\",\n  \"lead_time_days\": 7,\n  \"unit_cost\": \"12.50\",\n  \"last_purchase_price\": \"12.00\",\n  \"is_active\": true,\n  \"is_discontinued\": false,\n  \"notes\": \"Initial stock\",\n  \"primary_location\": \"{{location_id}}\",\n  \"secondary_location\": null\n}"
                 }
               },
               "response": []

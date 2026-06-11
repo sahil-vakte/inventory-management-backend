@@ -186,7 +186,8 @@ Fields already available on `Product` for finalized CSV:
 
 Fields available in related models:
 
-- Stock quantity can map to `StockItem.available_stock_rolls` if we decide `Stock Value` means quantity. Confirm this before import because current `Product.stock_value` is monetary/value-style decimal.
+- `Stock Value` is now mapped to `StockItem.available_stock_in_mtr` during backup CSV import. The product `stock_value` field is still preserved separately for backward-compatible product data.
+- Backup CSV import also creates/updates related `Brand`, `Category`, `Color`, `StockItem`, and `Location` records where matching source columns exist. All related records use existing unique keys with `get_or_create`/`update_or_create` so re-uploading the same file updates existing rows instead of creating duplicates.
 - SKU/product lookup can use `StockItem.sku` and `Product.vs_child_id`.
 - Primary and secondary locations belong only to `StockItem`.
 - Color data can map to `Color` only if the CSV values can be normalized into `color_code` and `color_name`.

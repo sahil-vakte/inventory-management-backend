@@ -11,7 +11,9 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from products.models import Brand, Category, Product, ProductExtendedData
+from colors.models import Color
+from products.models import Brand, Category, Location, Product, ProductExtendedData
+from stock.models import StockItem
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +150,16 @@ class Command(BaseCommand):
             'rows_seen': 0,
             'products_created': 0,
             'products_updated': 0,
+            'brands_created': 0,
+            'brands_updated': 0,
+            'categories_created': 0,
+            'categories_updated': 0,
+            'colors_created': 0,
+            'colors_updated': 0,
+            'locations_created': 0,
+            'locations_updated': 0,
+            'stock_created': 0,
+            'stock_updated': 0,
             'extended_created': 0,
             'extended_updated': 0,
             'extended_skipped': 0,
@@ -209,18 +221,29 @@ class Command(BaseCommand):
             product = None
             if not skip_products:
                 try:
-                    product, created = self._upsert_product(row_data, dry_run)
+                    product, created, product_related_stats = self._upsert_product(row_data, dry_run)
+                    self._merge_stats(stats, product_related_stats)
                     if product is None:
                         stats['invalid_product_rows'] += 1
                     elif created:
                         stats['products_created'] += 1
                     else:
                         stats['products_updated'] += 1
+                    if product is not None:
+                        stock_item, stock_created, stock_related_stats = self._upsert_stock_item(
+                            row_data, product, dry_run
+                        )
+                        self._merge_stats(stats, stock_related_stats)
+                        if stock_item is not None:
+                            if stock_created:
+                                stats['stock_created'] += 1
+                            else:
+                                stats['stock_updated'] += 1
                 except Exception as exc:
                     stats['errors'] += 1
-                    logger.exception('Could not project product row %s', row_number)
+                    logger.exception('Could not project product/stock row %s', row_number)
                     if write_output:
-                        self.stderr.write(f'Row {row_number}: product projection failed: {exc}')
+                        self.stderr.write(f'Row {row_number}: product/stock projection failed: {exc}')
 
             extended = self._build_extended_instance(
                 row_data=row_data,
@@ -246,12 +269,23 @@ class Command(BaseCommand):
             stats['extended_updated'] += updated
 
     def _upsert_product(self, row_data, dry_run):
+        related_stats = {
+            'brands_created': 0,
+            'brands_updated': 0,
+            'categories_created': 0,
+            'categories_updated': 0,
+        }
         vs_child_id = self._to_int(row_data.get('VS Child ID'))
         if vs_child_id is None:
-            return None, False
+            return None, False, related_stats
 
         vs_parent_id = self._to_int(row_data.get('VS Parent ID')) or 0
-        brand = self._get_brand(row_data.get('Brand'), dry_run)
+        brand, brand_created = self._get_brand(row_data.get('Brand'), dry_run)
+        if brand is not None:
+            if brand_created:
+                related_stats['brands_created'] += 1
+            else:
+                related_stats['brands_updated'] += 1
         defaults = {
             'vs_parent_id': vs_parent_id,
             'parent_reference': self._clean(row_data.get('Parent Reference')) or '',
@@ -275,6 +309,10 @@ class Command(BaseCommand):
             'vat_rate': self._to_decimal(row_data.get('VAT Rate')) or Decimal('20.00'),
             'display_on_sale_page': self._to_bool(row_data.get('Display On Sale Page')) is not False,
             'stock_value': self._to_decimal(row_data.get('Stock Value')) or Decimal('0.00'),
+            'min_purchase_quantity': self._to_int(row_data.get('Min Purchase Quantity')) or 1,
+            'max_purchase_quantity': self._to_int(row_data.get('Max Purchase Quantity')) or 0,
+            'pick_location': self._clean(row_data.get('Pick Location')),
+            'stock_message': self._clean(row_data.get('Stock Message')),
             'weight_kg': self._to_decimal(row_data.get('Weight (in KGs)')) or Decimal('0.000'),
             'parent_product_url': self._clean(row_data.get('Parent Product Url')),
             'child_product_url': self._clean(row_data.get('Child Product Url')),
@@ -305,38 +343,179 @@ class Command(BaseCommand):
         if dry_run:
             existing = Product.all_objects.filter(vs_child_id=vs_child_id).exists()
             product = Product(vs_child_id=vs_child_id, **defaults)
-            return product, not existing
+            self._merge_stats(
+                related_stats,
+                self._sync_categories(product, row_data.get('Categories'), dry_run=True),
+            )
+            return product, not existing, related_stats
 
         product, created = Product.all_objects.update_or_create(
             vs_child_id=vs_child_id,
             defaults=defaults,
         )
-        self._sync_categories(product, row_data.get('Categories'))
-        return product, created
+        self._merge_stats(
+            related_stats,
+            self._sync_categories(product, row_data.get('Categories')),
+        )
+        return product, created, related_stats
 
-    def _sync_categories(self, product, categories_value):
-        names = [
-            part.strip()
-            for part in re.split(r'[>|,/;]+', self._clean(categories_value) or '')
-            if part.strip()
-        ]
+    def _upsert_stock_item(self, row_data, product, dry_run):
+        related_stats = {
+            'colors_created': 0,
+            'colors_updated': 0,
+            'locations_created': 0,
+            'locations_updated': 0,
+        }
+        sku = self._stock_sku(row_data)
+        available_stock = self._to_int(row_data.get('Stock Value')) or 0
+        if not sku:
+            return None, False, related_stats
+
+        color, color_created = self._get_or_create_color(row_data, dry_run)
+        if color_created:
+            related_stats['colors_created'] += 1
+        else:
+            related_stats['colors_updated'] += 1
+        location, location_created = self._get_or_create_location(row_data.get('Pick Location'), dry_run)
+        if location is not None:
+            if location_created:
+                related_stats['locations_created'] += 1
+            else:
+                related_stats['locations_updated'] += 1
+        product_type = (
+            self._clean(row_data.get('Parent Reference'))
+            or self._clean(row_data.get('Child Reference'))
+            or sku
+        )[:20]
+        defaults = {
+            'product_type': product_type,
+            'product': product,
+            'color': color,
+            'available_stock_in_mtr': available_stock,
+            'minimum_stock_level': self._to_int(row_data.get('Min Purchase Quantity')) or 0,
+            'maximum_stock_level': self._to_int(row_data.get('Max Purchase Quantity')) or 0,
+            'warehouse_location': self._clean(row_data.get('Pick Location')),
+            'primary_location': location,
+            'unit_cost': self._to_decimal(row_data.get('Cost Price (Inc VAT)')) or Decimal('0.00'),
+            'last_purchase_price': self._to_decimal(row_data.get('Cost Price (Inc VAT)')) or Decimal('0.00'),
+            'is_active': True,
+            'is_deleted': False,
+        }
+
+        if dry_run:
+            exists = StockItem.all_objects.filter(sku=sku).exists()
+            return StockItem(sku=sku, **defaults), not exists, related_stats
+
+        stock_item, created = StockItem.all_objects.update_or_create(
+            sku=sku,
+            defaults=defaults,
+        )
+        return stock_item, created, related_stats
+
+    def _sync_categories(self, product, categories_value, dry_run=False):
+        stats = {'categories_created': 0, 'categories_updated': 0}
+        names = self._category_names(categories_value)
         if not names:
-            return
+            return stats
 
         categories = []
         for name in names:
+            if dry_run:
+                if Category.all_objects.filter(name=name[:100]).exists():
+                    stats['categories_updated'] += 1
+                else:
+                    stats['categories_created'] += 1
+                continue
             category, _ = Category.all_objects.get_or_create(name=name[:100])
+            if _:
+                stats['categories_created'] += 1
+            else:
+                stats['categories_updated'] += 1
             categories.append(category)
-        product.categories.set(categories)
+        if product is not None and not dry_run:
+            product.categories.set(categories)
+        return stats
 
     def _get_brand(self, value, dry_run):
         name = self._clean(value)
         if not name:
-            return None
+            return None, False
         if dry_run:
-            return Brand(name=name[:100])
-        brand, _ = Brand.all_objects.get_or_create(name=name[:100])
-        return brand
+            exists = Brand.all_objects.filter(name=name[:100]).exists()
+            return Brand(name=name[:100]), not exists
+        brand, created = Brand.all_objects.get_or_create(name=name[:100])
+        return brand, created
+
+    def _get_or_create_color(self, row_data, dry_run):
+        color_name = self._first_list_value(
+            row_data.get('Tag 2 (Colours)')
+            or row_data.get('Attribute 2 (Colour)')
+        ) or 'Unknown'
+        color_code = self._color_code(color_name)
+
+        if dry_run:
+            exists = Color.all_objects.filter(color_code=color_code).exists()
+            return Color(color_code=color_code, color_name=color_name[:100]), not exists
+
+        color, created = Color.all_objects.update_or_create(
+            color_code=color_code,
+            defaults={
+                'color_name': color_name[:100],
+                'is_deleted': False,
+                'deleted_at': None,
+            },
+        )
+        return color, created
+
+    def _get_or_create_location(self, value, dry_run):
+        name = self._clean(value)
+        if not name:
+            return None, False
+        name = name[:100]
+        if dry_run:
+            exists = Location.objects.filter(name=name).exists()
+            return Location(name=name), not exists
+        location, created = Location.objects.get_or_create(name=name)
+        return location, created
+
+    def _category_names(self, categories_value):
+        names = []
+        seen = set()
+        for path in re.split(r'[,;]+', self._clean(categories_value) or ''):
+            for part in path.split('>'):
+                name = part.strip()
+                key = name.lower()
+                if name and key not in seen:
+                    seen.add(key)
+                    names.append(name)
+        return names
+
+    def _merge_stats(self, target, source):
+        for key, value in source.items():
+            if key in target:
+                target[key] += value
+
+    def _stock_sku(self, row_data):
+        sku = (
+            self._clean(row_data.get('Child Reference'))
+            or self._clean(row_data.get('Parent Reference'))
+            or self._clean(row_data.get('VS Child ID'))
+        )
+        return sku[:50] if sku else None
+
+    def _first_list_value(self, value):
+        value = self._clean(value)
+        if not value:
+            return None
+        for part in re.split(r'[\n,;/|]+', value):
+            part = part.strip()
+            if part:
+                return part
+        return None
+
+    def _color_code(self, color_name):
+        normalized = re.sub(r'[^A-Za-z0-9]+', '', color_name or '').upper()
+        return (normalized[:10] or 'UNKNOWN')
 
     def _build_extended_instance(
         self, row_data, header_specs, source_file_name, source_date,

@@ -34,6 +34,7 @@ staticfiles/
 **/migrations/*.py
 !**/migrations/__init__.py
 !orders/migrations/0002_order_status_flow.py
+!stock/migrations/0004_rename_available_stock_rolls.py
 
 # Virtual Environment
 .venv/

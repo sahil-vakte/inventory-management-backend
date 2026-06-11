@@ -29,7 +29,7 @@ class StockItemListSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockItem
         fields = [
-            'sku', 'product_type', 'color', 'available_stock_rolls',
+            'sku', 'product_type', 'color', 'available_stock_in_mtr',
             'reserved_stock', 'total_available_stock', 'stock_status',
             'is_low_stock', 'is_active', 'is_deleted',
             'primary_location', 'secondary_location',
@@ -82,7 +82,7 @@ class StockItemCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockItem
         fields = [
-            'sku', 'product_type', 'color_code', 'available_stock_rolls',
+            'sku', 'product_type', 'color_code', 'available_stock_in_mtr',
             'reserved_stock', 'minimum_stock_level', 'maximum_stock_level',
             'warehouse_location', 'supplier', 'lead_time_days',
             'unit_cost', 'last_purchase_price', 'last_purchase_date',

@@ -25,7 +25,7 @@ class StockItemViewSet(viewsets.ModelViewSet):
     ]
     search_fields = ['sku', 'product_type', 'color__color_name', 'supplier']
     ordering_fields = [
-        'sku', 'product_type', 'available_stock_rolls', 
+        'sku', 'product_type', 'available_stock_in_mtr',
         'unit_cost', 'created_at'
     ]
     ordering = ['sku']
@@ -46,21 +46,21 @@ class StockItemViewSet(viewsets.ModelViewSet):
         if stock_status:
             if stock_status == 'low_stock':
                 queryset = queryset.filter(
-                    available_stock_rolls__lte=models.F('minimum_stock_level')
+                    available_stock_in_mtr__lte=models.F('minimum_stock_level')
                 )
             elif stock_status == 'out_of_stock':
-                queryset = queryset.filter(available_stock_rolls=0)
+                queryset = queryset.filter(available_stock_in_mtr=0)
             elif stock_status == 'in_stock':
-                queryset = queryset.filter(available_stock_rolls__gt=0)
+                queryset = queryset.filter(available_stock_in_mtr__gt=0)
         
         # Filter by stock level range
         min_stock = self.request.query_params.get('min_stock', None)
         max_stock = self.request.query_params.get('max_stock', None)
         
         if min_stock:
-            queryset = queryset.filter(available_stock_rolls__gte=min_stock)
+            queryset = queryset.filter(available_stock_in_mtr__gte=min_stock)
         if max_stock:
-            queryset = queryset.filter(available_stock_rolls__lte=max_stock)
+            queryset = queryset.filter(available_stock_in_mtr__lte=max_stock)
         
         return queryset
     def get_serializer_class(self):
@@ -127,7 +127,7 @@ class StockItemViewSet(viewsets.ModelViewSet):
             
             return Response({
                 'message': f'Stock adjusted by {quantity}',
-                'new_stock_level': stock_item.available_stock_rolls,
+                'new_stock_level': stock_item.available_stock_in_mtr,
                 'reason': reason
             })
         
@@ -151,7 +151,7 @@ class StockItemViewSet(viewsets.ModelViewSet):
         stock_item.adjust_stock(qty, reason)
         return Response({
             'message': f'Stock increased by {qty}',
-            'new_stock_level': stock_item.available_stock_rolls,
+            'new_stock_level': stock_item.available_stock_in_mtr,
             'reason': reason
         })
 
@@ -174,7 +174,7 @@ class StockItemViewSet(viewsets.ModelViewSet):
         stock_item.adjust_stock(-qty, reason)
         return Response({
             'message': f'Stock decreased by {qty}',
-            'new_stock_level': stock_item.available_stock_rolls,
+            'new_stock_level': stock_item.available_stock_in_mtr,
             'reason': reason
         })
     
@@ -326,7 +326,11 @@ class StockItemViewSet(viewsets.ModelViewSet):
                         sku = str(row['SKU']).strip()
                         product_type = str(row.get('ProdTpe', '')).strip()
                         color_code = str(row.get('Color Abrvs', '')).strip()
-                        available_stock = int(row.get('Available Stock (Rolls)', 0)) if not pd.isna(row.get('Available Stock (Rolls)')) else 0
+                        raw_available_stock = row.get(
+                            'Available Stock (Mtr)',
+                            row.get('Available Stock (Rolls)', 0),
+                        )
+                        available_stock = int(raw_available_stock) if not pd.isna(raw_available_stock) else 0
                         
                         # Validate color exists
                         from colors.models import Color
@@ -342,7 +346,7 @@ class StockItemViewSet(viewsets.ModelViewSet):
                             defaults={
                                 'product_type': product_type,
                                 'color': color,
-                                'available_stock_rolls': available_stock,
+                                'available_stock_in_mtr': available_stock,
                             }
                         )
                         
@@ -374,11 +378,11 @@ class StockItemViewSet(viewsets.ModelViewSet):
             total_items = StockItem.objects.count()
             active_items = StockItem.objects.filter(is_active=True).count()
             low_stock_items = StockItem.objects.filter(
-                available_stock_rolls__lte=models.F('minimum_stock_level'),
+                available_stock_in_mtr__lte=models.F('minimum_stock_level'),
                 is_active=True
             ).count()
             out_of_stock_items = StockItem.objects.filter(
-                available_stock_rolls=0,
+                available_stock_in_mtr=0,
                 is_active=True
             ).count()
             
@@ -387,7 +391,7 @@ class StockItemViewSet(viewsets.ModelViewSet):
                 is_active=True
             ).aggregate(
                 total_value=models.Sum(
-                    models.F('available_stock_rolls') * models.F('unit_cost')
+                    models.F('available_stock_in_mtr') * models.F('unit_cost')
                 )
             )['total_value'] or 0
             
@@ -395,7 +399,7 @@ class StockItemViewSet(viewsets.ModelViewSet):
             total_stock_quantity = StockItem.objects.filter(
                 is_active=True
             ).aggregate(
-                total_quantity=models.Sum('available_stock_rolls')
+                total_quantity=models.Sum('available_stock_in_mtr')
             )['total_quantity'] or 0
             
             return Response({
@@ -418,7 +422,7 @@ class StockItemViewSet(viewsets.ModelViewSet):
         """Get items with low stock"""
         try:
             low_stock_items = StockItem.objects.filter(
-                available_stock_rolls__lte=models.F('minimum_stock_level'),
+                available_stock_in_mtr__lte=models.F('minimum_stock_level'),
                 is_active=True
             ).select_related('color')
             
