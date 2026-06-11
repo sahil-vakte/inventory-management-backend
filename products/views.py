@@ -8,16 +8,21 @@ from rest_framework import filters
 import pandas as pd
 from django.db import transaction
 from django.db import models
+from django.db import close_old_connections
 from django.core.management.base import CommandError
 from decimal import Decimal
+import logging
 import os
 import tempfile
-from .models import Product, Category, Brand, Location
+import threading
+from .models import Product, ProductExtendedData, Category, Brand, Location
 from .serializers import (
     ProductListSerializer, ProductDetailSerializer, 
     ProductCreateUpdateSerializer, CategorySerializer, BrandSerializer, LocationSerializer
 )
 from .management.commands.import_product_backup_csv import Command as ProductBackupCSVImportCommand
+
+logger = logging.getLogger(__name__)
 
 # Location CRUD API
 class LocationViewSet(viewsets.ModelViewSet):
@@ -323,20 +328,48 @@ class ProductViewSet(viewsets.ModelViewSet):
                     tmp_file.write(chunk)
 
             importer = ProductBackupCSVImportCommand()
+            batch_id = request.data.get('batch_id') or self._default_csv_batch_id(uploaded_file.name)
+            chunk_size = self._to_positive_int(request.data.get('chunk_size'), 500)
+            limit = self._to_optional_positive_int(request.data.get('limit'))
+            dry_run = self._to_bool(request.data.get('dry_run'))
+            skip_products = self._to_bool(request.data.get('skip_products'))
+            run_sync = dry_run or limit is not None or self._to_bool(request.data.get('sync'))
+
+            if not run_sync:
+                self._start_background_csv_import(
+                    tmp_path=tmp_path,
+                    source_file_name=uploaded_file.name,
+                    batch_id=batch_id,
+                    chunk_size=chunk_size,
+                    skip_products=skip_products,
+                )
+                tmp_path = None
+                return Response({
+                    'message': 'CSV import started in background',
+                    'file_name': uploaded_file.name,
+                    'mode': 'background',
+                    'batch_id': batch_id,
+                    'status_url': request.build_absolute_uri(
+                        f'/api/v1/products/import-status/?batch_id={batch_id}'
+                    ),
+                    'note': 'Large CSV imports run in background to avoid request timeout. Re-uploading the same file updates existing rows instead of creating duplicates.',
+                }, status=status.HTTP_202_ACCEPTED)
+
             stats = importer.import_file(
                 file_path=tmp_path,
-                batch_id=request.data.get('batch_id') or self._default_csv_batch_id(uploaded_file.name),
-                chunk_size=self._to_positive_int(request.data.get('chunk_size'), 500),
-                limit=self._to_optional_positive_int(request.data.get('limit')),
-                dry_run=self._to_bool(request.data.get('dry_run')),
-                skip_products=self._to_bool(request.data.get('skip_products')),
+                batch_id=batch_id,
+                chunk_size=chunk_size,
+                limit=limit,
+                dry_run=dry_run,
+                skip_products=skip_products,
                 write_output=False,
+                source_file_name=uploaded_file.name,
             )
 
             return Response({
-                'message': 'CSV import completed successfully' if not self._to_bool(request.data.get('dry_run')) else 'CSV dry-run completed successfully',
+                'message': 'CSV import completed successfully' if not dry_run else 'CSV dry-run completed successfully',
                 'file_name': uploaded_file.name,
-                'mode': 'dry_run' if self._to_bool(request.data.get('dry_run')) else 'import',
+                'mode': 'dry_run' if dry_run else 'import',
                 'stats': stats,
             }, status=status.HTTP_200_OK)
         except CommandError as e:
@@ -349,6 +382,72 @@ class ProductViewSet(viewsets.ModelViewSet):
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+    def _start_background_csv_import(
+        self, tmp_path, source_file_name, batch_id, chunk_size, skip_products
+    ):
+        thread = threading.Thread(
+            target=self._run_background_csv_import,
+            kwargs={
+                'tmp_path': tmp_path,
+                'source_file_name': source_file_name,
+                'batch_id': batch_id,
+                'chunk_size': chunk_size,
+                'skip_products': skip_products,
+            },
+            daemon=True,
+        )
+        thread.start()
+
+    def _run_background_csv_import(
+        self, tmp_path, source_file_name, batch_id, chunk_size, skip_products
+    ):
+        try:
+            close_old_connections()
+            importer = ProductBackupCSVImportCommand()
+            stats = importer.import_file(
+                file_path=tmp_path,
+                batch_id=batch_id,
+                chunk_size=chunk_size,
+                dry_run=False,
+                skip_products=skip_products,
+                write_output=False,
+                source_file_name=source_file_name,
+            )
+            logger.info('Background product CSV import completed: %s', stats)
+        except Exception:
+            logger.exception(
+                'Background product CSV import failed for %s batch %s',
+                source_file_name,
+                batch_id,
+            )
+        finally:
+            close_old_connections()
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    @action(detail=False, methods=['get'], url_path='import-status')
+    def import_status(self, request):
+        """Get progress summary for a backup CSV import batch."""
+        batch_id = request.query_params.get('batch_id')
+        if not batch_id:
+            return Response(
+                {'error': 'batch_id is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        rows = ProductExtendedData.objects.filter(import_batch_id=batch_id)
+        summary = rows.aggregate(
+            total_rows=models.Count('id'),
+            linked_products=models.Count('product', distinct=True),
+            latest_row_number=models.Max('row_number'),
+            latest_created_at=models.Max('created_at'),
+            latest_updated_at=models.Max('updated_at'),
+        )
+        return Response({
+            'batch_id': batch_id,
+            **summary,
+        })
 
     def _to_bool(self, value):
         if value is None:

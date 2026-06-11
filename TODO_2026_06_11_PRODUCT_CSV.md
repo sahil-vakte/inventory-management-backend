@@ -23,6 +23,8 @@ Completed:
 - Updated Postman collection entry for product import with CSV dry-run/batch options.
 - Verified dry-run import against 5 real rows from `Actual_Product_Data_BackUp_11062026.csv`.
 - Updated CSV import to avoid duplicate `ProductExtendedData` rows on repeated `/api/v1/products/import-excel/` uploads.
+- Updated full CSV uploads through `/api/v1/products/import-excel/` to run in the background and return `202 Accepted` to avoid 60-second request timeouts.
+- Added `/api/v1/products/import-status/?batch_id=...` for checking CSV import progress summary.
 
 Pending before full import:
 
@@ -401,3 +403,4 @@ Admin/serializer plan:
 - Existing Product table remains primary.
 - `ProductExtendedData` is supplementary extended storage only.
 - `/api/v1/products/import-excel/` must remain idempotent for CSV uploads: repeated upload of the same CSV rows should update existing rows, not create duplicates.
+- Full backup CSV imports are too large for a normal synchronous API request. Default API behavior should start the import in the background; use `dry_run`, `limit`, or `sync=true` only for small tests.

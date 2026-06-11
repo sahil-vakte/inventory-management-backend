@@ -916,7 +916,7 @@
                     "import-excel"
                   ]
                 },
-                "description": "Upload Product Master Excel file or Actual_Product_Data backup CSV. Use form-data key `file`. For CSV backup imports, optional form-data keys: `dry_run`, `batch_id`, `limit`, `chunk_size`, `skip_products`.",
+                "description": "Upload Product Master Excel file or Actual_Product_Data backup CSV. Use form-data key `file`. Full CSV imports start in the background and return 202 to avoid timeout. For CSV backup imports, optional form-data keys: `dry_run`, `batch_id`, `limit`, `chunk_size`, `skip_products`, `sync`.",
                 "body": {
                   "mode": "formdata",
                   "formdata": [
@@ -954,9 +954,42 @@
                       "value": "false",
                       "type": "text",
                       "description": "Optional for CSV uploads. Use true to save extended rows only."
+                    },
+                    {
+                      "key": "sync",
+                      "value": "false",
+                      "type": "text",
+                      "description": "Optional for CSV uploads. Use true only for small files/tests; full imports should run in background."
                     }
                   ]
                 }
+              },
+              "response": []
+            },
+            {
+              "name": "Product Import Status",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/products/import-status/?batch_id=product-backup-20260611",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    "import-status"
+                  ],
+                  "query": [
+                    {
+                      "key": "batch_id",
+                      "value": "product-backup-20260611"
+                    }
+                  ]
+                },
+                "description": "Check progress summary for a CSV backup import batch."
               },
               "response": []
             },

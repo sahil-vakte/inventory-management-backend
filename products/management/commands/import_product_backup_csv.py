@@ -130,7 +130,8 @@ class Command(BaseCommand):
 
     def import_file(
         self, file_path, batch_id=None, chunk_size=500, limit=None,
-        dry_run=False, skip_products=False, write_output=False
+        dry_run=False, skip_products=False, write_output=False,
+        source_file_name=None
     ):
         file_path = Path(file_path)
         if not file_path.exists():
@@ -138,9 +139,12 @@ class Command(BaseCommand):
 
         batch_id = batch_id or timezone.now().strftime('%Y%m%d%H%M%S')
         chunk_size = max(1, chunk_size)
-        source_date = self._source_date_from_name(file_path.name)
+        source_file_name = source_file_name or file_path.name
+        source_date = self._source_date_from_name(source_file_name)
 
         stats = {
+            'batch_id': batch_id,
+            'source_file_name': source_file_name,
             'rows_seen': 0,
             'products_created': 0,
             'products_updated': 0,
@@ -153,7 +157,7 @@ class Command(BaseCommand):
 
         if write_output:
             self.stdout.write(
-                f"Importing {file_path.name} with batch '{batch_id}'"
+                f"Importing {source_file_name} with batch '{batch_id}'"
                 + (' (dry run)' if dry_run else '')
             )
 
@@ -175,14 +179,14 @@ class Command(BaseCommand):
                 chunk.append((row_number, values))
                 if len(chunk) >= chunk_size:
                     self._process_chunk(
-                        chunk, header_specs, file_path.name, source_date,
+                        chunk, header_specs, source_file_name, source_date,
                         batch_id, dry_run, skip_products, stats, write_output
                     )
                     chunk = []
 
             if chunk:
                 self._process_chunk(
-                    chunk, header_specs, file_path.name, source_date,
+                    chunk, header_specs, source_file_name, source_date,
                     batch_id, dry_run, skip_products, stats, write_output
                 )
 
