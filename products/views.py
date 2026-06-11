@@ -8,12 +8,16 @@ from rest_framework import filters
 import pandas as pd
 from django.db import transaction
 from django.db import models
+from django.core.management.base import CommandError
 from decimal import Decimal
+import os
+import tempfile
 from .models import Product, Category, Brand, Location
 from .serializers import (
     ProductListSerializer, ProductDetailSerializer, 
     ProductCreateUpdateSerializer, CategorySerializer, BrandSerializer, LocationSerializer
 )
+from .management.commands.import_product_backup_csv import Command as ProductBackupCSVImportCommand
 
 # Location CRUD API
 class LocationViewSet(viewsets.ModelViewSet):
@@ -198,7 +202,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'], url_path='import-excel')
     def import_excel(self, request):
-        """Import products from Excel file"""
+        """Import products from Excel or the full product backup CSV file"""
         try:
             if 'file' not in request.FILES:
                 return Response(
@@ -207,10 +211,13 @@ class ProductViewSet(viewsets.ModelViewSet):
                 )
             
             file = request.FILES['file']
+
+            if file.name.lower().endswith('.csv'):
+                return self._import_backup_csv(file, request)
             
             if not file.name.endswith(('.xlsx', '.xls')):
                 return Response(
-                    {'error': 'File must be Excel format (.xlsx or .xls)'}, 
+                    {'error': 'File must be Excel (.xlsx/.xls) or CSV (.csv) format'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
@@ -305,6 +312,66 @@ class ProductViewSet(viewsets.ModelViewSet):
                 {'error': f'Unexpected error: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    def _import_backup_csv(self, uploaded_file, request):
+        """Persist full backup CSV rows and project finalized fields into Product."""
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
+                tmp_path = tmp_file.name
+                for chunk in uploaded_file.chunks():
+                    tmp_file.write(chunk)
+
+            importer = ProductBackupCSVImportCommand()
+            stats = importer.import_file(
+                file_path=tmp_path,
+                batch_id=request.data.get('batch_id') or self._default_csv_batch_id(uploaded_file.name),
+                chunk_size=self._to_positive_int(request.data.get('chunk_size'), 500),
+                limit=self._to_optional_positive_int(request.data.get('limit')),
+                dry_run=self._to_bool(request.data.get('dry_run')),
+                skip_products=self._to_bool(request.data.get('skip_products')),
+                write_output=False,
+            )
+
+            return Response({
+                'message': 'CSV import completed successfully' if not self._to_bool(request.data.get('dry_run')) else 'CSV dry-run completed successfully',
+                'file_name': uploaded_file.name,
+                'mode': 'dry_run' if self._to_bool(request.data.get('dry_run')) else 'import',
+                'stats': stats,
+            }, status=status.HTTP_200_OK)
+        except CommandError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response(
+                {'error': f'Error importing CSV file: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    def _to_bool(self, value):
+        if value is None:
+            return False
+        return str(value).strip().lower() in {'1', 'true', 'yes', 'y'}
+
+    def _default_csv_batch_id(self, file_name):
+        safe_name = os.path.splitext(os.path.basename(file_name))[0]
+        return safe_name[:100] or 'product-backup-import'
+
+    def _to_positive_int(self, value, default):
+        try:
+            parsed = int(value)
+            return parsed if parsed > 0 else default
+        except (TypeError, ValueError):
+            return default
+
+    def _to_optional_positive_int(self, value):
+        try:
+            parsed = int(value)
+            return parsed if parsed > 0 else None
+        except (TypeError, ValueError):
+            return None
     
     @action(detail=False, methods=['get'], url_path='stats')
     def stats(self, request):

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Product, Category, Brand, Location
+from .models import Product, ProductExtendedData, Category, Brand, Location
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
     list_display = ['id', 'name', 'description', 'created_at', 'updated_at']
@@ -153,3 +153,19 @@ class ProductAdmin(admin.ModelAdmin):
             count += 1
         self.message_user(request, f'{count} products were restored.')
     restore_selected.short_description = "Restore selected products"
+
+
+@admin.register(ProductExtendedData)
+class ProductExtendedDataAdmin(admin.ModelAdmin):
+    list_display = [
+        'id', 'product', 'source_file_name', 'row_number',
+        'import_batch_id', 'is_active', 'created_at'
+    ]
+    list_filter = ['source_file_name', 'import_batch_id', 'is_active', 'created_at']
+    search_fields = [
+        'vs_child_id', 'vs_parent_id', 'parent_reference', 'child_reference',
+        'parent_product_title', 'child_product_title', 'row_hash'
+    ]
+    readonly_fields = ['created_at', 'updated_at']
+    raw_id_fields = ['product']
+    ordering = ['source_file_name', 'row_number']

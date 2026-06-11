@@ -41,19 +41,20 @@ class OrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Return queryset based on include_deleted parameter"""
         include_deleted = self.request.query_params.get('include_deleted', 'false').lower()
+        item_queryset = OrderItem.objects.select_related('assigned_to')
         
         if include_deleted == 'true':
             queryset = Order.all_objects.select_related(
                 'created_by', 'updated_by', 'assigned_to'
-            ).prefetch_related('items', 'status_history')
+            ).prefetch_related(Prefetch('items', queryset=item_queryset), 'status_history')
         elif self.request.query_params.get('only_deleted', 'false').lower() == 'true':
             queryset = Order.all_objects.filter(is_deleted=True).select_related(
                 'created_by', 'updated_by', 'assigned_to'
-            ).prefetch_related('items', 'status_history')
+            ).prefetch_related(Prefetch('items', queryset=item_queryset), 'status_history')
         else:
             queryset = Order.objects.select_related(
                 'created_by', 'updated_by', 'assigned_to'
-            ).prefetch_related('items', 'status_history')
+            ).prefetch_related(Prefetch('items', queryset=item_queryset), 'status_history')
         
         # Filter by date range
         date_from = self.request.query_params.get('date_from')

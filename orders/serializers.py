@@ -11,17 +11,23 @@ class OrderItemSerializer(serializers.ModelSerializer):
     stock_detail = StockItemListSerializer(source='stock_item', read_only=True)
     assigned_to_username = serializers.SerializerMethodField()
     processing_status_display = serializers.CharField(source='get_processing_status_display', read_only=True)
+    parent_product_images = serializers.SerializerMethodField()
 
     def get_assigned_to_username(self, obj):
         if obj.assigned_to_id:
             return obj.assigned_to.username
         return None
+
+    def get_parent_product_images(self, obj):
+        stock_item = getattr(obj, 'stock_item', None)
+        return getattr(getattr(stock_item, 'product', None), 'parent_product_images', None)
     
     class Meta:
         model = OrderItem
         fields = [
             'id', 'order', 'stock_item', 'stock_detail',
             'sku', 'product_name', 'product_type', 'color_code',
+            'parent_product_images',
             'quantity', 'quantity_ordered', 'quantity_processed',
             'unit_price', 'line_total', 'tax_rate', 'discount_amount',
             'assigned_to', 'assigned_to_username',

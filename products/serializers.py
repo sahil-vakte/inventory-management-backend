@@ -35,6 +35,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'vs_child_id', 'child_reference', 'child_product_title',
+            'parent_product_images',
             'brand_name', 'effective_price', 'is_active',
             'child_active', 'parent_active', 'featured', 'is_deleted',
             'primary_location', 'secondary_location'

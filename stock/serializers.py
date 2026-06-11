@@ -18,6 +18,7 @@ class StockMovementSerializer(serializers.ModelSerializer):
 class StockItemListSerializer(serializers.ModelSerializer):
     primary_location = serializers.SerializerMethodField()
     secondary_location = serializers.SerializerMethodField()
+    parent_product_images = serializers.SerializerMethodField()
     """Simplified serializer for stock list views"""
     color = ColorListSerializer(read_only=True)
     product = ProductListSerializer(read_only=True)
@@ -31,7 +32,8 @@ class StockItemListSerializer(serializers.ModelSerializer):
             'sku', 'product_type', 'color', 'available_stock_rolls',
             'reserved_stock', 'total_available_stock', 'stock_status',
             'is_low_stock', 'is_active', 'is_deleted',
-            'primary_location', 'secondary_location', 'product'
+            'primary_location', 'secondary_location',
+            'parent_product_images', 'product'
         ]
 
     def get_primary_location(self, obj):
@@ -40,9 +42,13 @@ class StockItemListSerializer(serializers.ModelSerializer):
     def get_secondary_location(self, obj):
         return getattr(obj.secondary_location, 'id', None)
 
+    def get_parent_product_images(self, obj):
+        return getattr(getattr(obj, 'product', None), 'parent_product_images', None)
+
 class StockItemDetailSerializer(serializers.ModelSerializer):
     primary_location = serializers.SerializerMethodField()
     secondary_location = serializers.SerializerMethodField()
+    parent_product_images = serializers.SerializerMethodField()
     """Detailed serializer for single stock item views"""
     color = ColorListSerializer(read_only=True)
     product = ProductDetailSerializer(read_only=True)
@@ -63,6 +69,9 @@ class StockItemDetailSerializer(serializers.ModelSerializer):
 
     def get_secondary_location(self, obj):
         return getattr(obj.secondary_location, 'id', None)
+
+    def get_parent_product_images(self, obj):
+        return getattr(getattr(obj, 'product', None), 'parent_product_images', None)
 
 class StockItemCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating stock items"""

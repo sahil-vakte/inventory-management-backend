@@ -900,7 +900,7 @@
           "name": "Product Import & Reporting",
           "item": [
             {
-              "name": "Import Products From Excel",
+              "name": "Import Products From Excel or Backup CSV",
               "request": {
                 "method": "POST",
                 "header": [],
@@ -916,7 +916,7 @@
                     "import-excel"
                   ]
                 },
-                "description": "Upload Product Master Excel file. Use form-data key `file`.",
+                "description": "Upload Product Master Excel file or Actual_Product_Data backup CSV. Use form-data key `file`. For CSV backup imports, optional form-data keys: `dry_run`, `batch_id`, `limit`, `chunk_size`, `skip_products`.",
                 "body": {
                   "mode": "formdata",
                   "formdata": [
@@ -924,6 +924,36 @@
                       "key": "file",
                       "type": "file",
                       "src": []
+                    },
+                    {
+                      "key": "dry_run",
+                      "value": "true",
+                      "type": "text",
+                      "description": "Optional for CSV uploads. Use true to validate without writing."
+                    },
+                    {
+                      "key": "batch_id",
+                      "value": "product-backup-20260611",
+                      "type": "text",
+                      "description": "Optional CSV import batch id."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "100",
+                      "type": "text",
+                      "description": "Optional CSV row limit for testing."
+                    },
+                    {
+                      "key": "chunk_size",
+                      "value": "500",
+                      "type": "text",
+                      "description": "Optional CSV processing chunk size."
+                    },
+                    {
+                      "key": "skip_products",
+                      "value": "false",
+                      "type": "text",
+                      "description": "Optional for CSV uploads. Use true to save extended rows only."
                     }
                   ]
                 }
