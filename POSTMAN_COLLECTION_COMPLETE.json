@@ -1,1528 +1,3095 @@
 {
-	"info": {
-		"_postman_id": "complete-inventory-api-2026",
-		"name": "Inventory Management - Complete API Collection",
-		"description": "Complete API collection for Inventory Management System with all endpoints, sample payloads, and detailed descriptions. Updated February 2026.",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"auth": {
-		"type": "bearer",
-		"bearer": [
-			{
-				"key": "token",
-				"value": "{{access_token}}",
-				"type": "string"
-			}
-		]
-	},
-	"variable": [
-		{
-			"key": "base_url",
-			"value": "http://localhost:8000",
-			"type": "string"
-		},
-		{
-			"key": "access_token",
-			"value": "",
-			"type": "string"
-		},
-		{
-			"key": "refresh_token",
-			"value": "",
-			"type": "string"
-		}
-	],
-	"item": [
-		{
-			"name": "Authentication",
-			"item": [
-				{
-					"name": "Register New User",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"username\": \"newuser\",\n  \"email\": \"newuser@example.com\",\n  \"password\": \"SecurePassword123!\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}\n\n// Creates a new user account\n// Returns access and refresh JWT tokens"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/register/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "register", ""]
-						},
-						"description": "Register a new user account. Returns JWT access and refresh tokens."
-					}
-				},
-				{
-					"name": "Login (Get JWT Token)",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"pm.collectionVariables.set(\"access_token\", jsonData.access);",
-									"pm.collectionVariables.set(\"refresh_token\", jsonData.refresh);"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"auth": {
-							"type": "noauth"
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}\n\n// Login with username and password\n// Returns JWT access token (valid for 1 hour) and refresh token (valid for 1 day)\n// Access token is automatically saved to collection variables"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/login/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "login", ""]
-						},
-						"description": "Authenticate user and obtain JWT access and refresh tokens."
-					}
-				},
-				{
-					"name": "Refresh Token",
-					"request": {
-						"auth": {
-							"type": "noauth"
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}\n\n// Use refresh token to get a new access token\n// Required when access token expires (after 1 hour)"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/token/refresh/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "token", "refresh", ""]
-						},
-						"description": "Refresh expired access token using refresh token."
-					}
-				},
-				{
-					"name": "Verify Token",
-					"request": {
-						"auth": {
-							"type": "noauth"
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"token\": \"{{access_token}}\"\n}\n\n// Verify if an access token is still valid\n// Returns 200 if valid, 401 if expired or invalid"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/token/verify/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "token", "verify", ""]
-						},
-						"description": "Verify if a JWT token is valid."
-					}
-				},
-				{
-					"name": "Get User Info",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/user/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "user", ""]
-						},
-						"description": "Get current authenticated user information."
-					}
-				},
-				{
-					"name": "Logout",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}\n\n// Logout and blacklist the refresh token\n// After this, the refresh token cannot be used to get new access tokens"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/logout/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "logout", ""]
-						},
-						"description": "Logout user and blacklist refresh token."
-					}
-				}
-			],
-			"description": "JWT Authentication endpoints for login, registration, and token management"
-		},
-		{
-			"name": "Locations",
-			"item": [
-				{
-					"name": "List All Locations",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/locations/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "locations", ""]
-						},
-						"description": "Get list of all storage locations (LOC001, LOC002, etc.)"
-					}
-				},
-				{
-					"name": "Create Location",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"name\": \"Main Warehouse\",\n  \"description\": \"Primary storage facility\"\n}\n\n// Creates a new location\n// ID is auto-generated (LOC001, LOC002, etc.)\n// Used for tracking where products are stored (primary and secondary locations)"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/locations/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "locations", ""]
-						},
-						"description": "Create a new storage location. ID is auto-generated."
-					}
-				},
-				{
-					"name": "Get Location Details",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/locations/LOC001/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "locations", "LOC001", ""]
-						},
-						"description": "Get details of a specific location by ID"
-					}
-				},
-				{
-					"name": "Update Location",
-					"request": {
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"name\": \"Main Warehouse - Updated\",\n  \"description\": \"Primary storage facility with climate control\"\n}\n\n// Update all fields of a location\n// Use PATCH for partial updates"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/locations/LOC001/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "locations", "LOC001", ""]
-						},
-						"description": "Update location details"
-					}
-				},
-				{
-					"name": "Delete Location",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/locations/LOC001/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "locations", "LOC001", ""]
-						},
-						"description": "Delete a location (only if not in use by products)"
-					}
-				}
-			],
-			"description": "Manage storage locations for products"
-		},
-		{
-			"name": "Products",
-			"item": [
-				{
-					"name": "List Products",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products/?include_deleted=false&ordering=-created_at",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products", ""],
-							"query": [
-								{
-									"key": "include_deleted",
-									"value": "false",
-									"description": "Include soft-deleted products"
-								},
-								{
-									"key": "only_deleted",
-									"value": "false",
-									"description": "Show only deleted products",
-									"disabled": true
-								},
-								{
-									"key": "brand",
-									"value": "1",
-									"description": "Filter by brand ID",
-									"disabled": true
-								},
-								{
-									"key": "child_active",
-									"value": "true",
-									"description": "Filter by active status",
-									"disabled": true
-								},
-								{
-									"key": "search",
-									"value": "fabric",
-									"description": "Search in title, reference",
-									"disabled": true
-								},
-								{
-									"key": "ordering",
-									"value": "-created_at",
-									"description": "Sort by field (use - for descending)"
-								}
-							]
-						},
-						"description": "Get list of all products with filtering, search, and sorting options"
-					}
-				},
-				{
-					"name": "Create Product",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"vs_parent_id\": 1001,\n  \"vs_child_id\": 2001,\n  \"parent_reference\": \"FAB-001\",\n  \"child_reference\": \"FAB-001-RED\",\n  \"parent_product_title\": \"Premium Fabric\",\n  \"child_product_title\": \"Premium Fabric - Red\",\n  \"brand\": 1,\n  \"primary_location\": \"LOC001\",\n  \"secondary_location\": \"LOC002\",\n  \"rrp_price_inc_vat\": 29.99,\n  \"cost_price_inc_vat\": 15.00,\n  \"vat_rate\": 20.00,\n  \"child_active\": true,\n  \"parent_active\": true\n}\n\n// Creates a new product\n// vs_child_id must be unique\n// primary_location: Main storage location (LOC001, LOC002, etc.)\n// secondary_location: Backup/alternative location (optional)\n// Both parent_active and child_active must be true for product to be active"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/products/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products", ""]
-						},
-						"description": "Create a new product with primary and secondary locations"
-					}
-				},
-				{
-					"name": "Get Product Details",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products/2001/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products", "2001", ""]
-						},
-						"description": "Get detailed information about a specific product by vs_child_id. Includes primary_location and secondary_location details."
-					}
-				},
-				{
-					"name": "Update Product",
-					"request": {
-						"method": "PATCH",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"rrp_price_inc_vat\": 34.99,\n  \"primary_location\": \"LOC002\",\n  \"secondary_location\": \"LOC003\",\n  \"child_active\": true\n}\n\n// Partial update of product fields\n// Update primary_location to change main storage\n// Update secondary_location to change backup storage\n// Use PUT for full update of all fields"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/products/2001/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products", "2001", ""]
-						},
-						"description": "Partially update product fields including locations"
-					}
-				},
-				{
-					"name": "Soft Delete Product",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products/2001/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products", "2001", ""]
-						},
-						"description": "Soft delete a product (can be restored later). Add ?force_delete=true to permanently delete."
-					}
-				},
-				{
-					"name": "Restore Product",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products/2001/restore/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products", "2001", "restore", ""]
-						},
-						"description": "Restore a soft-deleted product"
-					}
-				},
-				{
-					"name": "Upload Products Excel",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "file",
-									"type": "file",
-									"src": [],
-									"description": "Excel file with product data"
-								}
-							]
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/products/upload-excel/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products", "upload-excel", ""]
-						},
-						"description": "Bulk upload products from Excel file. File should contain columns matching product fields."
-					}
-				}
-			],
-			"description": "Product management with primary and secondary locations"
-		},
-		{
-			"name": "Categories",
-			"item": [
-				{
-					"name": "List Categories",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/categories/?include_deleted=false",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "categories", ""],
-							"query": [
-								{
-									"key": "include_deleted",
-									"value": "false"
-								},
-								{
-									"key": "parent",
-									"value": "1",
-									"description": "Filter by parent category",
-									"disabled": true
-								}
-							]
-						},
-						"description": "Get list of all product categories. Supports hierarchical categories with parent-child relationships."
-					}
-				},
-				{
-					"name": "Create Category",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"name\": \"Fabrics\",\n  \"parent\": null\n}\n\n// Creates a new category\n// parent: ID of parent category (null for top-level category)\n// Categories can be nested to create hierarchies"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/categories/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "categories", ""]
-						},
-						"description": "Create a new product category"
-					}
-				},
-				{
-					"name": "Update Category",
-					"request": {
-						"method": "PATCH",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"name\": \"Premium Fabrics\"\n}\n\n// Update category name or parent"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/categories/1/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "categories", "1", ""]
-						},
-						"description": "Update category details"
-					}
-				},
-				{
-					"name": "Soft Delete Category",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/categories/1/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "categories", "1", ""]
-						},
-						"description": "Soft delete a category. Add ?force_delete=true for permanent deletion."
-					}
-				},
-				{
-					"name": "Restore Category",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/categories/1/restore/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "categories", "1", "restore", ""]
-						},
-						"description": "Restore a soft-deleted category"
-					}
-				}
-			],
-			"description": "Product category management with soft delete"
-		},
-		{
-			"name": "Brands",
-			"item": [
-				{
-					"name": "List Brands",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/brands/?include_deleted=false",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "brands", ""],
-							"query": [
-								{
-									"key": "include_deleted",
-									"value": "false"
-								}
-							]
-						},
-						"description": "Get list of all product brands"
-					}
-				},
-				{
-					"name": "Create Brand",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"name\": \"Premium Brand\"\n}\n\n// Creates a new brand\n// Brand name must be unique"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/brands/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "brands", ""]
-						},
-						"description": "Create a new brand"
-					}
-				},
-				{
-					"name": "Update Brand",
-					"request": {
-						"method": "PATCH",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"name\": \"Premium Brand Updated\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/brands/1/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "brands", "1", ""]
-						},
-						"description": "Update brand details"
-					}
-				},
-				{
-					"name": "Soft Delete Brand",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/brands/1/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "brands", "1", ""]
-						},
-						"description": "Soft delete a brand. Add ?force_delete=true for permanent deletion."
-					}
-				},
-				{
-					"name": "Restore Brand",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/brands/1/restore/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "brands", "1", "restore", ""]
-						},
-						"description": "Restore a soft-deleted brand"
-					}
-				}
-			],
-			"description": "Brand management with soft delete"
-		},
-		{
-			"name": "Colors",
-			"item": [
-				{
-					"name": "List Colors",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/colors/?include_deleted=false",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "colors", ""],
-							"query": [
-								{
-									"key": "include_deleted",
-									"value": "false"
-								}
-							]
-						},
-						"description": "Get list of all colors for products"
-					}
-				},
-				{
-					"name": "Create Color",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"color_code\": \"RED\",\n  \"color_name\": \"Red\",\n  \"hex_code\": \"#FF0000\"\n}\n\n// Creates a new color\n// color_code: Unique code (e.g., RED, BLU, GRN)\n// color_name: Display name\n// hex_code: HTML color code (optional)"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/colors/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "colors", ""]
-						},
-						"description": "Create a new color"
-					}
-				},
-				{
-					"name": "Get Color Details",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/colors/RED/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "colors", "RED", ""]
-						},
-						"description": "Get details of a specific color by color_code"
-					}
-				},
-				{
-					"name": "Update Color",
-					"request": {
-						"method": "PATCH",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"color_name\": \"Crimson Red\",\n  \"hex_code\": \"#DC143C\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/colors/RED/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "colors", "RED", ""]
-						},
-						"description": "Update color details"
-					}
-				},
-				{
-					"name": "Soft Delete Color",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/colors/RED/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "colors", "RED", ""]
-						},
-						"description": "Soft delete a color. Add ?force_delete=true for permanent deletion."
-					}
-				},
-				{
-					"name": "Restore Color",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/colors/RED/restore/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "colors", "RED", "restore", ""]
-						},
-						"description": "Restore a soft-deleted color"
-					}
-				}
-			],
-			"description": "Color management for products with soft delete"
-		},
-		{
-			"name": "Stock Management",
-			"item": [
-				{
-					"name": "List Stock Items",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/?stock_status=in_stock&ordering=-available_stock_rolls",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", ""],
-							"query": [
-								{
-									"key": "stock_status",
-									"value": "in_stock",
-									"description": "low_stock, out_of_stock, in_stock"
-								},
-								{
-									"key": "product_type",
-									"value": "109LT",
-									"description": "Filter by product type",
-									"disabled": true
-								},
-								{
-									"key": "is_active",
-									"value": "true",
-									"disabled": true
-								},
-								{
-									"key": "ordering",
-									"value": "-available_stock_rolls"
-								}
-							]
-						},
-						"description": "Get list of all stock items with filtering options. Stock is managed MANUALLY - no automatic updates."
-					}
-				},
-				{
-					"name": "Create Stock Item",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"product_type\": \"109LT\",\n  \"color\": \"RED\",\n  \"sku\": \"109LT-RED\",\n  \"available_stock_rolls\": 100,\n  \"reserved_stock\": 0,\n  \"minimum_stock_level\": 10,\n  \"maximum_stock_level\": 500,\n  \"warehouse_location\": \"A-12-03\",\n  \"supplier\": \"ABC Textiles\",\n  \"unit_cost\": 12.50,\n  \"is_active\": true\n}\n\n// Creates a new stock item\n// sku: Must be unique (primary key)\n// color: Must match existing color_code\n// available_stock_rolls: Physical stock count\n// reserved_stock: Stock allocated to orders (managed manually)"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", ""]
-						},
-						"description": "Create a new stock item with manual stock levels"
-					}
-				},
-				{
-					"name": "Get Stock Item Details",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/109LT-RED/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "109LT-RED", ""]
-						},
-						"description": "Get detailed information about a specific stock item by SKU"
-					}
-				},
-				{
-					"name": "Update Stock Item",
-					"request": {
-						"method": "PATCH",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"available_stock_rolls\": 150,\n  \"unit_cost\": 13.00,\n  \"warehouse_location\": \"A-12-04\"\n}\n\n// Update stock item details\n// For stock level changes, prefer using adjust-stock endpoint"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/109LT-RED/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "109LT-RED", ""]
-						},
-						"description": "Update stock item details"
-					}
-				},
-				{
-					"name": "Adjust Stock (Add/Remove)",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"quantity\": 50,\n  \"reason\": \"Received from supplier - Invoice #12345\"\n}\n\n// Adjust physical stock levels\n// quantity: Positive to ADD stock, negative to REMOVE stock\n// reason: Required - explain why stock is being adjusted\n// Creates a stock movement record for audit trail\n// Example: quantity: -10, reason: \"Damaged goods removed\""
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/109LT-RED/adjust-stock/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "109LT-RED", "adjust-stock", ""]
-						},
-						"description": "Manually adjust stock levels (add or remove physical stock)"
-					}
-				},
-				{
-					"name": "Increment Stock",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"quantity\": 5,\n  \"reason\": \"Received shipment #12345\"\n}\n\n// Increment stock by positive quantity"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/{{sku}}/increment/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "{{sku}}", "increment", ""]
-						},
-						"description": "Increment stock by a positive quantity (uses /increment/)"
-					}
-				},
-				{
-					"name": "Decrement Stock",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"quantity\": 3,\n  \"reason\": \"Sold 3 rolls\"\n}\n\n// Decrement stock by positive quantity (uses /decrement/)"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/{{sku}}/decrement/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "{{sku}}", "decrement", ""]
-						},
-						"description": "Decrement stock by a positive quantity (uses /decrement/)"
-					}
-				},
-				{
-					"name": "Reserve Stock for Order",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"quantity\": 10\n}\n\n// Manually reserve stock for an order\n// Increments reserved_stock field\n// Does NOT reduce available_stock_rolls\n// Returns error if insufficient stock available\n// Employees must manually reserve stock when order is confirmed"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/109LT-RED/reserve-stock/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "109LT-RED", "reserve-stock", ""]
-						},
-						"description": "Manually reserve stock for an order (employee action)"
-					}
-				},
-				{
-					"name": "Release Reserved Stock",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"quantity\": 10\n}\n\n// Manually release reserved stock\n// Decrements reserved_stock field\n// Used when order is cancelled or fulfilled\n// Employees must manually release stock - NOT automatic"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/109LT-RED/release-stock/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "109LT-RED", "release-stock", ""]
-						},
-						"description": "Manually release reserved stock (employee action)"
-					}
-				},
-				{
-					"name": "Get Low Stock Items",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/low-stock/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "low-stock", ""]
-						},
-						"description": "Get list of items where available_stock_rolls <= minimum_stock_level"
-					}
-				},
-				{
-					"name": "Upload Stock Excel",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "file",
-									"type": "file",
-									"src": [],
-									"description": "Excel file with stock data"
-								}
-							]
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/upload-excel/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "upload-excel", ""]
-						},
-						"description": "Bulk upload stock items from Excel file"
-					}
-				},
-				{
-					"name": "Soft Delete Stock Item",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/109LT-RED/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "109LT-RED", ""]
-						},
-						"description": "Soft delete a stock item. Add ?force_delete=true for permanent deletion."
-					}
-				},
-				{
-					"name": "Restore Stock Item",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/stock/109LT-RED/restore/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "stock", "109LT-RED", "restore", ""]
-						},
-						"description": "Restore a soft-deleted stock item"
-					}
-				}
-			],
-			"description": "Stock management with MANUAL control - no automatic updates"
-		},
-		{
-			"name": "Stock Movements",
-			"item": [
-				{
-					"name": "List Stock Movements",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/movements/?stock_item=109LT-RED&ordering=-created_at",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "movements", ""],
-							"query": [
-								{
-									"key": "stock_item",
-									"value": "109LT-RED",
-									"description": "Filter by SKU"
-								},
-								{
-									"key": "movement_type",
-									"value": "ADJUSTMENT",
-									"description": "IN, OUT, TRANSFER, ADJUSTMENT, RESERVED, RELEASED",
-									"disabled": true
-								},
-								{
-									"key": "ordering",
-									"value": "-created_at"
-								}
-							]
-						},
-						"description": "Get audit trail of all stock movements (adjustments, reservations, releases)"
-					}
-				},
-				{
-					"name": "Get Movement Details",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/movements/1/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "movements", "1", ""]
-						},
-						"description": "Get details of a specific stock movement"
-					}
-				}
-			],
-			"description": "Stock movement history and audit trail"
-		},
-		{
-			"name": "Orders",
-			"item": [
-				{
-					"name": "List Orders",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/?order_status=PENDING&ordering=-order_date",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", ""],
-							"query": [
-								{
-									"key": "order_status",
-									"value": "PENDING",
-									"description": "PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, ON_HOLD"
-								},
-								{
-									"key": "payment_status",
-									"value": "UNPAID",
-									"description": "UNPAID, PARTIAL, PAID, REFUNDED, FAILED",
-									"disabled": true
-								},
-								{
-									"key": "order_source",
-									"value": "MANUAL",
-									"description": "MANUAL, XML, API, WEBSITE",
-									"disabled": true
-								},
-								{
-									"key": "date_from",
-									"value": "2026-01-01",
-									"disabled": true
-								},
-								{
-									"key": "date_to",
-									"value": "2026-12-31",
-									"disabled": true
-								},
-								{
-									"key": "search",
-									"value": "customer name",
-									"description": "Search in order number, customer details",
-									"disabled": true
-								},
-								{
-									"key": "ordering",
-									"value": "-order_date"
-								}
-							]
-						},
-						"description": "Get list of all orders. Stock is NOT automatically updated - employees manage manually."
-					}
-				},
-				{
-					"name": "List Orders With Items",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/with-items/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "with-items", ""],
-							"query": [
-								{
-									"key": "order_status",
-									"value": "PENDING",
-									"description": "Optional filter: PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, ON_HOLD",
-									"disabled": true
-								},
-								{
-									"key": "search",
-									"value": "customer name",
-									"description": "Optional search by order number, external order id, customer name/email/phone, or tracking number",
-									"disabled": true
-								},
-								{
-									"key": "ordering",
-									"value": "-order_date",
-									"description": "Optional ordering field",
-									"disabled": true
-								}
-							]
-						},
-						"description": "Get a paginated list of orders with nested order items in each order. Supports the same filters, search, ordering, and pagination as List Orders."
-					}
-				},
-				{
-					"name": "Create Order",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"customer_name\": \"John Doe\",\n  \"customer_email\": \"john.doe@example.com\",\n  \"customer_phone\": \"+44 7700 900123\",\n  \"shipping_address_line1\": \"123 Main Street\",\n  \"shipping_city\": \"London\",\n  \"shipping_postal_code\": \"SW1A 1AA\",\n  \"shipping_country\": \"UK\",\n  \"order_source\": \"MANUAL\",\n  \"items\": [\n    {\n      \"product\": 2001,\n      \"sku\": \"FAB-001-RED\",\n      \"product_name\": \"Premium Fabric - Red\",\n      \"quantity\": 5,\n      \"unit_price\": 29.99\n    }\n  ]\n}\n\n// Creates a new order with items\n// order_number is auto-generated (ORD-YYYYMMDD-XXXX)\n// Default status: PENDING\n// Stock is NOT automatically reserved - employee must manually reserve\n// Product locations (primary_location, secondary_location) are shown in order items response"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", ""]
-						},
-						"description": "Create a new order. Stock NOT automatically reserved - manual management required. Order items will show product locations (primary and secondary)."
-					}
-				},
-				{
-					"name": "Get Order Details",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", ""]
-						},
-						"description": "Get full order details including items with product locations (primary_location and secondary_location)"
-					}
-				},
-				{
-					"name": "Update Order",
-					"request": {
-						"method": "PATCH",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"customer_phone\": \"+44 7700 900999\",\n  \"shipping_cost\": 5.99,\n  \"internal_notes\": \"Customer requested express delivery\"\n}\n\n// Update order details\n// Cannot modify items directly - use add-item or remove-item endpoints"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", ""]
-						},
-						"description": "Update order details"
-					}
-				},
-				{
-					"name": "Confirm Order",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"notes\": \"Order confirmed by customer via phone\"\n}\n\n// Changes order status from PENDING to CONFIRMED\n// Employee should manually reserve stock after confirmation\n// Stock is NOT automatically reserved"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/confirm/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", "confirm", ""]
-						},
-						"description": "Confirm order (PENDING → CONFIRMED). Remember to manually reserve stock!"
-					}
-				},
-				{
-					"name": "Start Processing Order",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/start-processing/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", "start-processing", ""]
-						},
-						"description": "Mark order as processing (CONFIRMED/PENDING → PROCESSING)"
-					}
-				},
-				{
-					"name": "Ship Order",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"tracking_number\": \"TRK123456789\",\n  \"carrier\": \"DHL Express\"\n}\n\n// Mark order as shipped\n// tracking_number and carrier are optional but recommended"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/ship/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", "ship", ""]
-						},
-						"description": "Mark order as shipped (CONFIRMED/PROCESSING → SHIPPED)"
-					}
-				},
-				{
-					"name": "Deliver Order",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/deliver/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", "deliver", ""]
-						},
-						"description": "Mark order as delivered (SHIPPED → DELIVERED)"
-					}
-				},
-				{
-					"name": "Cancel Order",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"reason\": \"Customer requested cancellation\"\n}\n\n// Cancel order\n// Stock is NOT automatically released\n// Employee must manually release reserved stock using stock/release-stock endpoint"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/cancel/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", "cancel", ""]
-						},
-						"description": "Cancel order. Remember to manually release any reserved stock!"
-					}
-				},
-				{
-					"name": "Add Item to Order",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"product\": 2002,\n  \"sku\": \"FAB-002-BLU\",\n  \"product_name\": \"Premium Fabric - Blue\",\n  \"quantity\": 3,\n  \"unit_price\": 29.99\n}\n\n// Add item to existing order (only if PENDING or CONFIRMED)\n// Stock is NOT automatically reserved - employee must reserve manually\n// Response includes product locations (primary_location, secondary_location)"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/add-item/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", "add-item", ""]
-						},
-						"description": "Add item to order. Stock NOT automatically reserved - manual action required."
-					}
-				},
-				{
-					"name": "Remove Item from Order",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/items/5/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", "items", "5", ""]
-						},
-						"description": "Remove item from order (only if PENDING or CONFIRMED). Stock NOT automatically released - manual action required."
-					}
-				},
-				{
-					"name": "Assign Employee to Order",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"employee_id\": 2\n}\n\n// Assign an employee to handle this order\n// employee_id must be a valid user ID"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/assign-employee/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", "assign-employee", ""]
-						},
-						"description": "Assign employee to handle order processing and stock management"
-					}
-				},
-				{
-					"name": "Get Order Statistics",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/stats/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "stats", ""]
-						},
-						"description": "Get order statistics (total orders, revenue, status counts, etc.)"
-					}
-				},
-				{
-					"name": "Upload XML Orders",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "file",
-									"type": "file",
-									"src": [],
-									"description": "XML file with order data"
-								}
-							]
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/upload-xml/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "upload-xml", ""]
-						},
-						"description": "Bulk upload orders from XML file. Stock NOT automatically reserved."
-					}
-				},
-				{
-					"name": "Import Orders from Remote (Tiaknight)",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/import-from-remote/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "import-from-remote", ""]
-						},
-						"description": "Fetch new orders from Tiaknight SOAP service and import into DB. Uses Playwright to bypass anti-bot, extracts orders XML, and runs the same parser as Upload XML. Duplicates are skipped by external_order_id. Requires TIA_URL, TIA_CLIENTID, TIA_USERNAME, TIA_PASSWORD in .env."
-					}
-				},
-				{
-					"name": "Soft Delete Order",
-					"request": {
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", ""]
-						},
-						"description": "Soft delete order. Add ?force_delete=true for permanent deletion. Stock NOT automatically released."
-					}
-				},
-				{
-					"name": "Restore Order",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/orders/1/restore/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "orders", "1", "restore", ""]
-						},
-						"description": "Restore a soft-deleted order"
-					}
-				}
-			],
-			"description": "Order management - Stock is managed MANUALLY by employees"
-		},
-		{
-			"name": "Order Items",
-			"item": [
-				{
-					"name": "List Order Items",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/order-items/?order=1",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "order-items", ""],
-							"query": [
-								{
-									"key": "order",
-									"value": "1",
-									"description": "Filter by order ID"
-								},
-								{
-									"key": "sku",
-									"value": "FAB-001-RED",
-									"disabled": true
-								}
-							]
-						},
-						"description": "Get all order items. Includes product_primary_location and product_secondary_location details."
-					}
-				},
-				{
-					"name": "Get Order Item Details",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/order-items/1/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "order-items", "1", ""]
-						},
-						"description": "Get order item details including product locations (primary_location and secondary_location)"
-					}
-				}
-			],
-			"description": "Order item details with product location information"
-		},
-		{
-			"name": "Order Status History",
-			"item": [
-				{
-					"name": "List Order History",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/order-history/?order=1",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "order-history", ""],
-							"query": [
-								{
-									"key": "order",
-									"value": "1"
-								},
-								{
-									"key": "from_status",
-									"value": "PENDING",
-									"disabled": true
-								},
-								{
-									"key": "to_status",
-									"value": "CONFIRMED",
-									"disabled": true
-								}
-							]
-						},
-						"description": "Get order status change history for audit trail"
-					}
-				},
-				{
-					"name": "Get History Entry Details",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/order-history/1/",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "order-history", "1", ""]
-						},
-						"description": "Get details of a specific status change"
-					}
-				}
-			],
-			"description": "Order status change audit trail"
-		}
-	]
+  "info": {
+    "_postman_id": "inventory-management-complete-api",
+    "name": "Inventory Management Backend - Complete API",
+    "description": "Single complete Postman collection for the Inventory Management Backend. Includes JWT auth, users, products, colors, stock, orders, order items, and reporting endpoints with sample request bodies.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "usertype_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "product_id",
+      "value": "1001",
+      "type": "string"
+    },
+    {
+      "key": "category_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "brand_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "location_id",
+      "value": "A1",
+      "type": "string"
+    },
+    {
+      "key": "color_code",
+      "value": "RED",
+      "type": "string"
+    },
+    {
+      "key": "sku",
+      "value": "FAB-001-RED",
+      "type": "string"
+    },
+    {
+      "key": "movement_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "order_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "order_item_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "order_history_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "employee_user_id",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "API Root",
+      "item": [
+        {
+          "name": "API Root",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1"
+              ]
+            },
+            "description": "API root showing available high-level endpoints."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login - Get JWT Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  pm.collectionVariables.set('access_token', data.access);",
+                  "  pm.collectionVariables.set('refresh_token', data.refresh);",
+                  "  pm.environment.set('access_token', data.access);",
+                  "  pm.environment.set('refresh_token', data.refresh);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Authenticate and save JWT access/refresh tokens into Postman variables."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh JWT Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/token/refresh/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "token",
+                "refresh"
+              ]
+            },
+            "description": "Refresh an expired access token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verify JWT Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/token/verify/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "token",
+                "verify"
+              ]
+            },
+            "description": "Verify whether an access token is valid.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{access_token}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Current JWT User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/user/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "user"
+              ]
+            },
+            "description": "Return information about the authenticated user."
+          },
+          "response": []
+        },
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Admin-only user creation. If password is omitted the API generates one.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"warehouse_user\",\n  \"email\": \"warehouse@example.com\",\n  \"password\": \"ChangeMe123!\",\n  \"first_name\": \"Warehouse\",\n  \"last_name\": \"User\",\n  \"position\": \"{{usertype_id}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/logout/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Blacklist the refresh token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Session Login - Browsable API",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "admin",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "admin",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "DRF session-auth login used by the browsable API."
+          },
+          "response": []
+        },
+        {
+          "name": "Session Logout - Browsable API",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/logout/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "DRF session-auth logout used by the browsable API."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users & User Types",
+      "item": [
+        {
+          "name": "List User Types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/usertypes/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usertypes"
+              ]
+            },
+            "description": "List user types."
+          },
+          "response": []
+        },
+        {
+          "name": "Create User Type",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/usertypes/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usertypes"
+              ]
+            },
+            "description": "Create a user type.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Picker\",\n  \"description\": \"Warehouse picker\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Type",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/usertypes/{{usertype_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usertypes",
+                "{{usertype_id}}"
+              ]
+            },
+            "description": "Get one user type."
+          },
+          "response": []
+        },
+        {
+          "name": "Update User Type",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/usertypes/{{usertype_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usertypes",
+                "{{usertype_id}}"
+              ]
+            },
+            "description": "Replace a user type.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Picker\",\n  \"description\": \"Warehouse picking and packing\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Partial Update User Type",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/usertypes/{{usertype_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usertypes",
+                "{{usertype_id}}"
+              ]
+            },
+            "description": "Partially update a user type.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated description\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User Type",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/usertypes/{{usertype_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usertypes",
+                "{{usertype_id}}"
+              ]
+            },
+            "description": "Delete a user type."
+          },
+          "response": []
+        },
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/users/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ]
+            },
+            "description": "Read-only list of users."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/users/{{user_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{user_id}}"
+              ]
+            },
+            "description": "Read-only user detail."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Locations",
+      "item": [
+        {
+          "name": "List Locations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/locations/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "locations"
+              ]
+            },
+            "description": "List locations with optional filters/search/ordering."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Location",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/locations/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "locations"
+              ]
+            },
+            "description": "Create a location.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"A1\",\n  \"name\": \"Aisle A1\",\n  \"description\": \"Primary warehouse aisle\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Location Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/locations/{{location_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "locations",
+                "{{location_id}}"
+              ]
+            },
+            "description": "Get one location by id/key."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Location",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/locations/{{location_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "locations",
+                "{{location_id}}"
+              ]
+            },
+            "description": "Replace a location.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"A1\",\n  \"name\": \"Aisle A1\",\n  \"description\": \"Primary warehouse aisle\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Partial Update Location",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/locations/{{location_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "locations",
+                "{{location_id}}"
+              ]
+            },
+            "description": "Partially update a location.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"A1\",\n  \"name\": \"Aisle A1\",\n  \"description\": \"Primary warehouse aisle\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Location",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/locations/{{location_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "locations",
+                "{{location_id}}"
+              ]
+            },
+            "description": "Soft delete a location by default."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "List Categorys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "is_deleted",
+                  "value": "false",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Fabric",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List categories with optional filters/search/ordering."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ]
+            },
+            "description": "Create a categorie.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Fabric\",\n  \"parent\": null\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Category Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/{{category_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{category_id}}"
+              ]
+            },
+            "description": "Get one categorie by id/key."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Category",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/{{category_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{category_id}}"
+              ]
+            },
+            "description": "Replace a categorie.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Fabric\",\n  \"parent\": null\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Partial Update Category",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/{{category_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{category_id}}"
+              ]
+            },
+            "description": "Partially update a categorie.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Fabric\",\n  \"parent\": null\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Category",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/{{category_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{category_id}}"
+              ]
+            },
+            "description": "Soft delete a categorie by default."
+          },
+          "response": []
+        },
+        {
+          "name": "Permanently Delete Category",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/{{category_id}}/?force_delete=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{category_id}}"
+              ],
+              "query": [
+                {
+                  "key": "force_delete",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Permanently delete using force_delete=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Restore Category",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/{{category_id}}/restore/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "{{category_id}}",
+                "restore"
+              ]
+            },
+            "description": "Restore a soft-deleted categorie."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Brands",
+      "item": [
+        {
+          "name": "List Brands",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/brands/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "brands"
+              ],
+              "query": [
+                {
+                  "key": "is_deleted",
+                  "value": "false",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Civani",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List brands with optional filters/search/ordering."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Brand",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/brands/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "brands"
+              ]
+            },
+            "description": "Create a brand.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Civani\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Brand Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/brands/{{brand_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "brands",
+                "{{brand_id}}"
+              ]
+            },
+            "description": "Get one brand by id/key."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Brand",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/brands/{{brand_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "brands",
+                "{{brand_id}}"
+              ]
+            },
+            "description": "Replace a brand.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Civani\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Partial Update Brand",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/brands/{{brand_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "brands",
+                "{{brand_id}}"
+              ]
+            },
+            "description": "Partially update a brand.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Civani\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Brand",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/brands/{{brand_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "brands",
+                "{{brand_id}}"
+              ]
+            },
+            "description": "Soft delete a brand by default."
+          },
+          "response": []
+        },
+        {
+          "name": "Permanently Delete Brand",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/brands/{{brand_id}}/?force_delete=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "brands",
+                "{{brand_id}}"
+              ],
+              "query": [
+                {
+                  "key": "force_delete",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Permanently delete using force_delete=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Restore Brand",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/brands/{{brand_id}}/restore/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "brands",
+                "{{brand_id}}",
+                "restore"
+              ]
+            },
+            "description": "Restore a soft-deleted brand."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "active_only",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "fabric",
+                  "disabled": true
+                },
+                {
+                  "key": "min_price",
+                  "value": "10",
+                  "disabled": true
+                },
+                {
+                  "key": "max_price",
+                  "value": "100",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List products with optional filters/search/ordering."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "description": "Create a product.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vs_parent_id\": 1000,\n  \"vs_child_id\": 1001,\n  \"parent_reference\": \"FAB-001\",\n  \"child_reference\": \"FAB-001-RED\",\n  \"parent_product_title\": \"Premium Fabric\",\n  \"child_product_title\": \"Premium Fabric - Red\",\n  \"brand\": \"{{brand_id}}\",\n  \"rrp_price_inc_vat\": \"29.99\",\n  \"cost_price_inc_vat\": \"12.50\",\n  \"vat_rate\": \"20.00\",\n  \"child_active\": true,\n  \"parent_active\": true,\n  \"featured\": false\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/{{product_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{product_id}}"
+              ]
+            },
+            "description": "Get one product by id/key."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/{{product_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{product_id}}"
+              ]
+            },
+            "description": "Replace a product.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vs_parent_id\": 1000,\n  \"vs_child_id\": 1001,\n  \"parent_reference\": \"FAB-001\",\n  \"child_reference\": \"FAB-001-RED\",\n  \"parent_product_title\": \"Premium Fabric\",\n  \"child_product_title\": \"Premium Fabric - Red\",\n  \"brand\": \"{{brand_id}}\",\n  \"rrp_price_inc_vat\": \"29.99\",\n  \"cost_price_inc_vat\": \"12.50\",\n  \"vat_rate\": \"20.00\",\n  \"child_active\": true,\n  \"parent_active\": true,\n  \"featured\": false\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Partial Update Product",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/{{product_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{product_id}}"
+              ]
+            },
+            "description": "Partially update a product.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vs_parent_id\": 1000,\n  \"vs_child_id\": 1001,\n  \"parent_reference\": \"FAB-001\",\n  \"child_reference\": \"FAB-001-RED\",\n  \"parent_product_title\": \"Premium Fabric\",\n  \"child_product_title\": \"Premium Fabric - Red\",\n  \"brand\": \"{{brand_id}}\",\n  \"rrp_price_inc_vat\": \"29.99\",\n  \"cost_price_inc_vat\": \"12.50\",\n  \"vat_rate\": \"20.00\",\n  \"child_active\": true,\n  \"parent_active\": true,\n  \"featured\": false\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/{{product_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{product_id}}"
+              ]
+            },
+            "description": "Soft delete a product by default."
+          },
+          "response": []
+        },
+        {
+          "name": "Permanently Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/{{product_id}}/?force_delete=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{product_id}}"
+              ],
+              "query": [
+                {
+                  "key": "force_delete",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Permanently delete using force_delete=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Restore Product",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/{{product_id}}/restore/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "{{product_id}}",
+                "restore"
+              ]
+            },
+            "description": "Restore a soft-deleted product."
+          },
+          "response": []
+        },
+        {
+          "name": "Import Products From Excel",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/import-excel/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "import-excel"
+              ]
+            },
+            "description": "Upload Product Master Excel file. Use form-data key `file`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Product Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/stats/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                "stats"
+              ]
+            },
+            "description": "Get product summary statistics."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Colors",
+      "item": [
+        {
+          "name": "List Colors",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/colors/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "colors"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "red",
+                  "disabled": true
+                },
+                {
+                  "key": "include_deleted",
+                  "value": "true",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List colors with optional filters/search/ordering."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Color",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/colors/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "colors"
+              ]
+            },
+            "description": "Create a color.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"color_code\": \"RED\",\n  \"color_name\": \"Red\",\n  \"secondary_code\": \"R\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Color Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/colors/{{color_code}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "colors",
+                "{{color_code}}"
+              ]
+            },
+            "description": "Get one color by id/key."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Color",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/colors/{{color_code}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "colors",
+                "{{color_code}}"
+              ]
+            },
+            "description": "Replace a color.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"color_code\": \"RED\",\n  \"color_name\": \"Red\",\n  \"secondary_code\": \"R\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Partial Update Color",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/colors/{{color_code}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "colors",
+                "{{color_code}}"
+              ]
+            },
+            "description": "Partially update a color.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"color_code\": \"RED\",\n  \"color_name\": \"Red\",\n  \"secondary_code\": \"R\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Color",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/colors/{{color_code}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "colors",
+                "{{color_code}}"
+              ]
+            },
+            "description": "Soft delete a color by default."
+          },
+          "response": []
+        },
+        {
+          "name": "Permanently Delete Color",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/colors/{{color_code}}/?force_delete=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "colors",
+                "{{color_code}}"
+              ],
+              "query": [
+                {
+                  "key": "force_delete",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Permanently delete using force_delete=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Restore Color",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/colors/{{color_code}}/restore/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "colors",
+                "{{color_code}}",
+                "restore"
+              ]
+            },
+            "description": "Restore a soft-deleted color."
+          },
+          "response": []
+        },
+        {
+          "name": "Import Colors From Excel",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/colors/import-excel/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "colors",
+                "import-excel"
+              ]
+            },
+            "description": "Upload color Excel file. Use form-data key `file`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Export Colors To Excel",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/colors/export-excel/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "colors",
+                "export-excel"
+              ]
+            },
+            "description": "Download colors as an Excel file."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Stock",
+      "item": [
+        {
+          "name": "List Stock",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "FAB-001",
+                  "disabled": true
+                },
+                {
+                  "key": "stock_status",
+                  "value": "in_stock",
+                  "disabled": true
+                },
+                {
+                  "key": "min_stock",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "max_stock",
+                  "value": "100",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List stock with optional filters/search/ordering."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock"
+              ]
+            },
+            "description": "Create a stock.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"FAB-001-RED\",\n  \"product_type\": \"FABRIC\",\n  \"color_code\": \"RED\",\n  \"available_stock_rolls\": 100,\n  \"reserved_stock\": 0,\n  \"minimum_stock_level\": 10,\n  \"maximum_stock_level\": 500,\n  \"warehouse_location\": \"A1\",\n  \"supplier\": \"Supplier Ltd\",\n  \"lead_time_days\": 7,\n  \"unit_cost\": \"12.50\",\n  \"last_purchase_price\": \"12.00\",\n  \"is_active\": true,\n  \"is_discontinued\": false,\n  \"notes\": \"Initial stock\",\n  \"primary_location\": \"{{location_id}}\",\n  \"secondary_location\": null\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stock Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}"
+              ]
+            },
+            "description": "Get one stock by id/key."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Stock",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}"
+              ]
+            },
+            "description": "Replace a stock.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"FAB-001-RED\",\n  \"product_type\": \"FABRIC\",\n  \"color_code\": \"RED\",\n  \"available_stock_rolls\": 100,\n  \"reserved_stock\": 0,\n  \"minimum_stock_level\": 10,\n  \"maximum_stock_level\": 500,\n  \"warehouse_location\": \"A1\",\n  \"supplier\": \"Supplier Ltd\",\n  \"lead_time_days\": 7,\n  \"unit_cost\": \"12.50\",\n  \"last_purchase_price\": \"12.00\",\n  \"is_active\": true,\n  \"is_discontinued\": false,\n  \"notes\": \"Initial stock\",\n  \"primary_location\": \"{{location_id}}\",\n  \"secondary_location\": null\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Partial Update Stock",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}"
+              ]
+            },
+            "description": "Partially update a stock.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"FAB-001-RED\",\n  \"product_type\": \"FABRIC\",\n  \"color_code\": \"RED\",\n  \"available_stock_rolls\": 100,\n  \"reserved_stock\": 0,\n  \"minimum_stock_level\": 10,\n  \"maximum_stock_level\": 500,\n  \"warehouse_location\": \"A1\",\n  \"supplier\": \"Supplier Ltd\",\n  \"lead_time_days\": 7,\n  \"unit_cost\": \"12.50\",\n  \"last_purchase_price\": \"12.00\",\n  \"is_active\": true,\n  \"is_discontinued\": false,\n  \"notes\": \"Initial stock\",\n  \"primary_location\": \"{{location_id}}\",\n  \"secondary_location\": null\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Stock",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}"
+              ]
+            },
+            "description": "Soft delete a stock by default."
+          },
+          "response": []
+        },
+        {
+          "name": "Permanently Delete Stock",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/?force_delete=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}"
+              ],
+              "query": [
+                {
+                  "key": "force_delete",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Permanently delete using force_delete=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Restore Stock",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/restore/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}",
+                "restore"
+              ]
+            },
+            "description": "Restore a soft-deleted stock."
+          },
+          "response": []
+        },
+        {
+          "name": "Adjust Stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/adjust-stock/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}",
+                "adjust-stock"
+              ]
+            },
+            "description": "Manual adjustment. Positive quantity increases stock; negative decreases stock.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": -5,\n  \"reason\": \"Manual correction\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Increment Stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/increment/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}",
+                "increment"
+              ]
+            },
+            "description": "Increase stock by a positive quantity.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 10,\n  \"reason\": \"Received stock\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Decrement Stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/decrement/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}",
+                "decrement"
+              ]
+            },
+            "description": "Decrease stock by a positive quantity, for example after packing an order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 2,\n  \"reason\": \"Packed for order {{order_id}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reserve Stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/reserve-stock/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}",
+                "reserve-stock"
+              ]
+            },
+            "description": "Move quantity into reserved stock.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 2\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Release Reserved Stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/release-stock/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}",
+                "release-stock"
+              ]
+            },
+            "description": "Release reserved stock quantity.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 2\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Stock Locations",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/{{sku}}/locations/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "{{sku}}",
+                "locations"
+              ]
+            },
+            "description": "Update primary and/or secondary locations for a stock item.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"primary_location\": \"{{location_id}}\",\n  \"secondary_location\": null\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Import Stock From Excel",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/import-excel/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "import-excel"
+              ]
+            },
+            "description": "Upload current stock Excel file. Use form-data key `file`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Stock Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/stats/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "stats"
+              ]
+            },
+            "description": "Get stock summary statistics."
+          },
+          "response": []
+        },
+        {
+          "name": "Low Stock",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/stock/low-stock/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stock",
+                "low-stock"
+              ]
+            },
+            "description": "List stock items at or below minimum stock level."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Stock Movements",
+      "item": [
+        {
+          "name": "List Stock Movements",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/movements/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "movements"
+              ],
+              "query": [
+                {
+                  "key": "movement_type",
+                  "value": "ADJUSTMENT",
+                  "disabled": true
+                },
+                {
+                  "key": "stock_item__sku",
+                  "value": "{{sku}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List stock movement audit records."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stock Movement",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/movements/{{movement_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "movements",
+                "{{movement_id}}"
+              ]
+            },
+            "description": "Get one stock movement."
+          },
+          "response": []
+        },
+        {
+          "name": "Restore Stock Movement",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/movements/{{movement_id}}/restore/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "movements",
+                "{{movement_id}}",
+                "restore"
+              ]
+            },
+            "description": "Restore a soft-deleted stock movement if available."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "List Orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "order_status",
+                  "value": "PENDING",
+                  "disabled": true
+                },
+                {
+                  "key": "payment_status",
+                  "value": "PAID",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Jane",
+                  "disabled": true
+                },
+                {
+                  "key": "ordering",
+                  "value": "-order_date",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List orders with optional filters/search/ordering."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders"
+              ]
+            },
+            "description": "Create a order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_order_id\": \"EXT-1001\",\n  \"customer_name\": \"Jane Doe\",\n  \"customer_email\": \"jane@example.com\",\n  \"customer_phone\": \"+44 7700 900123\",\n  \"customer_company\": \"Example Ltd\",\n  \"shipping_address_line1\": \"123 Main Street\",\n  \"shipping_city\": \"London\",\n  \"shipping_postal_code\": \"SW1A 1AA\",\n  \"shipping_country\": \"UK\",\n  \"billing_address_line1\": \"123 Main Street\",\n  \"billing_city\": \"London\",\n  \"billing_postal_code\": \"SW1A 1AA\",\n  \"billing_country\": \"UK\",\n  \"order_status\": \"PENDING\",\n  \"payment_status\": \"PAID\",\n  \"subtotal\": \"25.00\",\n  \"tax_amount\": \"5.00\",\n  \"tax_rate\": \"20.00\",\n  \"shipping_cost\": \"0.00\",\n  \"discount_amount\": \"0.00\",\n  \"total_amount\": \"30.00\",\n  \"payment_method\": \"Card\",\n  \"payment_reference\": \"PAY-1001\",\n  \"shipping_method\": \"Courier\",\n  \"customer_notes\": \"Leave at reception\",\n  \"internal_notes\": \"Priority order\",\n  \"order_source\": \"MANUAL\",\n  \"assigned_to\": \"{{employee_user_id}}\",\n  \"items\": [\n    {\n      \"stock_item\": \"{{sku}}\",\n      \"sku\": \"FAB-001-RED\",\n      \"product_name\": \"Premium Fabric - Red\",\n      \"product_type\": \"FABRIC\",\n      \"color_code\": \"RED\",\n      \"quantity\": 2,\n      \"unit_price\": \"12.50\",\n      \"tax_rate\": \"20.00\",\n      \"discount_amount\": \"0.00\",\n      \"notes\": \"Cut carefully\"\n    }\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Order Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}"
+              ]
+            },
+            "description": "Get one order by id/key."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Order",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}"
+              ]
+            },
+            "description": "Replace a order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_order_id\": \"EXT-1001\",\n  \"customer_name\": \"Jane Doe\",\n  \"customer_email\": \"jane@example.com\",\n  \"customer_phone\": \"+44 7700 900123\",\n  \"customer_company\": \"Example Ltd\",\n  \"shipping_address_line1\": \"123 Main Street\",\n  \"shipping_city\": \"London\",\n  \"shipping_postal_code\": \"SW1A 1AA\",\n  \"shipping_country\": \"UK\",\n  \"billing_address_line1\": \"123 Main Street\",\n  \"billing_city\": \"London\",\n  \"billing_postal_code\": \"SW1A 1AA\",\n  \"billing_country\": \"UK\",\n  \"order_status\": \"PENDING\",\n  \"payment_status\": \"PAID\",\n  \"subtotal\": \"25.00\",\n  \"tax_amount\": \"5.00\",\n  \"tax_rate\": \"20.00\",\n  \"shipping_cost\": \"0.00\",\n  \"discount_amount\": \"0.00\",\n  \"total_amount\": \"30.00\",\n  \"payment_method\": \"Card\",\n  \"payment_reference\": \"PAY-1001\",\n  \"shipping_method\": \"Courier\",\n  \"customer_notes\": \"Leave at reception\",\n  \"internal_notes\": \"Priority order\",\n  \"order_source\": \"MANUAL\",\n  \"assigned_to\": \"{{employee_user_id}}\",\n  \"items\": [\n    {\n      \"stock_item\": \"{{sku}}\",\n      \"sku\": \"FAB-001-RED\",\n      \"product_name\": \"Premium Fabric - Red\",\n      \"product_type\": \"FABRIC\",\n      \"color_code\": \"RED\",\n      \"quantity\": 2,\n      \"unit_price\": \"12.50\",\n      \"tax_rate\": \"20.00\",\n      \"discount_amount\": \"0.00\",\n      \"notes\": \"Cut carefully\"\n    }\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Partial Update Order",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}"
+              ]
+            },
+            "description": "Partially update a order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_order_id\": \"EXT-1001\",\n  \"customer_name\": \"Jane Doe\",\n  \"customer_email\": \"jane@example.com\",\n  \"customer_phone\": \"+44 7700 900123\",\n  \"customer_company\": \"Example Ltd\",\n  \"shipping_address_line1\": \"123 Main Street\",\n  \"shipping_city\": \"London\",\n  \"shipping_postal_code\": \"SW1A 1AA\",\n  \"shipping_country\": \"UK\",\n  \"billing_address_line1\": \"123 Main Street\",\n  \"billing_city\": \"London\",\n  \"billing_postal_code\": \"SW1A 1AA\",\n  \"billing_country\": \"UK\",\n  \"order_status\": \"PENDING\",\n  \"payment_status\": \"PAID\",\n  \"subtotal\": \"25.00\",\n  \"tax_amount\": \"5.00\",\n  \"tax_rate\": \"20.00\",\n  \"shipping_cost\": \"0.00\",\n  \"discount_amount\": \"0.00\",\n  \"total_amount\": \"30.00\",\n  \"payment_method\": \"Card\",\n  \"payment_reference\": \"PAY-1001\",\n  \"shipping_method\": \"Courier\",\n  \"customer_notes\": \"Leave at reception\",\n  \"internal_notes\": \"Priority order\",\n  \"order_source\": \"MANUAL\",\n  \"assigned_to\": \"{{employee_user_id}}\",\n  \"items\": [\n    {\n      \"stock_item\": \"{{sku}}\",\n      \"sku\": \"FAB-001-RED\",\n      \"product_name\": \"Premium Fabric - Red\",\n      \"product_type\": \"FABRIC\",\n      \"color_code\": \"RED\",\n      \"quantity\": 2,\n      \"unit_price\": \"12.50\",\n      \"tax_rate\": \"20.00\",\n      \"discount_amount\": \"0.00\",\n      \"notes\": \"Cut carefully\"\n    }\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Order",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}"
+              ]
+            },
+            "description": "Soft delete a order by default."
+          },
+          "response": []
+        },
+        {
+          "name": "Permanently Delete Order",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/?force_delete=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}"
+              ],
+              "query": [
+                {
+                  "key": "force_delete",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Permanently delete using force_delete=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Restore Order",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/restore/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "restore"
+              ]
+            },
+            "description": "Restore a soft-deleted order."
+          },
+          "response": []
+        },
+        {
+          "name": "List Orders With Items",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/with-items/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "with-items"
+              ],
+              "query": [
+                {
+                  "key": "order_status",
+                  "value": "PENDING",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Jane",
+                  "disabled": true
+                },
+                {
+                  "key": "ordering",
+                  "value": "-order_date",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List orders with nested order items. Supports same filters as List Orders."
+          },
+          "response": []
+        },
+        {
+          "name": "My Assigned Orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/my-assigned-orders/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "my-assigned-orders"
+              ]
+            },
+            "description": "List orders assigned to the current user."
+          },
+          "response": []
+        },
+        {
+          "name": "Order Status Choices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/statuses/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "statuses"
+              ]
+            },
+            "description": "Public endpoint returning order/payment/source/item status choice lists."
+          },
+          "response": []
+        },
+        {
+          "name": "Order Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/stats/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "stats"
+              ]
+            },
+            "description": "Get order statistics and revenue totals."
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Employee To Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/assign-employee/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "assign-employee"
+              ]
+            },
+            "description": "Assign a user to handle the order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employee_id\": \"{{employee_user_id}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unassign Employee From Order",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/unassign-employee/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "unassign-employee"
+              ]
+            },
+            "description": "Remove assigned employee from the order."
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/confirm/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "confirm"
+              ]
+            },
+            "description": "Move order from pending to confirmed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Payment confirmed\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Start Processing Order",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/start-processing/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "start-processing"
+              ]
+            },
+            "description": "Move order into processing."
+          },
+          "response": []
+        },
+        {
+          "name": "Ship Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/ship/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "ship"
+              ]
+            },
+            "description": "Mark order as shipped.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tracking_number\": \"TRACK123\",\n  \"carrier\": \"DHL\",\n  \"notes\": \"Dispatched from warehouse\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deliver Order",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/deliver/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "deliver"
+              ]
+            },
+            "description": "Mark shipped order as delivered."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/cancel/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "cancel"
+              ]
+            },
+            "description": "Cancel an order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Customer requested cancellation\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Item To Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/add-item/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "add-item"
+              ]
+            },
+            "description": "Add one item to an existing order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stock_item\": \"{{sku}}\",\n  \"sku\": \"FAB-001-RED\",\n  \"product_name\": \"Premium Fabric - Red\",\n  \"product_type\": \"FABRIC\",\n  \"color_code\": \"RED\",\n  \"quantity\": 1,\n  \"unit_price\": \"12.50\",\n  \"tax_rate\": \"20.00\",\n  \"discount_amount\": \"0.00\",\n  \"notes\": \"Additional item\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Item From Order",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/{{order_id}}/items/{{order_item_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "{{order_id}}",
+                "items",
+                "{{order_item_id}}"
+              ]
+            },
+            "description": "Remove an item from an order."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Orders XML",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/upload-xml/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "upload-xml"
+              ]
+            },
+            "description": "Upload orders from XML. Use form-data key `file`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Import Orders From Remote Tiaknight",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/orders/import_from_remote_tiaknightfabrics/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "orders",
+                "import_from_remote_tiaknightfabrics"
+              ]
+            },
+            "description": "Fetch orders from configured Tiaknight SOAP service and import them."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Order Items",
+      "item": [
+        {
+          "name": "List Order Items",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/order-items/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-items"
+              ],
+              "query": [
+                {
+                  "key": "order",
+                  "value": "{{order_id}}",
+                  "disabled": true
+                },
+                {
+                  "key": "processing_status",
+                  "value": "PENDING",
+                  "disabled": true
+                },
+                {
+                  "key": "assigned_to",
+                  "value": "{{employee_user_id}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List order items."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Order Item",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/order-items/{{order_item_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-items",
+                "{{order_item_id}}"
+              ]
+            },
+            "description": "Get order item detail."
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Employee To Order Item",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/order-items/{{order_item_id}}/assign/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-items",
+                "{{order_item_id}}",
+                "assign"
+              ]
+            },
+            "description": "Assign or unassign an employee to an order item. Send null to unassign.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigned_to\": \"{{employee_user_id}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Order Item Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/order-items/{{order_item_id}}/update-status/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-items",
+                "{{order_item_id}}",
+                "update-status"
+              ]
+            },
+            "description": "Update picking/packing status and processed quantity.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"processing_status\": \"PICKED\",\n  \"quantity_processed\": 2\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Order History",
+      "item": [
+        {
+          "name": "List Order History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/order-history/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-history"
+              ],
+              "query": [
+                {
+                  "key": "order",
+                  "value": "{{order_id}}",
+                  "disabled": true
+                },
+                {
+                  "key": "changed_by",
+                  "value": "{{user_id}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List order status history records."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Order History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/order-history/{{order_history_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-history",
+                "{{order_history_id}}"
+              ]
+            },
+            "description": "Get one order status history record."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
 }
