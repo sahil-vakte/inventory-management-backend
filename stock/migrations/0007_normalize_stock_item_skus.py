@@ -117,7 +117,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('stock', '0006_normalize_stock_batch_sku'),
-        ('orders', '0003_alter_orderstatushistory_from_status_and_more'),
+        ('orders', '0002_order_status_flow'),
         ('products', '0002_brand_deleted_at_brand_is_deleted_and_more'),
     ]
 
