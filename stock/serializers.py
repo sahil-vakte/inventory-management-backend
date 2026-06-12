@@ -1,5 +1,7 @@
 from rest_framework import serializers
-from .models import StockItem, StockMovement
+from django.db import transaction
+from django.utils import timezone
+from .models import StockItem, StockMovement, StockBatch, StockBatchRoll
 from colors.serializers import ColorListSerializer
 from products.serializers import ProductListSerializer, ProductDetailSerializer
 
@@ -166,3 +168,180 @@ class StockAdjustmentSerializer(serializers.Serializer):
         if value == 0:
             raise serializers.ValidationError("Quantity cannot be zero")
         return value
+
+
+class StockBatchRollSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StockBatchRoll
+        fields = [
+            'id', 'roll_number', 'meterage', 'label_generated',
+            'label_generated_at', 'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'label_generated', 'label_generated_at', 'created_at', 'updated_at'
+        ]
+
+
+class StockBatchListSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = StockBatch
+        fields = [
+            'batch_id', 'sku', 'product_name', 'supplier',
+            'created_by_username', 'batch_date', 'roll_count',
+            'total_meterage', 'is_deleted', 'created_at', 'updated_at'
+        ]
+        read_only_fields = fields
+
+
+class StockBatchDetailSerializer(serializers.ModelSerializer):
+    rolls = StockBatchRollSerializer(many=True, read_only=True)
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    stock_movement = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StockBatch
+        fields = [
+            'batch_id', 'stock_item', 'sku', 'product_name', 'supplier',
+            'created_by', 'created_by_username', 'batch_date',
+            'total_meterage', 'roll_count', 'notes', 'rolls',
+            'stock_movement', 'is_deleted', 'deleted_at',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = fields
+
+    def get_stock_movement(self, obj):
+        movement = StockMovement.all_objects.filter(
+            stock_item=obj.stock_item,
+            reference_number=obj.batch_id,
+            movement_type='IN',
+        ).order_by('-created_at').first()
+        if not movement:
+            return None
+        return StockMovementSerializer(movement).data
+
+
+class IncomingRollInputSerializer(serializers.Serializer):
+    roll_number = serializers.IntegerField(min_value=1)
+    meterage = serializers.IntegerField(min_value=1)
+
+
+class StockBatchCreateSerializer(serializers.Serializer):
+    sku = serializers.CharField(max_length=50)
+    supplier = serializers.CharField(max_length=100)
+    notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    rolls = IncomingRollInputSerializer(many=True)
+
+    def validate_sku(self, value):
+        sku = value.strip()
+        if not StockItem.all_objects.filter(sku=sku, is_deleted=False).exists():
+            raise serializers.ValidationError(f"Stock item with SKU '{sku}' not found.")
+        return sku
+
+    def validate_rolls(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one roll is required.")
+
+        seen_roll_numbers = set()
+        duplicate_roll_numbers = set()
+        for roll in value:
+            roll_number = roll['roll_number']
+            if roll_number in seen_roll_numbers:
+                duplicate_roll_numbers.add(roll_number)
+            seen_roll_numbers.add(roll_number)
+
+        if duplicate_roll_numbers:
+            duplicates = ', '.join(str(number) for number in sorted(duplicate_roll_numbers))
+            raise serializers.ValidationError(
+                f"Duplicate roll numbers in this batch: {duplicates}"
+            )
+        return value
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        user = request.user if request and request.user.is_authenticated else None
+        rolls = validated_data.pop('rolls')
+        sku = validated_data['sku'].strip()
+        supplier = validated_data['supplier'].strip()
+        notes = validated_data.get('notes')
+        incoming_meterage = sum(roll['meterage'] for roll in rolls)
+
+        with transaction.atomic():
+            stock_item = (
+                StockItem.all_objects
+                .select_for_update()
+                .select_related('product')
+                .get(sku=sku, is_deleted=False)
+            )
+            old_stock = stock_item.available_stock_in_mtr
+            stock_item.available_stock_in_mtr = old_stock + incoming_meterage
+            stock_item.supplier = supplier
+            stock_item.last_stock_update = timezone.now()
+            stock_item.save(update_fields=[
+                'available_stock_in_mtr', 'supplier',
+                'last_stock_update', 'updated_at'
+            ])
+
+            product = getattr(stock_item, 'product', None)
+            product_name = (
+                getattr(product, 'child_product_title', None)
+                or getattr(product, 'parent_product_title', None)
+                or stock_item.product_type
+                or stock_item.sku
+            )
+            batch = StockBatch.objects.create(
+                stock_item=stock_item,
+                sku=stock_item.sku,
+                product_name=product_name,
+                supplier=supplier,
+                created_by=user,
+                total_meterage=incoming_meterage,
+                roll_count=len(rolls),
+                notes=notes,
+            )
+            StockBatchRoll.objects.bulk_create([
+                StockBatchRoll(
+                    batch=batch,
+                    roll_number=roll['roll_number'],
+                    meterage=roll['meterage'],
+                )
+                for roll in rolls
+            ])
+            StockMovement.objects.create(
+                stock_item=stock_item,
+                movement_type='IN',
+                quantity=incoming_meterage,
+                old_stock_level=old_stock,
+                new_stock_level=stock_item.available_stock_in_mtr,
+                reference_number=batch.batch_id,
+                reason='Incoming stock batch',
+                created_by=getattr(user, 'username', None),
+            )
+
+        batch.old_stock_in_mtr = old_stock
+        batch.incoming_meterage = incoming_meterage
+        batch.new_stock_in_mtr = stock_item.available_stock_in_mtr
+        return batch
+
+    def to_representation(self, instance):
+        data = StockBatchDetailSerializer(instance, context=self.context).data
+        data['old_stock_in_mtr'] = getattr(instance, 'old_stock_in_mtr', None)
+        data['incoming_meterage'] = getattr(instance, 'incoming_meterage', instance.total_meterage)
+        data['new_stock_in_mtr'] = getattr(instance, 'new_stock_in_mtr', None)
+        return data
+
+
+class StockBatchLabelSerializer(serializers.ModelSerializer):
+    sku = serializers.CharField(source='batch.sku', read_only=True)
+    product_name = serializers.CharField(source='batch.product_name', read_only=True)
+    batch_id = serializers.CharField(source='batch.batch_id', read_only=True)
+    supplier = serializers.CharField(source='batch.supplier', read_only=True)
+    date = serializers.DateField(source='batch.batch_date', read_only=True)
+
+    class Meta:
+        model = StockBatchRoll
+        fields = [
+            'sku', 'product_name', 'meterage', 'batch_id', 'supplier',
+            'date', 'roll_number', 'label_generated', 'label_generated_at'
+        ]

@@ -95,6 +95,11 @@
       "key": "employee_user_id",
       "value": "1",
       "type": "string"
+    },
+    {
+      "key": "batch_id",
+      "value": "BATCH-000001",
+      "type": "string"
     }
   ],
   "item": [
@@ -2504,6 +2509,157 @@
                   ]
                 },
                 "description": "Restore a soft-deleted stock movement if available."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Stock Batch Incoming",
+          "item": [
+            {
+              "name": "Create Incoming Batch",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"supplier\": \"Supplier Ltd\",\n  \"notes\": \"Incoming stock batch\",\n  \"rolls\": [\n    {\n      \"roll_number\": 1,\n      \"meterage\": 100\n    },\n    {\n      \"roll_number\": 2,\n      \"meterage\": 50\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/stock-batches/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "stock-batches"
+                  ]
+                },
+                "description": "Create incoming stock batch, add all roll meterage to StockItem.available_stock_in_mtr, and create an IN stock movement log."
+              },
+              "response": []
+            },
+            {
+              "name": "List Incoming Batches",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/stock-batches/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "stock-batches"
+                  ],
+                  "query": [
+                    {
+                      "key": "sku",
+                      "value": "{{sku}}",
+                      "disabled": true
+                    },
+                    {
+                      "key": "supplier",
+                      "value": "Supplier Ltd",
+                      "disabled": true
+                    },
+                    {
+                      "key": "date_from",
+                      "value": "2026-06-01",
+                      "disabled": true
+                    },
+                    {
+                      "key": "date_to",
+                      "value": "2026-06-12",
+                      "disabled": true
+                    },
+                    {
+                      "key": "search",
+                      "value": "{{batch_id}}",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "List incoming stock batches with optional filters."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Incoming Batch Detail",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/stock-batches/{{batch_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "stock-batches",
+                    "{{batch_id}}"
+                  ]
+                },
+                "description": "Get incoming stock batch header, rolls, and related IN movement log."
+              },
+              "response": []
+            },
+            {
+              "name": "Generate Batch Labels",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/stock-batches/{{batch_id}}/labels/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "stock-batches",
+                    "{{batch_id}}",
+                    "labels"
+                  ]
+                },
+                "description": "Return one Dymo label payload per roll: SKU, product name, meterage, batch ID, supplier, and date."
+              },
+              "response": []
+            },
+            {
+              "name": "Mark Labels Generated",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/stock-batches/{{batch_id}}/mark-labels-generated/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "stock-batches",
+                    "{{batch_id}}",
+                    "mark-labels-generated"
+                  ]
+                },
+                "description": "Mark all roll labels in a batch as generated by the logged-in user."
               },
               "response": []
             }

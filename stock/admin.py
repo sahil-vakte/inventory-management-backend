@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import StockItem, StockMovement
+from .models import StockItem, StockMovement, StockBatch, StockBatchRoll
 
 @admin.register(StockItem)
 class StockItemAdmin(admin.ModelAdmin):
@@ -111,3 +111,52 @@ class StockMovementAdmin(admin.ModelAdmin):
             count += 1
         self.message_user(request, f'{count} stock movements were permanently deleted.')
     hard_delete_selected.short_description = "Hard delete selected stock movements (PERMANENT)"
+
+
+class StockBatchRollInline(admin.TabularInline):
+    model = StockBatchRoll
+    extra = 0
+    readonly_fields = ['label_generated', 'label_generated_at', 'label_generated_by', 'created_at', 'updated_at']
+
+
+@admin.register(StockBatch)
+class StockBatchAdmin(admin.ModelAdmin):
+    list_display = [
+        'batch_id', 'sku', 'product_name', 'supplier', 'created_by',
+        'batch_date', 'roll_count', 'total_meterage', 'is_deleted'
+    ]
+    list_filter = ['supplier', 'batch_date', 'is_deleted']
+    search_fields = ['batch_id', 'sku', 'product_name', 'supplier']
+    ordering = ['-created_at']
+    readonly_fields = ['batch_id', 'created_at', 'updated_at', 'deleted_at']
+    raw_id_fields = ['stock_item', 'created_by']
+    inlines = [StockBatchRollInline]
+
+    def get_queryset(self, request):
+        return StockBatch.all_objects.select_related('stock_item', 'created_by')
+
+    actions = ['soft_delete_selected', 'restore_selected', 'hard_delete_selected']
+
+    def soft_delete_selected(self, request, queryset):
+        count = 0
+        for obj in queryset.filter(is_deleted=False):
+            obj.soft_delete()
+            count += 1
+        self.message_user(request, f'{count} stock batches were soft deleted.')
+    soft_delete_selected.short_description = "Soft delete selected stock batches"
+
+    def restore_selected(self, request, queryset):
+        count = 0
+        for obj in queryset.filter(is_deleted=True):
+            obj.restore()
+            count += 1
+        self.message_user(request, f'{count} stock batches were restored.')
+    restore_selected.short_description = "Restore selected stock batches"
+
+    def hard_delete_selected(self, request, queryset):
+        count = 0
+        for obj in queryset.filter(is_deleted=True):
+            obj.hard_delete()
+            count += 1
+        self.message_user(request, f'{count} stock batches were permanently deleted.')
+    hard_delete_selected.short_description = "Hard delete selected stock batches (PERMANENT)"

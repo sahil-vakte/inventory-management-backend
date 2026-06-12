@@ -6,12 +6,15 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 import pandas as pd
 from django.db import transaction, models
+from django.utils import timezone
 from decimal import Decimal
-from .models import StockItem, StockMovement
+from .models import StockItem, StockMovement, StockBatch
 from .serializers import (
     StockItemListSerializer, StockItemDetailSerializer, 
     StockItemCreateUpdateSerializer, StockMovementSerializer,
-    StockAdjustmentSerializer
+    StockAdjustmentSerializer, StockBatchCreateSerializer,
+    StockBatchListSerializer, StockBatchDetailSerializer,
+    StockBatchLabelSerializer
 )
 
 class StockItemViewSet(viewsets.ModelViewSet):
@@ -480,3 +483,90 @@ class StockMovementViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'message': 'Stock movement restored successfully', 'data': serializer.data})
         except StockMovement.DoesNotExist:
             return Response({'error': 'Stock movement not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class StockBatchViewSet(viewsets.ModelViewSet):
+    """Incoming stock batches with roll meterage and label data."""
+
+    queryset = StockBatch.objects.all()
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'batch_id'
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['sku', 'supplier', 'created_by', 'batch_date', 'is_deleted']
+    search_fields = ['batch_id', 'sku', 'product_name', 'supplier']
+    ordering_fields = ['batch_id', 'sku', 'supplier', 'batch_date', 'total_meterage', 'created_at']
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        include_deleted = self.request.query_params.get('include_deleted', 'false').lower()
+        if include_deleted == 'true':
+            queryset = StockBatch.all_objects.all()
+        elif self.request.query_params.get('only_deleted', 'false').lower() == 'true':
+            queryset = StockBatch.all_objects.filter(is_deleted=True)
+        else:
+            queryset = StockBatch.objects.all()
+
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        if date_from:
+            queryset = queryset.filter(batch_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(batch_date__lte=date_to)
+
+        return queryset.select_related('stock_item', 'stock_item__product', 'created_by').prefetch_related('rolls')
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return StockBatchCreateSerializer
+        if self.action == 'list':
+            return StockBatchListSerializer
+        return StockBatchDetailSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        force_delete = request.query_params.get('force_delete', 'false').lower() == 'true'
+        if force_delete:
+            instance.hard_delete()
+            return Response({'message': 'Stock batch permanently deleted'}, status=status.HTTP_204_NO_CONTENT)
+
+        instance.soft_delete()
+        return Response({'message': 'Stock batch soft deleted'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='restore')
+    def restore(self, request, batch_id=None):
+        try:
+            stock_batch = StockBatch.all_objects.get(batch_id=batch_id)
+        except StockBatch.DoesNotExist:
+            return Response({'error': 'Stock batch not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not stock_batch.is_deleted:
+            return Response({'error': 'Stock batch is not deleted'}, status=status.HTTP_400_BAD_REQUEST)
+
+        stock_batch.restore()
+        serializer = StockBatchDetailSerializer(stock_batch, context={'request': request})
+        return Response({'message': 'Stock batch restored successfully', 'data': serializer.data})
+
+    @action(detail=True, methods=['get'], url_path='labels')
+    def labels(self, request, batch_id=None):
+        stock_batch = self.get_object()
+        labels = StockBatchLabelSerializer(stock_batch.rolls.all(), many=True).data
+        return Response({
+            'batch_id': stock_batch.batch_id,
+            'labels': labels,
+        })
+
+    @action(detail=True, methods=['post'], url_path='mark-labels-generated')
+    def mark_labels_generated(self, request, batch_id=None):
+        stock_batch = self.get_object()
+        now = timezone.now()
+        stock_batch.rolls.update(
+            label_generated=True,
+            label_generated_at=now,
+            label_generated_by=request.user,
+        )
+        labels = StockBatchLabelSerializer(stock_batch.rolls.all(), many=True).data
+        return Response({
+            'message': 'Labels marked as generated',
+            'batch_id': stock_batch.batch_id,
+            'labels': labels,
+        })

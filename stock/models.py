@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 from django.utils import timezone
 from colors.models import Color
 
@@ -238,3 +239,102 @@ class StockMovement(models.Model):
     def hard_delete(self):
         """Permanently delete the stock movement"""
         super().delete()
+
+
+class StockBatch(models.Model):
+    """Incoming stock batch containing one or more fabric rolls."""
+
+    batch_id = models.CharField(max_length=30, unique=True, editable=False)
+    stock_item = models.ForeignKey(
+        StockItem, on_delete=models.PROTECT, related_name='incoming_batches'
+    )
+    sku = models.CharField(max_length=50, db_index=True)
+    product_name = models.CharField(max_length=500)
+    supplier = models.CharField(max_length=100)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='stock_batches_created',
+    )
+    batch_date = models.DateField(default=timezone.localdate)
+    total_meterage = models.PositiveIntegerField(default=0)
+    roll_count = models.PositiveIntegerField(default=0)
+    notes = models.TextField(blank=True, null=True)
+
+    is_deleted = models.BooleanField(default=False, help_text="Soft delete flag")
+    deleted_at = models.DateTimeField(null=True, blank=True, help_text="When the record was deleted")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = StockManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        db_table = 'stock_batches'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['batch_id']),
+            models.Index(fields=['sku']),
+            models.Index(fields=['batch_date']),
+            models.Index(fields=['supplier']),
+        ]
+
+    def __str__(self):
+        return f"{self.batch_id} - {self.sku}"
+
+    def save(self, *args, **kwargs):
+        if not self.batch_id:
+            self.batch_id = self._next_batch_id()
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def _next_batch_id(cls):
+        last_batch = cls.all_objects.order_by('-id').first()
+        next_number = (last_batch.id + 1) if last_batch else 1
+        return f"BATCH-{next_number:06d}"
+
+    def soft_delete(self):
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.save(update_fields=['is_deleted', 'deleted_at', 'updated_at'])
+
+    def restore(self):
+        self.is_deleted = False
+        self.deleted_at = None
+        self.save(update_fields=['is_deleted', 'deleted_at', 'updated_at'])
+
+    def hard_delete(self):
+        super().delete()
+
+
+class StockBatchRoll(models.Model):
+    """Individual roll meterage inside an incoming stock batch."""
+
+    batch = models.ForeignKey(StockBatch, on_delete=models.CASCADE, related_name='rolls')
+    roll_number = models.PositiveIntegerField()
+    meterage = models.PositiveIntegerField()
+    label_generated = models.BooleanField(default=False)
+    label_generated_at = models.DateTimeField(blank=True, null=True)
+    label_generated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='stock_roll_labels_generated',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'stock_batch_rolls'
+        ordering = ['roll_number']
+        constraints = [
+            models.UniqueConstraint(fields=['batch', 'roll_number'], name='unique_roll_per_stock_batch'),
+        ]
+
+    def __str__(self):
+        return f"{self.batch.batch_id} - Roll {self.roll_number}: {self.meterage} mtr"
