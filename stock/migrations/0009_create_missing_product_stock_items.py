@@ -120,7 +120,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('stock', '0008_cleanup_remaining_parenthesized_stock_references'),
         ('colors', '0001_initial'),
-        ('products', '0005_rename_product_ext_file_row_idx_product_ext_source__2d5d52_idx_and_more'),
+        ('products', '0002_brand_deleted_at_brand_is_deleted_and_more'),
     ]
 
     operations = [

@@ -34,6 +34,7 @@ staticfiles/
 **/migrations/*.py
 !**/migrations/__init__.py
 !orders/migrations/0002_order_status_flow.py
+!stock/migrations/0003_stockitem_primary_location_stockitem_product_and_more.py
 !stock/migrations/0004_rename_available_stock_rolls.py
 !stock/migrations/0005_stock_batch_incoming.py
 !stock/migrations/0006_normalize_stock_batch_sku.py
