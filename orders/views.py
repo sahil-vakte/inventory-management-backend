@@ -497,63 +497,20 @@ class OrderViewSet(viewsets.ModelViewSet):
         GET {{base_url}}/api/v1/orders/import-from-remote/
         Auth: Bearer Token (JWT)
         """
-        import os
-        import io
-        from dotenv import load_dotenv
-
-        load_dotenv()
-
-        # ── 1. Validate credentials ──────────────────────────────────────
-        url      = os.environ.get('TIA_URL')
-        clientid = os.environ.get('TIA_CLIENTID')
-        username = os.environ.get('TIA_USERNAME')
-        password = os.environ.get('TIA_PASSWORD')
-        file_type = os.environ.get('TIA_FILE_TYPE', 'xml')
-
-        if not all([url, clientid, username, password]):
-            return Response(
-                {'error': 'Missing Tiaknight credentials in .env (TIA_URL, TIA_CLIENTID, TIA_USERNAME, TIA_PASSWORD)'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # ── 2. Fetch SOAP response (requests-based, no Playwright) ──────
         try:
-            from scripts.soap_client import fetch_soap_response, extract_result_xml
-        except Exception as e:
-            return Response(
-                {'error': f'Could not import SOAP client: {e}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            from .services.remote_tiaknight_import import (
+                RemoteTiaknightConfigError,
+                RemoteTiaknightFetchError,
+                RemoteTiaknightParseError,
+                import_remote_tiaknight_orders,
             )
-
-        try:
-            soap_bytes, http_status = fetch_soap_response(
-                url=url, clientid=clientid, username=username, password=password,
-                auto_update='false', file_type=file_type,
-            )
-        except RuntimeError as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-
-        # ── 3. Extract the <Result> value from the SOAP envelope ─────────
-        orders_xml_str = extract_result_xml(soap_bytes)
-        if orders_xml_str is None:
-            return Response(
-                {'error': 'Could not find <Result> value in SOAP response'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        # ── 4. Feed orders XML through parse_and_create_orders ───────────
-        #    Same code path as upload-xml
-        from .services.xml_parser import XMLOrderParser
-
-        parser = XMLOrderParser()
-        xml_bytes = orders_xml_str.encode('utf-8')
-        xml_file = io.BytesIO(xml_bytes)
-
-        try:
-            result = parser.parse_and_create_orders(xml_file, user=getattr(request, 'user', None))
+            result = import_remote_tiaknight_orders(user=getattr(request, 'user', None))
+        except RemoteTiaknightConfigError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except RemoteTiaknightFetchError as e:
+            return Response({'error': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        except RemoteTiaknightParseError as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

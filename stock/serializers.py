@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.db import transaction
 from django.utils import timezone
 from .models import StockItem, StockMovement, StockBatch, StockBatchRoll
+from .sku_utils import normalize_sku_reference
 from colors.serializers import ColorListSerializer
 from products.serializers import ProductListSerializer, ProductDetailSerializer
 
@@ -101,6 +102,7 @@ class StockItemCreateUpdateSerializer(serializers.ModelSerializer):
     
     def validate_sku(self, value):
         """Validate SKU uniqueness among non-deleted records"""
+        value = normalize_sku_reference(value)
         if self.instance:
             # For updates, exclude current instance
             existing = StockItem.all_objects.filter(
@@ -113,6 +115,9 @@ class StockItemCreateUpdateSerializer(serializers.ModelSerializer):
         if existing.exists():
             raise serializers.ValidationError("Stock item with this SKU already exists.")
         return value
+
+    def validate_product_type(self, value):
+        return normalize_sku_reference(value)[:20]
     
     def create(self, validated_data):
         """Create stock item with color association"""
@@ -235,7 +240,7 @@ class StockBatchCreateSerializer(serializers.Serializer):
 
     def validate_sku(self, value):
         sku = value.strip()
-        if not StockItem.all_objects.filter(sku=sku, is_deleted=False).exists():
+        if find_stock_item_for_batch_sku(sku) is None:
             raise serializers.ValidationError(f"Stock item with SKU '{sku}' not found.")
         return sku
 
@@ -268,12 +273,12 @@ class StockBatchCreateSerializer(serializers.Serializer):
         incoming_meterage = sum(roll['meterage'] for roll in rolls)
 
         with transaction.atomic():
-            stock_item = (
-                StockItem.all_objects
-                .select_for_update()
-                .select_related('product')
-                .get(sku=sku, is_deleted=False)
+            stock_item = find_stock_item_for_batch_sku(
+                sku,
+                queryset=StockItem.all_objects.select_for_update().select_related('product'),
             )
+            if stock_item is None:
+                raise serializers.ValidationError({'sku': f"Stock item with SKU '{sku}' not found."})
             old_stock = stock_item.available_stock_in_mtr
             stock_item.available_stock_in_mtr = old_stock + incoming_meterage
             stock_item.supplier = supplier
@@ -292,7 +297,7 @@ class StockBatchCreateSerializer(serializers.Serializer):
             )
             batch = StockBatch.objects.create(
                 stock_item=stock_item,
-                sku=stock_item.sku,
+                sku=normalize_stock_batch_sku(stock_item.sku),
                 product_name=product_name,
                 supplier=supplier,
                 created_by=user,
@@ -345,3 +350,27 @@ class StockBatchLabelSerializer(serializers.ModelSerializer):
             'sku', 'product_name', 'meterage', 'batch_id', 'supplier',
             'date', 'roll_number', 'label_generated', 'label_generated_at'
         ]
+
+
+def normalize_stock_batch_sku(value):
+    """Convert display-style SKUs like '(109 LT) DSND' to '109 LT DSND'."""
+    return normalize_sku_reference(value)
+
+
+def find_stock_item_for_batch_sku(value, queryset=None):
+    queryset = queryset or StockItem.all_objects.all()
+    sku = str(value or '').strip()
+    normalized_sku = normalize_stock_batch_sku(sku)
+
+    exact = queryset.filter(sku=sku, is_deleted=False).first()
+    if exact:
+        return exact
+
+    normalized = queryset.filter(sku=normalized_sku, is_deleted=False).first()
+    if normalized:
+        return normalized
+
+    for stock_item in queryset.filter(is_deleted=False):
+        if normalize_stock_batch_sku(stock_item.sku) == normalized_sku:
+            return stock_item
+    return None

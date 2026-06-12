@@ -14,6 +14,7 @@ from django.utils import timezone
 from colors.models import Color
 from products.models import Brand, Category, Location, Product, ProductExtendedData
 from stock.models import StockItem
+from stock.sku_utils import normalize_sku_reference
 
 logger = logging.getLogger(__name__)
 
@@ -290,8 +291,8 @@ class Command(BaseCommand):
         parent_active = self._active_flag(row_data.get('Parent Active'), row_data.get('Available On This Website'))
         defaults = {
             'vs_parent_id': vs_parent_id,
-            'parent_reference': self._clean(row_data.get('Parent Reference')) or '',
-            'child_reference': self._clean(row_data.get('Child Reference')) or '',
+            'parent_reference': self._normalize_sku(row_data.get('Parent Reference')) or '',
+            'child_reference': self._normalize_sku(row_data.get('Child Reference')) or '',
             'parent_product_title': self._clean(row_data.get('Parent Product Title')) or '',
             'child_product_title': self._clean(row_data.get('Child Product Title')) or '',
             'product_subtitle': self._clean(row_data.get('Product Subtitle')),
@@ -390,7 +391,8 @@ class Command(BaseCommand):
             self._clean(row_data.get('Parent Reference'))
             or self._clean(row_data.get('Child Reference'))
             or sku
-        )[:20]
+        )
+        product_type = self._normalize_sku(product_type)[:20]
         defaults = {
             'product_type': product_type,
             'product': product,
@@ -500,14 +502,37 @@ class Command(BaseCommand):
                 target[key] += value
 
     def _stock_sku(self, row_data, product=None):
-        sku = (
+        base_sku = (
             self._clean(row_data.get('Child Reference'))
             or self._clean(row_data.get('Parent Reference'))
             or self._clean(row_data.get('VS Child ID'))
         )
-        if not sku and product is not None:
-            sku = str(product.vs_child_id)
-        return sku[:50] if sku else None
+        return self._stock_sku_for_product(base_sku, product)
+
+    def _stock_sku_for_product(self, base_sku, product=None):
+        if not base_sku and product is not None:
+            base_sku = f'VS{product.vs_child_id}'
+        sku = self._normalize_sku(base_sku)[:50] if base_sku else None
+        if not sku or product is None or not getattr(product, 'pk', None):
+            return sku
+
+        existing_for_product = StockItem.all_objects.filter(product=product).order_by('sku').first()
+        if existing_for_product:
+            return self._normalize_sku(existing_for_product.sku)[:50]
+
+        if not StockItem.all_objects.filter(sku=sku).exclude(product=product).exists():
+            return sku
+
+        suffix = f' {product.vs_child_id}'
+        candidate = f'{sku[:50 - len(suffix)]}{suffix}'
+        if not StockItem.all_objects.filter(sku=candidate).exclude(product=product).exists():
+            return candidate
+
+        fallback = f'VS{product.vs_child_id}'[:50]
+        return fallback
+
+    def _normalize_sku(self, value):
+        return normalize_sku_reference(value)
 
     def _first_list_value(self, value):
         value = self._clean(value)

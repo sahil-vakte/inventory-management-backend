@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 from colors.models import Color
 from products.models import Product
 from stock.models import StockBatch, StockBatchRoll, StockItem, StockMovement
+from stock.services.product_stock_sync import sync_product_stock_items
 
 
 class StockBatchIncomingAPITest(TestCase):
@@ -148,3 +149,105 @@ class StockBatchIncomingAPITest(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('sku', response.data)
+
+    def test_create_normalizes_parenthesized_sku_for_batch_and_labels(self):
+        StockItem.objects.create(
+            sku='(109 LT) DSND',
+            product_type='FABRIC',
+            product=self.product,
+            color=self.color,
+            available_stock_in_mtr=10,
+        )
+
+        response = self.client.post(
+            '/api/v1/stock-batches/',
+            {
+                'sku': '109 LT DSND',
+                'supplier': 'Supplier Ltd',
+                'rolls': [{'roll_number': 1, 'meterage': 25}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['sku'], '109 LT DSND')
+        batch = StockBatch.objects.get(batch_id=response.data['batch_id'])
+        self.assertEqual(batch.sku, '109 LT DSND')
+        self.assertEqual(batch.stock_item.sku, '(109 LT) DSND')
+        batch.stock_item.refresh_from_db()
+        self.assertEqual(batch.stock_item.available_stock_in_mtr, 35)
+
+        label_response = self.client.get(f'/api/v1/stock-batches/{batch.batch_id}/labels/')
+        self.assertEqual(label_response.status_code, 200)
+        self.assertEqual(label_response.data['labels'][0]['sku'], '109 LT DSND')
+
+
+class ProductStockSyncTest(TestCase):
+    def setUp(self):
+        self.color = Color.objects.create(color_code='BLK', color_name='Black')
+
+    def test_sync_creates_zero_stock_for_product_without_stock(self):
+        product = Product.objects.create(
+            vs_parent_id=200,
+            vs_child_id=200,
+            parent_reference='Q1249 LMN',
+            child_reference='Q1249 LMN',
+            parent_product_title='Parent Product',
+            child_product_title='Child Product',
+        )
+
+        stats = sync_product_stock_items()
+
+        self.assertEqual(stats['stock_created'], 1)
+        stock = StockItem.all_objects.get(product=product)
+        self.assertEqual(stock.sku, 'Q1249 LMN')
+        self.assertEqual(stock.available_stock_in_mtr, 0)
+        self.assertTrue(stock.is_active)
+
+    def test_sync_uses_unique_fallback_sku_for_duplicate_product_reference(self):
+        first = Product.objects.create(
+            vs_parent_id=300,
+            vs_child_id=300,
+            parent_reference='DUP SKU',
+            child_reference='DUP SKU',
+            parent_product_title='First Parent',
+            child_product_title='First Child',
+        )
+        second = Product.objects.create(
+            vs_parent_id=301,
+            vs_child_id=301,
+            parent_reference='DUP SKU',
+            child_reference='DUP SKU',
+            parent_product_title='Second Parent',
+            child_product_title='Second Child',
+        )
+
+        sync_product_stock_items()
+
+        self.assertTrue(StockItem.all_objects.filter(product=first, sku='DUP SKU').exists())
+        self.assertTrue(StockItem.all_objects.filter(product=second, sku='DUP SKU 301').exists())
+
+    def test_sync_keeps_stock_inactive_when_product_is_inactive(self):
+        product = Product.objects.create(
+            vs_parent_id=400,
+            vs_child_id=400,
+            parent_reference='INACTIVE SKU',
+            child_reference='INACTIVE SKU',
+            parent_product_title='Inactive Parent',
+            child_product_title='Inactive Child',
+            child_active=False,
+            parent_active=False,
+        )
+        StockItem.objects.create(
+            sku='INACTIVE SKU',
+            product_type='INACTIVE SKU',
+            product=product,
+            color=self.color,
+            available_stock_in_mtr=10,
+            is_active=True,
+        )
+
+        sync_product_stock_items()
+
+        stock = StockItem.all_objects.get(product=product)
+        self.assertFalse(stock.is_active)

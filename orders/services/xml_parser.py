@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 from ..models import Order, OrderItem
 from stock.models import StockItem
+from stock.sku_utils import normalize_sku_reference
 
 
 class XMLOrderParser:
@@ -296,6 +297,8 @@ class XMLOrderParser:
             unit_price = self._get_decimal(item_elem, 'UnitPrice', Decimal('0.00'))
             product_name = self._get_text(item_elem, 'ProductName', sku)
             tax_rate = self._get_decimal(item_elem, 'TaxRate', Decimal('20.00'))
+
+        sku = normalize_sku_reference(sku)
 
         item_data = {
             'order': order,

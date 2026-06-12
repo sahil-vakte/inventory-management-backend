@@ -9,6 +9,7 @@ from django.db import transaction, models
 from django.utils import timezone
 from decimal import Decimal
 from .models import StockItem, StockMovement, StockBatch
+from .sku_utils import normalize_sku_reference
 from .serializers import (
     StockItemListSerializer, StockItemDetailSerializer, 
     StockItemCreateUpdateSerializer, StockMovementSerializer,
@@ -326,8 +327,8 @@ class StockItemViewSet(viewsets.ModelViewSet):
                         if pd.isna(row.get('SKU')):
                             continue
                         
-                        sku = str(row['SKU']).strip()
-                        product_type = str(row.get('ProdTpe', '')).strip()
+                        sku = normalize_sku_reference(row['SKU'])
+                        product_type = normalize_sku_reference(row.get('ProdTpe', ''))[:20]
                         color_code = str(row.get('Color Abrvs', '')).strip()
                         raw_available_stock = row.get(
                             'Available Stock (Mtr)',

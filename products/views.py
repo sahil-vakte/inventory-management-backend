@@ -22,6 +22,7 @@ from .serializers import (
     ProductCreateUpdateSerializer, CategorySerializer, BrandSerializer, LocationSerializer
 )
 from .management.commands.import_product_backup_csv import Command as ProductBackupCSVImportCommand
+from stock.sku_utils import normalize_sku_reference
 
 logger = logging.getLogger(__name__)
 
@@ -258,8 +259,10 @@ class ProductViewSet(viewsets.ModelViewSet):
                         # Prepare product data
                         product_data = {
                             'vs_parent_id': int(row.get('VS Parent ID', 0)) if not pd.isna(row.get('VS Parent ID')) else 0,
-                            'parent_reference': str(row.get('Parent Reference', '')).strip() if not pd.isna(row.get('Parent Reference')) else '',
-                            'child_reference': str(row.get('Child', '')).strip() if not pd.isna(row.get('Child')) else '',
+                            'parent_reference': normalize_sku_reference(row.get('Parent Reference')) if not pd.isna(row.get('Parent Reference')) else '',
+                            'child_reference': normalize_sku_reference(
+                                row.get('Child Reference', row.get('Child'))
+                            ) if not pd.isna(row.get('Child Reference', row.get('Child'))) else '',
                             'parent_product_title': str(row.get('Parent Product Title', '')).strip() if not pd.isna(row.get('Parent Product Title')) else '',
                             'child_product_title': str(row.get('Child Product Title', '')).strip() if not pd.isna(row.get('Child Product Title')) else '',
                             'product_subtitle': str(row.get('Product Subtitle', '')).strip() if not pd.isna(row.get('Product Subtitle')) else '',
