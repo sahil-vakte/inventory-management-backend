@@ -396,6 +396,40 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {'error': 'Item not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+    @action(detail=True, methods=['patch'], url_path='items/(?P<item_id>[^/.]+)/lable-printed')
+    def update_item_lable_printed(self, request, pk=None, item_id=None):
+        """Update label printed flag for one item inside this order."""
+        order = self.get_object()
+        value = request.data.get('lable_printed', True)
+
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized not in {'true', 'false', '1', '0', 'yes', 'no'}:
+                return Response(
+                    {'error': 'lable_printed must be a boolean'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            value = normalized in {'true', '1', 'yes'}
+        else:
+            value = bool(value)
+
+        try:
+            item = order.items.get(id=item_id)
+        except OrderItem.DoesNotExist:
+            return Response(
+                {'error': 'Item not found for this order'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        item.lable_printed = value
+        item.save(update_fields=['lable_printed', 'updated_at'])
+
+        return Response({
+            'message': 'Item label printed flag updated successfully',
+            'item': OrderItemSerializer(item).data,
+            'order': OrderDetailSerializer(order).data,
+        })
     
     @action(detail=False, methods=['get'], url_path='statuses', permission_classes=[])
     def statuses(self, request):

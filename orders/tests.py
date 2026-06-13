@@ -255,6 +255,72 @@ class OrderWithItemsAPITest(TestCase):
         self.assertTrue(item.lable_printed)
         self.assertTrue(response.data['order']['items'][0]['lable_printed'])
 
+    def test_item_lable_printed_endpoint_updates_only_selected_item(self):
+        order = Order.objects.create(
+            customer_name='Item Label Customer',
+            total_amount=Decimal('20.00'),
+            created_by=self.user,
+        )
+        first_item = OrderItem.objects.create(
+            order=order,
+            sku='SKU-001',
+            product_name='First Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+        second_item = OrderItem.objects.create(
+            order=order,
+            sku='SKU-002',
+            product_name='Second Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.patch(
+            f'/api/v1/orders/{order.id}/items/{first_item.id}/lable-printed/',
+            {'lable_printed': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        first_item.refresh_from_db()
+        second_item.refresh_from_db()
+        self.assertTrue(first_item.lable_printed)
+        self.assertFalse(second_item.lable_printed)
+        self.assertTrue(response.data['item']['lable_printed'])
+
+    def test_item_lable_printed_endpoint_rejects_item_from_other_order(self):
+        order = Order.objects.create(
+            customer_name='Correct Order',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        other_order = Order.objects.create(
+            customer_name='Other Order',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        other_item = OrderItem.objects.create(
+            order=other_order,
+            sku='SKU-OTHER',
+            product_name='Other Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.patch(
+            f'/api/v1/orders/{order.id}/items/{other_item.id}/lable-printed/',
+            {'lable_printed': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        other_item.refresh_from_db()
+        self.assertFalse(other_item.lable_printed)
+
     def test_item_status_updates_parent_order_progress_status(self):
         order = Order.objects.create(
             customer_name='Progress Customer',

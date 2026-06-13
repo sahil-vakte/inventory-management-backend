@@ -3392,6 +3392,39 @@
                 }
               },
               "response": []
+            },
+            {
+              "name": "Update Order Item Lable Printed",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/items/{{order_item_id}}/lable-printed/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "{{order_id}}",
+                    "items",
+                    "{{order_item_id}}",
+                    "lable-printed"
+                  ]
+                },
+                "description": "Update lable_printed for one order item inside a specific order. Use true after the item label is printed; set false to undo.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"lable_printed\": true\n}"
+                }
+              },
+              "response": []
             }
           ]
         },
@@ -3535,6 +3568,32 @@
               "response": []
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/dashboard/stats/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "stats"
+              ]
+            },
+            "description": "Combined dashboard counts for order statuses and stock health buckets."
+          },
+          "response": []
         }
       ]
     }
