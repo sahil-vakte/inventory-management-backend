@@ -3409,7 +3409,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/items/lable-printed/",
+                  "raw": "{{base_url}}/api/v1/orders/items/lable-printed",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -3417,12 +3417,11 @@
                     "api",
                     "v1",
                     "orders",
-                    "{{order_id}}",
                     "items",
                     "lable-printed"
                   ]
                 },
-                "description": "Update lable_printed for multiple order items inside a specific order. Pass order_item_ids in the JSON body.",
+                "description": "Update lable_printed for multiple order items by order item ids. Pass order_item_ids in the JSON body.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"lable_printed\": true,\n  \"order_item_ids\": [101, 102, 103]\n}"

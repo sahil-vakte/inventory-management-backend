@@ -9,5 +9,10 @@ router.register(r'order-items', OrderItemViewSet, basename='orderitem')
 router.register(r'order-history', OrderStatusHistoryViewSet, basename='orderhistory')
 
 urlpatterns = [
+    path(
+        'orders/items/lable-printed',
+        OrderViewSet.as_view({'patch': 'bulk_update_any_items_lable_printed'}),
+        name='orders-items-lable-printed',
+    ),
     path('', include(router.urls)),
 ]

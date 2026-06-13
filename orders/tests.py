@@ -442,7 +442,7 @@ class OrderWithItemsAPITest(TestCase):
         )
 
         response = self.client.patch(
-            f'/api/v1/orders/{order.id}/items/lable-printed/',
+            '/api/v1/orders/items/lable-printed/',
             {'order_item_ids': [first_item.id, second_item.id], 'lable_printed': True},
             format='json',
         )
@@ -453,6 +453,17 @@ class OrderWithItemsAPITest(TestCase):
         self.assertTrue(first_item.lable_printed)
         self.assertTrue(second_item.lable_printed)
         self.assertEqual(response.data['updated_count'], 2)
+        self.assertEqual(response.data['order_ids'], [order.id])
+
+    def test_bulk_item_lable_printed_endpoint_rejects_missing_item_ids(self):
+        response = self.client.patch(
+            '/api/v1/orders/items/lable-printed/',
+            {'order_item_ids': [999999], 'lable_printed': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data['missing_order_item_ids'], [999999])
 
     def test_item_lable_printed_endpoint_rejects_item_from_other_order(self):
         order = Order.objects.create(
