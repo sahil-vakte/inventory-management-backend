@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from colors.models import Color
@@ -51,6 +52,7 @@ class StockBatchIncomingAPITest(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['batch_id'], f"BATCH-{timezone.localdate():%Y%m%d}-1")
         self.stock_item.refresh_from_db()
         self.assertEqual(self.stock_item.available_stock_in_mtr, 200)
 
@@ -70,6 +72,29 @@ class StockBatchIncomingAPITest(TestCase):
         self.assertEqual(response.data['old_stock_in_mtr'], 50)
         self.assertEqual(response.data['incoming_meterage'], 150)
         self.assertEqual(response.data['new_stock_in_mtr'], 200)
+
+    def test_batch_id_uses_date_and_daily_sequence(self):
+        first = StockBatch.objects.create(
+            stock_item=self.stock_item,
+            sku='AB',
+            product_name='Product AB',
+            supplier='Supplier Ltd',
+            created_by=self.user,
+            total_meterage=100,
+            roll_count=1,
+        )
+        second = StockBatch.objects.create(
+            stock_item=self.stock_item,
+            sku='AB',
+            product_name='Product AB',
+            supplier='Supplier Ltd',
+            created_by=self.user,
+            total_meterage=50,
+            roll_count=1,
+        )
+
+        self.assertEqual(first.batch_id, f"BATCH-{timezone.localdate():%Y%m%d}-1")
+        self.assertEqual(second.batch_id, f"BATCH-{timezone.localdate():%Y%m%d}-2")
 
     def test_stock_list_product_uses_price_break_1_price(self):
         response = self.client.get('/api/v1/stock/')
@@ -124,6 +149,43 @@ class StockBatchIncomingAPITest(TestCase):
         self.assertTrue(roll.label_generated)
         self.assertIsNotNone(roll.label_generated_at)
         self.assertEqual(roll.label_generated_by, self.user)
+
+    def test_bulk_mark_labels_generated_updates_batches_from_payload(self):
+        first_batch = StockBatch.objects.create(
+            stock_item=self.stock_item,
+            sku='AB',
+            product_name='Product AB',
+            supplier='Supplier Ltd',
+            created_by=self.user,
+            total_meterage=100,
+            roll_count=1,
+        )
+        second_batch = StockBatch.objects.create(
+            stock_item=self.stock_item,
+            sku='AB',
+            product_name='Product AB',
+            supplier='Supplier Ltd',
+            created_by=self.user,
+            total_meterage=50,
+            roll_count=1,
+        )
+        first_roll = StockBatchRoll.objects.create(batch=first_batch, roll_number=1, meterage=100)
+        second_roll = StockBatchRoll.objects.create(batch=second_batch, roll_number=1, meterage=50)
+
+        response = self.client.post(
+            '/api/v1/stock-batches/mark-labels-generated',
+            {'batch_ids': [first_batch.batch_id, second_batch.batch_id]},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        first_roll.refresh_from_db()
+        second_roll.refresh_from_db()
+        self.assertTrue(first_roll.label_generated)
+        self.assertTrue(second_roll.label_generated)
+        self.assertEqual(response.data['batch_ids'], [first_batch.batch_id, second_batch.batch_id])
+        self.assertEqual(response.data['updated_batch_count'], 2)
+        self.assertEqual(response.data['updated_label_count'], 2)
 
     def test_create_rejects_duplicate_roll_numbers_without_stock_change(self):
         response = self.client.post(

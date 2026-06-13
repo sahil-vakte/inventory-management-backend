@@ -8,7 +8,7 @@ import pandas as pd
 from django.db import transaction, models
 from django.utils import timezone
 from decimal import Decimal
-from .models import StockItem, StockMovement, StockBatch
+from .models import StockItem, StockMovement, StockBatch, StockBatchRoll
 from .sku_utils import normalize_sku_reference
 from .serializers import (
     StockItemListSerializer, StockItemDetailSerializer, 
@@ -559,15 +559,69 @@ class StockBatchViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='mark-labels-generated')
     def mark_labels_generated(self, request, batch_id=None):
         stock_batch = self.get_object()
+        return self._mark_batches_labels_generated([stock_batch], request.user)
+
+    @action(detail=False, methods=['post'], url_path='mark-labels-generated')
+    def bulk_mark_labels_generated(self, request):
+        raw_ids = request.data.get('batch_ids') or request.data.get('batch_id')
+        if isinstance(raw_ids, str):
+            batch_ids = [part.strip() for part in raw_ids.split(',') if part.strip()]
+        elif isinstance(raw_ids, (list, tuple)):
+            batch_ids = [str(batch_id).strip() for batch_id in raw_ids if str(batch_id).strip()]
+        else:
+            batch_ids = [raw_ids] if raw_ids else []
+
+        batch_ids = list(dict.fromkeys(batch_ids))
+        if not batch_ids:
+            return Response(
+                {'error': 'At least one batch id is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        batches = list(
+            StockBatch.objects.filter(batch_id__in=batch_ids)
+            .select_related('stock_item', 'stock_item__product', 'created_by')
+            .prefetch_related('rolls')
+            .order_by('batch_id')
+        )
+        found_ids = {batch.batch_id for batch in batches}
+        missing_ids = [batch_id for batch_id in batch_ids if batch_id not in found_ids]
+        if missing_ids:
+            return Response(
+                {
+                    'error': 'Some stock batches were not found',
+                    'missing_batch_ids': missing_ids,
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return self._mark_batches_labels_generated(batches, request.user)
+
+    def _mark_batches_labels_generated(self, batches, user):
         now = timezone.now()
-        stock_batch.rolls.update(
+        batch_ids = [batch.batch_id for batch in batches]
+        StockBatchRoll.objects.filter(batch__in=batches).update(
             label_generated=True,
             label_generated_at=now,
-            label_generated_by=request.user,
+            label_generated_by_id=user.id if user and user.is_authenticated else None,
         )
-        labels = StockBatchLabelSerializer(stock_batch.rolls.all(), many=True).data
+        batch_payloads = []
+        labels = []
+        for batch in batches:
+            batch_rolls = StockBatchRoll.objects.filter(batch=batch).order_by('roll_number')
+            batch_labels = StockBatchLabelSerializer(batch_rolls, many=True).data
+            labels.extend(batch_labels)
+            batch_payloads.append({
+                'batch_id': batch.batch_id,
+                'labels': batch_labels,
+            })
+
         return Response({
             'message': 'Labels marked as generated',
-            'batch_id': stock_batch.batch_id,
+            'batch_id': batch_ids[0] if len(batch_ids) == 1 else None,
+            'batch_ids': batch_ids,
+            'updated_batch_count': len(batches),
+            'updated_label_count': len(labels),
+            'batches': batch_payloads,
             'labels': labels,
         })

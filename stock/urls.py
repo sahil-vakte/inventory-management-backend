@@ -8,5 +8,15 @@ router.register(r'movements', StockMovementViewSet)
 router.register(r'stock-batches', StockBatchViewSet)
 
 urlpatterns = [
+    path(
+        'stock-batches/mark-labels-generated',
+        StockBatchViewSet.as_view({'post': 'bulk_mark_labels_generated'}),
+        name='stock-batches-mark-labels-generated',
+    ),
+    path(
+        'stock-batches//mark-labels-generated',
+        StockBatchViewSet.as_view({'post': 'bulk_mark_labels_generated'}),
+        name='stock-batches-mark-labels-generated-double-slash',
+    ),
     path('', include(router.urls)),
 ]

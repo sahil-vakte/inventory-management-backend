@@ -294,14 +294,25 @@ class StockBatch(models.Model):
     def save(self, *args, **kwargs):
         self.sku = normalize_sku_reference(self.sku)[:50]
         if not self.batch_id:
-            self.batch_id = self._next_batch_id()
+            self.batch_id = self._next_batch_id(self.batch_date)
         super().save(*args, **kwargs)
 
     @classmethod
-    def _next_batch_id(cls):
-        last_batch = cls.all_objects.order_by('-id').first()
-        next_number = (last_batch.id + 1) if last_batch else 1
-        return f"BATCH-{next_number:06d}"
+    def _next_batch_id(cls, batch_date=None):
+        batch_date = batch_date or timezone.localdate()
+        prefix = f"BATCH-{batch_date:%Y%m%d}-"
+        existing_ids = cls.all_objects.filter(
+            batch_id__startswith=prefix
+        ).values_list('batch_id', flat=True)
+
+        last_number = 0
+        for batch_id in existing_ids:
+            try:
+                last_number = max(last_number, int(batch_id.rsplit('-', 1)[1]))
+            except (IndexError, TypeError, ValueError):
+                continue
+
+        return f"{prefix}{last_number + 1}"
 
     def soft_delete(self):
         self.is_deleted = True
