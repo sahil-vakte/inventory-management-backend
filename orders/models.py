@@ -4,6 +4,7 @@ from django.contrib.auth.models import User
 from decimal import Decimal
 from products.models import Product
 from stock.models import StockItem
+from stock.sku_utils import normalize_sku_reference
 
 
 class OrderManager(models.Manager):
@@ -508,6 +509,9 @@ class OrderItem(models.Model):
     
     def save(self, *args, **kwargs):
         """Calculate line total before saving"""
+        self.sku = normalize_sku_reference(self.sku)[:50]
+        if self.product_type:
+            self.product_type = normalize_sku_reference(self.product_type)[:50]
         if not self.line_total or self.line_total == 0:
             self.line_total = (self.unit_price * self.quantity) - self.discount_amount
         super().save(*args, **kwargs)

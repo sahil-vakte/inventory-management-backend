@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from decimal import Decimal
 from .models import Order, OrderItem, OrderStatusHistory
 from stock.serializers import StockItemListSerializer
+from stock.sku_utils import normalize_sku_reference
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -74,6 +75,9 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
         # Ensure required fields are present
         if not data.get('sku'):
             raise serializers.ValidationError("SKU is required")
+        data['sku'] = normalize_sku_reference(data['sku'])[:50]
+        if data.get('product_type'):
+            data['product_type'] = normalize_sku_reference(data['product_type'])[:50]
         if not data.get('product_name'):
             raise serializers.ValidationError("Product name is required")
         if not data.get('unit_price'):

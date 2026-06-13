@@ -572,7 +572,10 @@ class Command(BaseCommand):
         for db_column, value in row_data.items():
             field_name = field_by_db_column.get(db_column)
             if field_name:
-                setattr(extended, field_name, self._clean(value))
+                cleaned = self._clean(value)
+                if field_name in {'parent_reference', 'child_reference', 'amazon_sku_uk'}:
+                    cleaned = self._normalize_sku(cleaned)
+                setattr(extended, field_name, cleaned)
         return extended
 
     def _upsert_extended_rows(self, extended_rows, source_file_name, batch_id):

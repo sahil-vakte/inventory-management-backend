@@ -173,7 +173,7 @@ class StockBatchIncomingAPITest(TestCase):
         self.assertEqual(response.data['sku'], '109 LT DSND')
         batch = StockBatch.objects.get(batch_id=response.data['batch_id'])
         self.assertEqual(batch.sku, '109 LT DSND')
-        self.assertEqual(batch.stock_item.sku, '(109 LT) DSND')
+        self.assertEqual(batch.stock_item.sku, '109 LT DSND')
         batch.stock_item.refresh_from_db()
         self.assertEqual(batch.stock_item.available_stock_in_mtr, 35)
 

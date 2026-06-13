@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 from colors.models import Color
+from stock.sku_utils import normalize_sku_reference
 
 class StockManager(models.Manager):
     """Custom manager for Stock models with soft delete support"""
@@ -96,6 +97,11 @@ class StockItem(models.Model):
     
     def __str__(self):
         return f"{self.sku} - {self.available_stock_in_mtr} mtr"
+
+    def save(self, *args, **kwargs):
+        self.sku = normalize_sku_reference(self.sku)[:50]
+        self.product_type = normalize_sku_reference(self.product_type)[:20]
+        super().save(*args, **kwargs)
     
     @property
     def total_available_stock(self):
@@ -286,6 +292,7 @@ class StockBatch(models.Model):
         return f"{self.batch_id} - {self.sku}"
 
     def save(self, *args, **kwargs):
+        self.sku = normalize_sku_reference(self.sku)[:50]
         if not self.batch_id:
             self.batch_id = self._next_batch_id()
         super().save(*args, **kwargs)

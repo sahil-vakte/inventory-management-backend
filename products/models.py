@@ -3,6 +3,7 @@ from django.db import models
 from django.utils import timezone
 from decimal import Decimal
 from django.db.models import Max
+from stock.sku_utils import normalize_sku_reference
 class Location(models.Model):
     """Location model with custom alphanumeric primary key (LOC001, LOC002, ...)"""
     id = models.CharField(primary_key=True, max_length=10, editable=False)
@@ -308,6 +309,11 @@ class Product(models.Model):
     
     def __str__(self):
         return f"{self.child_reference} - {self.child_product_title}"
+
+    def save(self, *args, **kwargs):
+        self.parent_reference = normalize_sku_reference(self.parent_reference)[:50]
+        self.child_reference = normalize_sku_reference(self.child_reference)[:50]
+        super().save(*args, **kwargs)
     
     @property
     def is_active(self):
@@ -527,3 +533,9 @@ class ProductExtendedData(models.Model):
 
     def __str__(self):
         return f"{self.source_file_name} row {self.row_number}"
+
+    def save(self, *args, **kwargs):
+        self.parent_reference = normalize_sku_reference(self.parent_reference)
+        self.child_reference = normalize_sku_reference(self.child_reference)
+        self.amazon_sku_uk = normalize_sku_reference(self.amazon_sku_uk)
+        super().save(*args, **kwargs)

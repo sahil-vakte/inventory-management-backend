@@ -306,7 +306,7 @@ class XMLOrderParser:
             'quantity': quantity,
             'unit_price': unit_price,
             'product_name': product_name,
-            'product_type': self._get_text(item_elem, 'ProductType'),
+            'product_type': normalize_sku_reference(self._get_text(item_elem, 'ProductType'))[:50],
             'color_code': self._get_text(item_elem, 'ColorCode'),
             'tax_rate': tax_rate,
             'discount_amount': self._get_decimal(item_elem, 'DiscountAmount', Decimal('0.00')),

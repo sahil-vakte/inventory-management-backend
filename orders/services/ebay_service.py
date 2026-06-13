@@ -12,6 +12,7 @@ import logging
 from orders.ebay_config import EbayConfig
 from orders.models import Order, OrderItem
 from products.models import Product
+from stock.sku_utils import normalize_sku_reference
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,7 @@ class EbayService:
             
             item = {
                 'ebay_item_id': item_data.get('ItemID', ''),
-                'sku': item_data.get('SKU', ''),
+                'sku': normalize_sku_reference(item_data.get('SKU', ''))[:50],
                 'title': item_data.get('Title', ''),
                 'quantity': int(transaction.get('QuantityPurchased', 1)),
                 'unit_price': Decimal(str(transaction.get('TransactionPrice', {}).get('value', '0.00'))),
