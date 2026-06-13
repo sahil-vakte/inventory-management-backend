@@ -376,6 +376,42 @@ class OrderWithItemsAPITest(TestCase):
         self.assertTrue(second_item.lable_printed)
         self.assertEqual(response.data['updated_count'], 2)
 
+    def test_bulk_item_lable_printed_endpoint_uses_body_item_ids(self):
+        order = Order.objects.create(
+            customer_name='Clean Bulk Item Label Customer',
+            total_amount=Decimal('20.00'),
+            created_by=self.user,
+        )
+        first_item = OrderItem.objects.create(
+            order=order,
+            sku='SKU-001',
+            product_name='First Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+        second_item = OrderItem.objects.create(
+            order=order,
+            sku='SKU-002',
+            product_name='Second Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.patch(
+            f'/api/v1/orders/{order.id}/items/lable-printed/',
+            {'order_item_ids': [first_item.id, second_item.id], 'lable_printed': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        first_item.refresh_from_db()
+        second_item.refresh_from_db()
+        self.assertTrue(first_item.lable_printed)
+        self.assertTrue(second_item.lable_printed)
+        self.assertEqual(response.data['updated_count'], 2)
+
     def test_item_lable_printed_endpoint_rejects_item_from_other_order(self):
         order = Order.objects.create(
             customer_name='Correct Order',

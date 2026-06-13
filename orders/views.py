@@ -401,8 +401,17 @@ class OrderViewSet(viewsets.ModelViewSet):
     def update_item_lable_printed(self, request, pk=None, item_id=None):
         """Update label printed flag for one or more items inside this order."""
         order = self.get_object()
-        value = request.data.get('lable_printed', True)
-        raw_ids = request.data.get('order_item_ids') or item_id
+        return self._update_order_items_lable_printed(order, request.data, fallback_item_ids=item_id)
+
+    @action(detail=True, methods=['patch'], url_path='items/lable-printed')
+    def bulk_update_items_lable_printed(self, request, pk=None):
+        """Update label printed flag for multiple items inside this order."""
+        order = self.get_object()
+        return self._update_order_items_lable_printed(order, request.data)
+
+    def _update_order_items_lable_printed(self, order, payload, fallback_item_ids=None):
+        value = payload.get('lable_printed', True)
+        raw_ids = payload.get('order_item_ids') or fallback_item_ids
 
         if isinstance(value, str):
             normalized = value.strip().lower()

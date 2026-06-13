@@ -3399,7 +3399,7 @@
               "response": []
             },
             {
-              "name": "Update Order Item Lable Printed",
+              "name": "Bulk Update Order Items Lable Printed",
               "request": {
                 "method": "PATCH",
                 "header": [
@@ -3409,7 +3409,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/items/{{order_item_ids}}/lable-printed/",
+                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/items/lable-printed/",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -3419,14 +3419,13 @@
                     "orders",
                     "{{order_id}}",
                     "items",
-                    "{{order_item_ids}}",
                     "lable-printed"
                   ]
                 },
-                "description": "Update lable_printed for one or multiple order items inside a specific order. Use {{order_item_ids}} as a single id like 1 or comma-separated ids like 1,2,3. You can also pass order_item_ids in the JSON body.",
+                "description": "Update lable_printed for multiple order items inside a specific order. Pass order_item_ids in the JSON body.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"lable_printed\": true,\n  \"order_item_ids\": [1, 2]\n}"
+                  "raw": "{\n  \"lable_printed\": true,\n  \"order_item_ids\": [101, 102, 103]\n}"
                 }
               },
               "response": []
