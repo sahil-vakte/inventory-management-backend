@@ -399,9 +399,10 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['patch'], url_path='items/(?P<item_id>[^/.]+)/lable-printed')
     def update_item_lable_printed(self, request, pk=None, item_id=None):
-        """Update label printed flag for one item inside this order."""
+        """Update label printed flag for one or more items inside this order."""
         order = self.get_object()
         value = request.data.get('lable_printed', True)
+        raw_ids = request.data.get('order_item_ids') or item_id
 
         if isinstance(value, str):
             normalized = value.strip().lower()
@@ -414,20 +415,52 @@ class OrderViewSet(viewsets.ModelViewSet):
         else:
             value = bool(value)
 
+        if isinstance(raw_ids, str):
+            raw_ids = [part.strip() for part in raw_ids.split(',') if part.strip()]
+        elif isinstance(raw_ids, (list, tuple)):
+            raw_ids = list(raw_ids)
+        else:
+            raw_ids = [raw_ids]
+
         try:
-            item = order.items.get(id=item_id)
-        except OrderItem.DoesNotExist:
+            item_ids = [int(raw_id) for raw_id in raw_ids]
+        except (TypeError, ValueError):
             return Response(
-                {'error': 'Item not found for this order'},
+                {'error': 'order item ids must be integers'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        item_ids = list(dict.fromkeys(item_ids))
+        if not item_ids:
+            return Response(
+                {'error': 'At least one order item id is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        items = list(order.items.filter(id__in=item_ids).order_by('id'))
+        found_ids = {item.id for item in items}
+        missing_ids = [item_id for item_id in item_ids if item_id not in found_ids]
+        if missing_ids:
+            return Response(
+                {
+                    'error': 'Some items were not found for this order',
+                    'missing_order_item_ids': missing_ids,
+                },
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        item.lable_printed = value
-        item.save(update_fields=['lable_printed', 'updated_at'])
+        for item in items:
+            item.lable_printed = value
+            item.save(update_fields=['lable_printed', 'updated_at'])
+
+        order.refresh_from_db()
+        serialized_items = OrderItemSerializer(items, many=True).data
 
         return Response({
             'message': 'Item label printed flag updated successfully',
-            'item': OrderItemSerializer(item).data,
+            'updated_count': len(items),
+            'item': serialized_items[0] if len(serialized_items) == 1 else None,
+            'items': serialized_items,
             'order': OrderDetailSerializer(order).data,
         })
     

@@ -100,6 +100,11 @@
       "key": "batch_id",
       "value": "BATCH-000001",
       "type": "string"
+    },
+    {
+      "key": "order_item_ids",
+      "value": "1,2",
+      "type": "string"
     }
   ],
   "item": [
@@ -3404,7 +3409,7 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/items/{{order_item_id}}/lable-printed/",
+                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/items/{{order_item_ids}}/lable-printed/",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -3414,14 +3419,14 @@
                     "orders",
                     "{{order_id}}",
                     "items",
-                    "{{order_item_id}}",
+                    "{{order_item_ids}}",
                     "lable-printed"
                   ]
                 },
-                "description": "Update lable_printed for one order item inside a specific order. Use true after the item label is printed; set false to undo.",
+                "description": "Update lable_printed for one or multiple order items inside a specific order. Use {{order_item_ids}} as a single id like 1 or comma-separated ids like 1,2,3. You can also pass order_item_ids in the JSON body.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"lable_printed\": true\n}"
+                  "raw": "{\n  \"lable_printed\": true,\n  \"order_item_ids\": [1, 2]\n}"
                 }
               },
               "response": []
