@@ -1,6 +1,8 @@
 # Tests for Order Management with Employee Assignment
 from django.test import TestCase
 from django.contrib.auth.models import User
+from django.utils import timezone
+from datetime import timedelta
 from decimal import Decimal
 from rest_framework.test import APIClient
 from .models import Order, OrderItem
@@ -382,21 +384,34 @@ class DashboardStatsAPITest(TestCase):
         )
 
     def test_dashboard_stats_returns_order_and_stock_counts(self):
-        Order.objects.create(
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+        two_days_ago = today - timedelta(days=2)
+
+        new_order = Order.objects.create(
             customer_name='New Customer',
             order_status=Order.STATUS_NEW,
             total_amount=Decimal('1.00'),
         )
-        Order.objects.create(
+        progress_order = Order.objects.create(
             customer_name='Progress Customer',
             order_status=Order.STATUS_IN_PROGRESS,
             total_amount=Decimal('1.00'),
         )
-        Order.objects.create(
+        completed_order = Order.objects.create(
             customer_name='Completed Customer',
             order_status=Order.STATUS_COMPLETED,
             total_amount=Decimal('1.00'),
         )
+        Order.objects.filter(pk=new_order.pk).update(order_date=timezone.make_aware(
+            timezone.datetime.combine(today, timezone.datetime.min.time())
+        ))
+        Order.objects.filter(pk=progress_order.pk).update(order_date=timezone.make_aware(
+            timezone.datetime.combine(yesterday, timezone.datetime.min.time())
+        ))
+        Order.objects.filter(pk=completed_order.pk).update(order_date=timezone.make_aware(
+            timezone.datetime.combine(two_days_ago, timezone.datetime.min.time())
+        ))
 
         StockItem.objects.create(
             sku='DASH IN',
@@ -435,4 +450,41 @@ class DashboardStatsAPITest(TestCase):
         self.assertEqual(response.data['stock']['in_stock'], 1)
         self.assertEqual(response.data['stock']['low_stock'], 1)
         self.assertEqual(response.data['stock']['out_of_stock'], 1)
+
+    def test_dashboard_stats_supports_today_yesterday_and_date_range(self):
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+
+        today_order = Order.objects.create(
+            customer_name='Today Customer',
+            order_status=Order.STATUS_COMPLETED,
+            total_amount=Decimal('1.00'),
+        )
+        yesterday_order = Order.objects.create(
+            customer_name='Yesterday Customer',
+            order_status=Order.STATUS_IN_PROGRESS,
+            total_amount=Decimal('1.00'),
+        )
+        Order.objects.filter(pk=today_order.pk).update(order_date=timezone.make_aware(
+            timezone.datetime.combine(today, timezone.datetime.min.time())
+        ))
+        Order.objects.filter(pk=yesterday_order.pk).update(order_date=timezone.make_aware(
+            timezone.datetime.combine(yesterday, timezone.datetime.min.time())
+        ))
+
+        today_response = self.client.get('/api/v1/dashboard/stats/?period=today')
+        yesterday_response = self.client.get('/api/v1/dashboard/stats/?period=yesterday')
+        range_response = self.client.get(
+            f'/api/v1/dashboard/stats/?date_from={yesterday.isoformat()}&date_to={yesterday.isoformat()}'
+        )
+
+        self.assertEqual(today_response.status_code, 200)
+        self.assertEqual(today_response.data['orders']['total'], 1)
+        self.assertEqual(today_response.data['orders']['completed'], 1)
+        self.assertEqual(yesterday_response.status_code, 200)
+        self.assertEqual(yesterday_response.data['orders']['total'], 1)
+        self.assertEqual(yesterday_response.data['orders']['in_progress'], 1)
+        self.assertEqual(range_response.status_code, 200)
+        self.assertEqual(range_response.data['orders']['total'], 1)
+        self.assertEqual(range_response.data['filters']['date_from'], yesterday.isoformat())
 

@@ -1,7 +1,9 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from datetime import timedelta
 from django.db.models import F
+from django.utils import timezone
 from django.urls import reverse
 
 from orders.models import Order
@@ -69,6 +71,29 @@ def api_root(request, format=None):
 def dashboard_stats(request, format=None):
     """Combined dashboard counts for orders and stock health."""
     orders = Order.objects.all()
+    period = request.query_params.get('period')
+    date_from = request.query_params.get('date_from')
+    date_to = request.query_params.get('date_to')
+
+    today = timezone.localdate()
+    if period:
+        period = period.lower()
+        if period == 'today':
+            date_from = date_to = today.isoformat()
+        elif period == 'yesterday':
+            yesterday = today - timedelta(days=1)
+            date_from = date_to = yesterday.isoformat()
+        elif period != 'all':
+            return Response(
+                {'error': 'period must be one of: today, yesterday, all'},
+                status=400,
+            )
+
+    if date_from:
+        orders = orders.filter(order_date__date__gte=date_from)
+    if date_to:
+        orders = orders.filter(order_date__date__lte=date_to)
+
     active_stock = StockItem.objects.filter(is_active=True)
 
     out_of_stock = active_stock.filter(available_stock_in_mtr=0).count()
@@ -81,6 +106,11 @@ def dashboard_stats(request, format=None):
     ).count()
 
     return Response({
+        'filters': {
+            'period': period or 'all',
+            'date_from': date_from,
+            'date_to': date_to,
+        },
         'orders': {
             'total': orders.count(),
             'new': orders.filter(order_status=Order.STATUS_NEW).count(),
