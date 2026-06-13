@@ -19,7 +19,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
-from .api_views import api_root
+from .api_views import api_root, dashboard_stats
 from .auth_views import (
     CustomTokenObtainPairView, jwt_user_info, jwt_logout, jwt_register
 )
@@ -29,6 +29,7 @@ urlpatterns = [
     
     # API root
     path('api/v1/', api_root, name='api-root'),
+    path('api/v1/dashboard/stats/', dashboard_stats, name='dashboard-stats'),
     
     # API endpoints
     path('api/v1/', include('products.urls')),

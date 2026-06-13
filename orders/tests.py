@@ -4,6 +4,8 @@ from django.contrib.auth.models import User
 from decimal import Decimal
 from rest_framework.test import APIClient
 from .models import Order, OrderItem
+from colors.models import Color
+from products.models import Product
 from stock.models import StockItem
 
 
@@ -296,4 +298,75 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(second_response.status_code, 200)
         order.refresh_from_db()
         self.assertEqual(order.order_status, Order.STATUS_COMPLETED)
+
+
+class DashboardStatsAPITest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='dashboard_user', password='test123')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.color = Color.objects.create(color_code='BLK', color_name='Black')
+        self.product = Product.objects.create(
+            vs_parent_id=900,
+            vs_child_id=900,
+            parent_reference='DASH SKU',
+            child_reference='DASH SKU',
+            parent_product_title='Dashboard Product',
+            child_product_title='Dashboard Product',
+        )
+
+    def test_dashboard_stats_returns_order_and_stock_counts(self):
+        Order.objects.create(
+            customer_name='New Customer',
+            order_status=Order.STATUS_NEW,
+            total_amount=Decimal('1.00'),
+        )
+        Order.objects.create(
+            customer_name='Progress Customer',
+            order_status=Order.STATUS_IN_PROGRESS,
+            total_amount=Decimal('1.00'),
+        )
+        Order.objects.create(
+            customer_name='Completed Customer',
+            order_status=Order.STATUS_COMPLETED,
+            total_amount=Decimal('1.00'),
+        )
+
+        StockItem.objects.create(
+            sku='DASH IN',
+            product_type='DASH',
+            product=self.product,
+            color=self.color,
+            available_stock_in_mtr=20,
+            minimum_stock_level=5,
+            is_active=True,
+        )
+        StockItem.objects.create(
+            sku='DASH LOW',
+            product_type='DASH',
+            product=self.product,
+            color=self.color,
+            available_stock_in_mtr=3,
+            minimum_stock_level=5,
+            is_active=True,
+        )
+        StockItem.objects.create(
+            sku='DASH OUT',
+            product_type='DASH',
+            product=self.product,
+            color=self.color,
+            available_stock_in_mtr=0,
+            minimum_stock_level=5,
+            is_active=True,
+        )
+
+        response = self.client.get('/api/v1/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['orders']['total'], 3)
+        self.assertEqual(response.data['orders']['in_progress'], 1)
+        self.assertEqual(response.data['orders']['completed'], 1)
+        self.assertEqual(response.data['stock']['in_stock'], 1)
+        self.assertEqual(response.data['stock']['low_stock'], 1)
+        self.assertEqual(response.data['stock']['out_of_stock'], 1)
 
