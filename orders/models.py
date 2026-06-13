@@ -524,10 +524,10 @@ class OrderStatusHistory(models.Model):
     
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='status_history')
     
-    from_status = models.CharField(max_length=20, choices=Order.STATUS_CHOICES,
-                                  help_text="Previous status")
-    to_status = models.CharField(max_length=20, choices=Order.STATUS_CHOICES,
-                                help_text="New status")
+    from_status = models.CharField(
+        max_length=20, choices=Order.STATUS_CHOICES, blank=True, null=True
+    )
+    to_status = models.CharField(max_length=20, choices=Order.STATUS_CHOICES)
     
     changed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
                                   help_text="User who made the change")

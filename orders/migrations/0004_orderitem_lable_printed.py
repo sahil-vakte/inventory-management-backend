@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('orders', '0003_alter_orderstatushistory_from_status_and_more'),
+        ('orders', '0002_order_status_flow'),
     ]
 
     operations = [
