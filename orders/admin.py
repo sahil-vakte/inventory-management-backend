@@ -8,7 +8,7 @@ class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 1
     fields = [
-        'sku', 'product_name', 'quantity', 'unit_price', 'line_total'
+        'sku', 'product_name', 'quantity', 'unit_price', 'line_total', 'lable_printed'
     ]
     readonly_fields = ['line_total']
 
@@ -203,9 +203,9 @@ class OrderItemAdmin(admin.ModelAdmin):
     
     list_display = [
         'id', 'order_link', 'sku', 'product_name', 'quantity', 
-        'unit_price', 'line_total'
+        'unit_price', 'line_total', 'lable_printed'
     ]
-    list_filter = ['created_at']
+    list_filter = ['lable_printed', 'created_at']
     search_fields = ['sku', 'product_name', 'order__order_number']
     readonly_fields = ['line_total', 'created_at', 'updated_at']
     
@@ -216,7 +216,7 @@ class OrderItemAdmin(admin.ModelAdmin):
         ('Product Information', {
             'fields': (
                 'product', 'stock_item', 'sku', 'product_name', 
-                'product_type', 'color_code'
+                'product_type', 'color_code', 'lable_printed'
             )
         }),
         ('Pricing', {

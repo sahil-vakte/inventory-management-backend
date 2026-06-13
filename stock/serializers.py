@@ -4,7 +4,8 @@ from django.utils import timezone
 from .models import StockItem, StockMovement, StockBatch, StockBatchRoll
 from .sku_utils import normalize_sku_reference
 from colors.serializers import ColorListSerializer
-from products.serializers import ProductListSerializer, ProductDetailSerializer
+from products.models import Product
+from products.serializers import ProductDetailSerializer
 
 class StockMovementSerializer(serializers.ModelSerializer):
     """Serializer for Stock Movement model"""
@@ -18,13 +19,30 @@ class StockMovementSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_at', 'deleted_at']
 
+class StockProductListSerializer(serializers.ModelSerializer):
+    brand_name = serializers.CharField(source='brand.name', read_only=True)
+    is_active = serializers.ReadOnlyField()
+    primary_location = serializers.CharField(source='primary_location.id', read_only=True)
+    secondary_location = serializers.CharField(source='secondary_location.id', read_only=True)
+
+    class Meta:
+        model = Product
+        fields = [
+            'vs_child_id', 'child_reference', 'child_product_title',
+            'parent_product_images',
+            'brand_name', 'price_break_1_price', 'is_active',
+            'child_active', 'parent_active', 'featured', 'is_deleted',
+            'primary_location', 'secondary_location'
+        ]
+
+
 class StockItemListSerializer(serializers.ModelSerializer):
     primary_location = serializers.SerializerMethodField()
     secondary_location = serializers.SerializerMethodField()
     parent_product_images = serializers.SerializerMethodField()
     """Simplified serializer for stock list views"""
     color = ColorListSerializer(read_only=True)
-    product = ProductListSerializer(read_only=True)
+    product = StockProductListSerializer(read_only=True)
     stock_status = serializers.ReadOnlyField()
     total_available_stock = serializers.ReadOnlyField()
     is_low_stock = serializers.ReadOnlyField()

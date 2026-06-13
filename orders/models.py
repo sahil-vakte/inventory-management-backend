@@ -285,6 +285,7 @@ class Order(models.Model):
         if user:
             self.updated_by = user
         self.save()
+        self.items.update(lable_printed=True, updated_at=timezone.now())
 
         self._record_status_change(old_status, self.STATUS_LABEL_PRINTED, user, "Order label printed")
 
@@ -461,6 +462,7 @@ class OrderItem(models.Model):
     
     # Additional Info
     notes = models.TextField(blank=True, null=True, help_text="Item-specific notes")
+    lable_printed = models.BooleanField(default=False)
 
     # Item-level processing
     ITEM_STATUS_PENDING = 'PENDING'

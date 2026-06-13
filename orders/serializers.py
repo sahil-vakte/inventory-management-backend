@@ -31,6 +31,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'parent_product_images',
             'quantity', 'quantity_ordered', 'quantity_processed',
             'unit_price', 'line_total', 'tax_rate', 'discount_amount',
+            'lable_printed',
             'assigned_to', 'assigned_to_username',
             'processing_status', 'processing_status_display',
             'notes', 'created_at', 'updated_at'
@@ -54,7 +55,7 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
         fields = [
             'stock_item', 'sku', 'product_name', 
             'product_type', 'color_code', 'quantity', 'unit_price', 
-            'tax_rate', 'discount_amount', 'notes'
+            'tax_rate', 'discount_amount', 'lable_printed', 'notes'
         ]
     
     def validate(self, data):

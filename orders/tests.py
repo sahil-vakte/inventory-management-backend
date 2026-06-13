@@ -173,6 +173,30 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(response.data['results'][0]['id'], order.id)
         self.assertEqual(len(response.data['results'][0]['items']), 1)
         self.assertEqual(response.data['results'][0]['items'][0]['sku'], 'SKU-001')
+        self.assertFalse(response.data['results'][0]['items'][0]['lable_printed'])
+
+    def test_order_detail_returns_item_lable_printed(self):
+        order = Order.objects.create(
+            customer_name='Detail Customer',
+            customer_email='detail@example.com',
+            total_amount=Decimal('25.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-001',
+            product_name='Test Product',
+            quantity=2,
+            quantity_ordered=2,
+            unit_price=Decimal('12.50'),
+            lable_printed=True,
+        )
+
+        response = self.client.get(f'/api/v1/orders/{order.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['items']), 1)
+        self.assertTrue(response.data['items'][0]['lable_printed'])
 
     def test_with_items_keeps_order_filters(self):
         pending_order = Order.objects.create(
@@ -206,6 +230,28 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         order.refresh_from_db()
         self.assertEqual(order.order_status, Order.STATUS_LABEL_PRINTED)
+
+    def test_label_printed_endpoint_marks_items_lable_printed(self):
+        order = Order.objects.create(
+            customer_name='Label Customer',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        item = OrderItem.objects.create(
+            order=order,
+            sku='SKU-001',
+            product_name='Test Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(f'/api/v1/orders/{order.id}/label-printed/', {})
+
+        self.assertEqual(response.status_code, 200)
+        item.refresh_from_db()
+        self.assertTrue(item.lable_printed)
+        self.assertTrue(response.data['order']['items'][0]['lable_printed'])
 
     def test_item_status_updates_parent_order_progress_status(self):
         order = Order.objects.create(

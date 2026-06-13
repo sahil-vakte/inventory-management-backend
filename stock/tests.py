@@ -26,6 +26,7 @@ class StockBatchIncomingAPITest(TestCase):
             child_product_title='Product AB',
             rrp_price_inc_vat=Decimal('10.00'),
             cost_price_inc_vat=Decimal('5.00'),
+            price_break_1_price=Decimal('9.50'),
         )
         self.stock_item = StockItem.objects.create(
             sku='AB',
@@ -69,6 +70,14 @@ class StockBatchIncomingAPITest(TestCase):
         self.assertEqual(response.data['old_stock_in_mtr'], 50)
         self.assertEqual(response.data['incoming_meterage'], 150)
         self.assertEqual(response.data['new_stock_in_mtr'], 200)
+
+    def test_stock_list_product_uses_price_break_1_price(self):
+        response = self.client.get('/api/v1/stock/')
+
+        self.assertEqual(response.status_code, 200)
+        product_data = response.data['results'][0]['product']
+        self.assertNotIn('effective_price', product_data)
+        self.assertEqual(product_data['price_break_1_price'], '9.50')
 
     def test_label_endpoint_returns_one_label_per_roll(self):
         batch = StockBatch.objects.create(
