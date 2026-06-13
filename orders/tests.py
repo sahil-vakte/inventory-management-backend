@@ -202,6 +202,48 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(len(response.data['items']), 1)
         self.assertTrue(response.data['items'][0]['lable_printed'])
 
+    def test_order_items_list_returns_available_stock_in_mtr(self):
+        color = Color.objects.create(
+            color_code='TST',
+            color_name='Test Color',
+        )
+        product = Product.objects.create(
+            vs_parent_id=10101,
+            vs_child_id=10101,
+            parent_reference='STOCK',
+            parent_product_title='Stock Product',
+            child_reference='STOCK SKU',
+            child_product_title='Stock Product',
+        )
+        stock_item = StockItem.objects.create(
+            sku='STOCK SKU',
+            product_type='STOCK',
+            product=product,
+            color=color,
+            available_stock_in_mtr=42,
+        )
+        order = Order.objects.create(
+            customer_name='Stock Customer',
+            customer_email='stock@example.com',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        item = OrderItem.objects.create(
+            order=order,
+            stock_item=stock_item,
+            sku='STOCK SKU',
+            product_name='Stock Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.get('/api/v1/order-items/')
+
+        self.assertEqual(response.status_code, 200)
+        result = next(row for row in response.data['results'] if row['id'] == item.id)
+        self.assertEqual(result['available_stock_in_mtr'], 42)
+
     def test_with_items_keeps_order_filters(self):
         pending_order = Order.objects.create(
             customer_name='Pending Customer',

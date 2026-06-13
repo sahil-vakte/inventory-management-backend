@@ -13,6 +13,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     assigned_to_username = serializers.SerializerMethodField()
     processing_status_display = serializers.CharField(source='get_processing_status_display', read_only=True)
     parent_product_images = serializers.SerializerMethodField()
+    available_stock_in_mtr = serializers.IntegerField(source='stock_item.available_stock_in_mtr', read_only=True)
 
     def get_assigned_to_username(self, obj):
         if obj.assigned_to_id:
@@ -28,7 +29,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'order', 'stock_item', 'stock_detail',
             'sku', 'product_name', 'product_type', 'color_code',
-            'parent_product_images',
+            'parent_product_images', 'available_stock_in_mtr',
             'quantity', 'quantity_ordered', 'quantity_processed',
             'unit_price', 'line_total', 'tax_rate', 'discount_amount',
             'lable_printed',

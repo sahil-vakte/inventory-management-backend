@@ -409,6 +409,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
         return self._update_order_items_lable_printed(order, request.data)
 
+    @action(detail=False, methods=['patch'], url_path='items/lable-printed')
+    def bulk_update_any_items_lable_printed(self, request):
+        """Update label printed flag for multiple order items by item ids."""
+        return self._update_order_items_lable_printed(None, request.data)
+
     def _update_order_items_lable_printed(self, order, payload, fallback_item_ids=None):
         value = payload.get('lable_printed', True)
         raw_ids = payload.get('order_item_ids') or fallback_item_ids
@@ -446,13 +451,23 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        items = list(order.items.filter(id__in=item_ids).order_by('id'))
+        base_queryset = order.items if order is not None else OrderItem.objects
+        items = list(
+            base_queryset.select_related(
+                'order', 'stock_item', 'stock_item__product', 'stock_item__color', 'assigned_to',
+            ).filter(id__in=item_ids).order_by('id')
+        )
         found_ids = {item.id for item in items}
         missing_ids = [item_id for item_id in item_ids if item_id not in found_ids]
         if missing_ids:
+            error_message = (
+                'Some items were not found for this order'
+                if order is not None else
+                'Some order items were not found'
+            )
             return Response(
                 {
-                    'error': 'Some items were not found for this order',
+                    'error': error_message,
                     'missing_order_item_ids': missing_ids,
                 },
                 status=status.HTTP_404_NOT_FOUND,
@@ -462,16 +477,21 @@ class OrderViewSet(viewsets.ModelViewSet):
             item.lable_printed = value
             item.save(update_fields=['lable_printed', 'updated_at'])
 
-        order.refresh_from_db()
         serialized_items = OrderItemSerializer(items, many=True).data
 
-        return Response({
+        response_data = {
             'message': 'Item label printed flag updated successfully',
             'updated_count': len(items),
             'item': serialized_items[0] if len(serialized_items) == 1 else None,
             'items': serialized_items,
-            'order': OrderDetailSerializer(order).data,
-        })
+        }
+        if order is not None:
+            order.refresh_from_db()
+            response_data['order'] = OrderDetailSerializer(order).data
+        else:
+            response_data['order_ids'] = sorted({item.order_id for item in items})
+
+        return Response(response_data)
     
     @action(detail=False, methods=['get'], url_path='statuses', permission_classes=[])
     def statuses(self, request):
@@ -603,7 +623,9 @@ class OrderViewSet(viewsets.ModelViewSet):
 class OrderItemViewSet(viewsets.ReadOnlyModelViewSet):
     """Read-only viewset for order items"""
     
-    queryset = OrderItem.objects.select_related('assigned_to', 'order').all()
+    queryset = OrderItem.objects.select_related(
+        'assigned_to', 'order', 'stock_item', 'stock_item__product', 'stock_item__color',
+    ).all()
     serializer_class = OrderItemSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
