@@ -206,6 +206,7 @@ class StockBatchRollSerializer(serializers.ModelSerializer):
 
 
 class StockBatchListSerializer(serializers.ModelSerializer):
+    rolls = StockBatchRollSerializer(many=True, read_only=True)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
 
     class Meta:
@@ -213,7 +214,7 @@ class StockBatchListSerializer(serializers.ModelSerializer):
         fields = [
             'batch_id', 'sku', 'product_name', 'supplier',
             'created_by_username', 'batch_date', 'roll_count',
-            'total_meterage', 'is_deleted', 'created_at', 'updated_at'
+            'total_meterage', 'rolls', 'is_deleted', 'created_at', 'updated_at'
         ]
         read_only_fields = fields
 

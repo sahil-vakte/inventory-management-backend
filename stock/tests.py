@@ -127,6 +127,38 @@ class StockBatchIncomingAPITest(TestCase):
         self.assertEqual(response.data['labels'][0]['meterage'], 100)
         self.assertEqual(response.data['labels'][0]['supplier'], 'Supplier Ltd')
 
+    def test_stock_batch_list_returns_roll_details(self):
+        batch = StockBatch.objects.create(
+            stock_item=self.stock_item,
+            sku='AB',
+            product_name='Product AB',
+            supplier='Supplier Ltd',
+            created_by=self.user,
+            total_meterage=150,
+            roll_count=2,
+            notes='Incoming stock note',
+        )
+        StockBatchRoll.objects.create(batch=batch, roll_number=1, meterage=100)
+        StockBatchRoll.objects.create(batch=batch, roll_number=2, meterage=50)
+
+        response = self.client.get('/api/v1/stock-batches/')
+
+        self.assertEqual(response.status_code, 200)
+        result = next(row for row in response.data['results'] if row['batch_id'] == batch.batch_id)
+        self.assertIn('stock_item', result)
+        self.assertIn('created_by', result)
+        self.assertIn('notes', result)
+        self.assertIn('stock_movement', result)
+        self.assertIn('deleted_at', result)
+        self.assertEqual(result['stock_item'], self.stock_item.sku)
+        self.assertEqual(result['created_by'], self.user.id)
+        self.assertEqual(result['notes'], 'Incoming stock note')
+        self.assertEqual(len(result['rolls']), 2)
+        self.assertEqual(result['rolls'][0]['roll_number'], 1)
+        self.assertEqual(result['rolls'][0]['meterage'], 100)
+        self.assertEqual(result['rolls'][1]['roll_number'], 2)
+        self.assertEqual(result['rolls'][1]['meterage'], 50)
+
     def test_mark_labels_generated_updates_rolls(self):
         batch = StockBatch.objects.create(
             stock_item=self.stock_item,

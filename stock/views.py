@@ -520,7 +520,7 @@ class StockBatchViewSet(viewsets.ModelViewSet):
         if self.action == 'create':
             return StockBatchCreateSerializer
         if self.action == 'list':
-            return StockBatchListSerializer
+            return StockBatchDetailSerializer
         return StockBatchDetailSerializer
 
     def destroy(self, request, *args, **kwargs):
