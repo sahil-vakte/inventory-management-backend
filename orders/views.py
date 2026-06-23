@@ -6,6 +6,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 from django.db.models import Sum, Count, Avg, Q, Prefetch
 from django.utils import timezone
+from django.conf import settings
 from decimal import Decimal
 from .models import Order, OrderItem, OrderStatusHistory
 from .serializers import (
@@ -13,7 +14,14 @@ from .serializers import (
     OrderListWithItemsSerializer,
     OrderItemSerializer, OrderItemCreateSerializer, OrderStatusHistorySerializer,
     OrderConfirmSerializer, OrderShipSerializer, OrderCancelSerializer,
-    OrderStatsSerializer
+    OrderStatsSerializer, RoyalMailShipmentSerializer
+)
+from .services.royal_mail import (
+    RoyalMailAPIError,
+    RoyalMailClickDropClient,
+    RoyalMailConfigError,
+    extract_royal_mail_reference,
+    extract_tracking_number,
 )
 
 
@@ -294,6 +302,91 @@ class OrderViewSet(viewsets.ModelViewSet):
                 )
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'], url_path='royal-mail/config')
+    def royal_mail_config(self, request):
+        """Return Royal Mail Click & Drop configuration status without exposing secrets."""
+        return Response({
+            'configured': bool(settings.ROYAL_MAIL_API_KEY),
+            'booking_enabled': bool(settings.ROYAL_MAIL_API_KEY),
+            'api_base_url': settings.ROYAL_MAIL_API_BASE_URL,
+            'auth_url': settings.ROYAL_MAIL_AUTH_URL,
+            'username': settings.ROYAL_MAIL_USERNAME,
+            'login_credentials_present': bool(settings.ROYAL_MAIL_USERNAME and settings.ROYAL_MAIL_PASSWORD),
+            'default_package_format': settings.ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT,
+            'default_weight_grams': settings.ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS,
+            'api_key_present': bool(settings.ROYAL_MAIL_API_KEY),
+            'api_key_required_for_booking': True,
+            'message': (
+                'Royal Mail login credentials are present, but shipment booking requires a Click & Drop API key.'
+                if not settings.ROYAL_MAIL_API_KEY else
+                'Royal Mail Click & Drop API key is configured.'
+            ),
+        })
+
+    @action(detail=True, methods=['post'], url_path='book-royal-mail-shipping')
+    def book_royal_mail_shipping(self, request, pk=None):
+        """Create this order in Royal Mail Click & Drop and mark it shipped."""
+        order = self.get_object()
+        serializer = RoyalMailShipmentSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            response_data = RoyalMailClickDropClient().create_order(
+                order,
+                weight_in_grams=serializer.validated_data.get('weight_in_grams'),
+                package_format_identifier=serializer.validated_data.get('package_format_identifier') or None,
+                service_code=serializer.validated_data.get('service_code') or None,
+            )
+            tracking_number = extract_tracking_number(response_data)
+            royal_mail_reference = extract_royal_mail_reference(response_data)
+
+            note_parts = ['Royal Mail Click & Drop shipment booked.']
+            if royal_mail_reference:
+                note_parts.append(f'Reference: {royal_mail_reference}.')
+            if serializer.validated_data.get('notes'):
+                note_parts.append(serializer.validated_data['notes'])
+            note = ' '.join(note_parts)
+            order.internal_notes = f"{order.internal_notes}\n{note}".strip() if order.internal_notes else note
+            if serializer.validated_data.get('service_code'):
+                order.shipping_method = serializer.validated_data['service_code']
+            order.save(update_fields=['internal_notes', 'shipping_method', 'updated_at'])
+
+            order.mark_shipped(
+                tracking_number=tracking_number,
+                carrier='Royal Mail',
+                user=request.user,
+            )
+        except RoyalMailConfigError as exc:
+            return Response({
+                'error': str(exc),
+                'message': (
+                    'Only Royal Mail login credentials are configured. '
+                    'Generate a Click & Drop API key from the Royal Mail account and set ROYAL_MAIL_API_KEY.'
+                ),
+                'auth_url': settings.ROYAL_MAIL_AUTH_URL,
+                'username': settings.ROYAL_MAIL_USERNAME,
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except RoyalMailAPIError as exc:
+            return Response(
+                {
+                    'error': str(exc),
+                    'royal_mail_status_code': exc.status_code,
+                    'royal_mail_response': exc.response_data,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'message': 'Royal Mail shipment booked and order marked as shipped',
+            'tracking_number': tracking_number,
+            'royal_mail_reference': royal_mail_reference,
+            'royal_mail_response': response_data,
+            'order': OrderDetailSerializer(order).data,
+        })
     
     @action(detail=True, methods=['post'], url_path='deliver')
     def deliver(self, request, pk=None):

@@ -304,6 +304,14 @@ class OrderShipSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
 
 
+class RoyalMailShipmentSerializer(serializers.Serializer):
+    """Serializer for booking shipment through Royal Mail Click & Drop."""
+    weight_in_grams = serializers.IntegerField(required=False, min_value=1)
+    package_format_identifier = serializers.CharField(required=False, allow_blank=True)
+    service_code = serializers.CharField(required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+
 class OrderCancelSerializer(serializers.Serializer):
     """Serializer for cancelling an order"""
     reason = serializers.CharField(required=True)

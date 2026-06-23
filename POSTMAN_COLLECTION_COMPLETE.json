@@ -3117,6 +3117,66 @@
               "response": []
             },
             {
+              "name": "Royal Mail Config Status",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/royal-mail/config/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "royal-mail",
+                    "config",
+                    ""
+                  ]
+                },
+                "description": "Checks whether Royal Mail Click & Drop login credentials and API key settings are present without exposing secrets. Booking requires ROYAL_MAIL_API_KEY."
+              },
+              "response": []
+            },
+            {
+              "name": "Book Royal Mail Shipping",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/book-royal-mail-shipping/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "{{order_id}}",
+                    "book-royal-mail-shipping",
+                    ""
+                  ]
+                },
+                "description": "Creates this completed order in Royal Mail Click & Drop and marks the local order as SHIPPED after a successful API response. The screenshot login credentials are not enough for API booking; set ROYAL_MAIL_API_KEY on the server.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"weight_in_grams\": 250,\n  \"package_format_identifier\": \"Parcel\",\n  \"service_code\": \"TPLN\",\n  \"notes\": \"Booked through Royal Mail Click & Drop API\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
               "name": "Deliver Order",
               "request": {
                 "method": "POST",

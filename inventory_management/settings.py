@@ -10,10 +10,13 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -205,3 +208,18 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_LIFETIME': timedelta(minutes=60),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
 }
+
+# Royal Mail Click & Drop API
+ROYAL_MAIL_API_BASE_URL = os.environ.get(
+    'ROYAL_MAIL_API_BASE_URL',
+    'https://api.parcel.royalmail.com/api/v1',
+).rstrip('/')
+ROYAL_MAIL_AUTH_URL = os.environ.get(
+    'ROYAL_MAIL_AUTH_URL',
+    'https://auth.parcel.royalmail.com/',
+).rstrip('/')
+ROYAL_MAIL_USERNAME = os.environ.get('ROYAL_MAIL_USERNAME', '')
+ROYAL_MAIL_PASSWORD = os.environ.get('ROYAL_MAIL_PASSWORD', '')
+ROYAL_MAIL_API_KEY = os.environ.get('ROYAL_MAIL_API_KEY', '')
+ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT = os.environ.get('ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT', 'Parcel')
+ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS = int(os.environ.get('ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS', '100'))

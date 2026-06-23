@@ -1,9 +1,11 @@
 # Tests for Order Management with Employee Assignment
 from django.test import TestCase
+from django.test import override_settings
 from django.contrib.auth.models import User
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import Mock, patch
 from rest_framework.test import APIClient
 from .models import Order, OrderItem
 from colors.models import Color
@@ -298,6 +300,121 @@ class OrderWithItemsAPITest(TestCase):
         item.refresh_from_db()
         self.assertTrue(item.lable_printed)
         self.assertTrue(response.data['order']['items'][0]['lable_printed'])
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_creates_remote_order_and_marks_shipped(self, mock_post):
+        royal_mail_response = {
+            'items': [
+                {
+                    'orderIdentifier': 'RM-ORDER-1',
+                    'trackingNumber': 'RMTRACK123',
+                }
+            ]
+        }
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = royal_mail_response
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='Royal Mail Customer',
+            customer_email='rm@example.com',
+            customer_phone='07123456789',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-001',
+            product_name='Royal Mail Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {
+                'weight_in_grams': 250,
+                'package_format_identifier': 'Parcel',
+                'service_code': 'TPLN',
+                'notes': 'Booked from API test',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, Order.STATUS_SHIPPED)
+        self.assertEqual(order.tracking_number, 'RMTRACK123')
+        self.assertEqual(order.carrier, 'Royal Mail')
+        self.assertEqual(order.shipping_method, 'TPLN')
+        self.assertIn('RM-ORDER-1', order.internal_notes)
+        self.assertIn('Booked from API test', order.internal_notes)
+
+        request_payload = mock_post.call_args.kwargs['json']
+        request_headers = mock_post.call_args.kwargs['headers']
+        self.assertEqual(request_headers['Authorization'], 'test-api-key')
+        self.assertEqual(request_payload['items'][0]['orderReference'], order.order_number)
+        self.assertEqual(request_payload['items'][0]['packages'][0]['weightInGrams'], 250)
+        self.assertEqual(request_payload['items'][0]['packages'][0]['contents'][0]['SKU'], 'SKU-001')
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='',
+        ROYAL_MAIL_AUTH_URL='https://auth.parcel.royalmail.com',
+        ROYAL_MAIL_USERNAME='info@civani.co.uk',
+        ROYAL_MAIL_PASSWORD='available-but-not-api-key',
+    )
+    def test_book_royal_mail_shipping_requires_api_key(self):
+        order = Order.objects.create(
+            customer_name='Royal Mail Customer',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 250},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('ROYAL_MAIL_API_KEY', response.data['error'])
+        self.assertEqual(response.data['auth_url'], 'https://auth.parcel.royalmail.com')
+        self.assertEqual(response.data['username'], 'info@civani.co.uk')
+        self.assertIn('Click & Drop API key', response.data['message'])
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_AUTH_URL='https://auth.parcel.royalmail.com',
+        ROYAL_MAIL_USERNAME='info@civani.co.uk',
+        ROYAL_MAIL_PASSWORD='test-password',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    def test_royal_mail_config_does_not_expose_api_key(self):
+        response = self.client.get('/api/v1/orders/royal-mail/config/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['configured'])
+        self.assertTrue(response.data['booking_enabled'])
+        self.assertTrue(response.data['api_key_present'])
+        self.assertTrue(response.data['login_credentials_present'])
+        self.assertEqual(response.data['username'], 'info@civani.co.uk')
+        self.assertNotIn('test-api-key', str(response.data))
+        self.assertNotIn('test-password', str(response.data))
 
     def test_item_lable_printed_endpoint_updates_only_selected_item(self):
         order = Order.objects.create(
