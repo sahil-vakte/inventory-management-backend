@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Order, OrderItem, OrderStatusHistory
+from .models import Order, OrderItem, OrderStatusHistory, RoyalMailOAuthToken
 
 
 class OrderItemInline(admin.TabularInline):
@@ -215,7 +215,7 @@ class OrderItemAdmin(admin.ModelAdmin):
         }),
         ('Product Information', {
             'fields': (
-                'product', 'stock_item', 'sku', 'product_name', 
+                'stock_item', 'sku', 'product_name', 
                 'product_type', 'color_code', 'lable_printed'
             )
         }),
@@ -278,3 +278,48 @@ class OrderStatusHistoryAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         """Prevent manual creation of status history"""
         return False
+
+
+@admin.register(RoyalMailOAuthToken)
+class RoyalMailOAuthTokenAdmin(admin.ModelAdmin):
+    """Admin view for Royal Mail OAuth connection status."""
+
+    list_display = [
+        'id', 'is_active', 'token_type', 'expires_at', 'is_expired_display',
+        'created_at', 'updated_at'
+    ]
+    list_filter = ['is_active', 'token_type', 'created_at', 'updated_at']
+    readonly_fields = [
+        'masked_access_token', 'masked_refresh_token', 'token_type', 'scope',
+        'expires_at', 'raw_response', 'is_active', 'created_at', 'updated_at',
+    ]
+    fields = readonly_fields
+    actions = ['deactivate_tokens']
+
+    def has_add_permission(self, request):
+        return False
+
+    def masked_access_token(self, obj):
+        return self._mask(obj.access_token)
+    masked_access_token.short_description = 'Access token'
+
+    def masked_refresh_token(self, obj):
+        return self._mask(obj.refresh_token)
+    masked_refresh_token.short_description = 'Refresh token'
+
+    def is_expired_display(self, obj):
+        return obj.is_expired
+    is_expired_display.boolean = True
+    is_expired_display.short_description = 'Expired'
+
+    def deactivate_tokens(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f'{updated} Royal Mail OAuth token(s) deactivated.')
+    deactivate_tokens.short_description = 'Deactivate selected tokens'
+
+    def _mask(self, value):
+        if not value:
+            return ''
+        if len(value) <= 8:
+            return '********'
+        return f"{value[:4]}...{value[-4:]}"

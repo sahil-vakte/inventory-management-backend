@@ -548,3 +548,47 @@ class OrderStatusHistory(models.Model):
     
     def __str__(self):
         return f"{self.order.order_number}: {self.from_status} → {self.to_status}"
+
+
+class RoyalMailOAuthToken(models.Model):
+    """Stores the active Royal Mail OAuth token without exposing it in APIs."""
+
+    access_token = models.TextField()
+    refresh_token = models.TextField(blank=True, null=True)
+    token_type = models.CharField(max_length=50, blank=True, null=True)
+    scope = models.TextField(blank=True, null=True)
+    expires_at = models.DateTimeField(blank=True, null=True)
+    raw_response = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'royal_mail_oauth_tokens'
+        ordering = ['-updated_at']
+        verbose_name = 'Royal Mail OAuth Token'
+        verbose_name_plural = 'Royal Mail OAuth Tokens'
+        indexes = [
+            models.Index(fields=['is_active', '-updated_at'], name='royal_mail_is_active_idx'),
+            models.Index(fields=['expires_at'], name='royal_mail_expires_at_idx'),
+        ]
+
+    def __str__(self):
+        status = 'active' if self.is_active else 'inactive'
+        return f"Royal Mail OAuth token ({status})"
+
+    @classmethod
+    def get_active(cls):
+        return cls.objects.filter(is_active=True).order_by('-updated_at').first()
+
+    @property
+    def is_expired(self):
+        if not self.expires_at:
+            return False
+        return self.expires_at <= timezone.now()
+
+    @property
+    def needs_refresh(self):
+        if not self.expires_at:
+            return False
+        return self.expires_at <= timezone.now() + timezone.timedelta(minutes=5)

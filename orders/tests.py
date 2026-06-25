@@ -7,7 +7,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import Mock, patch
 from rest_framework.test import APIClient
-from .models import Order, OrderItem
+from .models import Order, OrderItem, RoyalMailOAuthToken
 from colors.models import Color
 from products.models import Product
 from stock.models import StockItem
@@ -390,10 +390,58 @@ class OrderWithItemsAPITest(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn('ROYAL_MAIL_API_KEY', response.data['error'])
+        self.assertIn('OAuth', response.data['error'])
         self.assertEqual(response.data['auth_url'], 'https://auth.parcel.royalmail.com')
         self.assertEqual(response.data['username'], 'info@civani.co.uk')
-        self.assertIn('Click & Drop API key', response.data['message'])
+        self.assertIn('ROYAL_MAIL_API_KEY', response.data['message'])
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_uses_oauth_token_when_api_key_missing(self, mock_post):
+        RoyalMailOAuthToken.objects.create(
+            access_token='oauth-access-token',
+            token_type='Bearer',
+            expires_at=timezone.now() + timedelta(hours=1),
+            is_active=True,
+        )
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'items': [{'orderIdentifier': 'RM-OAUTH-1', 'trackingNumber': 'OAUTH123'}]
+        }
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='Royal Mail OAuth Customer',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-OAUTH',
+            product_name='Royal Mail OAuth Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 250},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        request_headers = mock_post.call_args.kwargs['headers']
+        self.assertEqual(request_headers['Authorization'], 'Bearer oauth-access-token')
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, Order.STATUS_SHIPPED)
+        self.assertEqual(order.tracking_number, 'OAUTH123')
 
     @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',
@@ -415,6 +463,77 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(response.data['username'], 'info@civani.co.uk')
         self.assertNotIn('test-api-key', str(response.data))
         self.assertNotIn('test-password', str(response.data))
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='',
+        ROYAL_MAIL_CLIENT_ID='client-id',
+        ROYAL_MAIL_CLIENT_SECRET='client-secret',
+        ROYAL_MAIL_OAUTH_CALLBACK_URL='https://www.wims.cloud/auth/royalmail/callback',
+        ROYAL_MAIL_OAUTH_AUTHORIZATION_URL='https://auth.parcel.royalmail.com/oauth2/authorize',
+        ROYAL_MAIL_OAUTH_TOKEN_URL='https://auth.parcel.royalmail.com/oauth2/token',
+        ROYAL_MAIL_OAUTH_SCOPE='orders',
+    )
+    def test_royal_mail_oauth_start_returns_authorization_url_without_secret(self):
+        response = self.client.get('/api/v1/orders/royal-mail/oauth/start/?state=test-state')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('authorization_url', response.data)
+        self.assertIn('client_id=client-id', response.data['authorization_url'])
+        self.assertIn('redirect_uri=https%3A%2F%2Fwww.wims.cloud%2Fauth%2Froyalmail%2Fcallback', response.data['authorization_url'])
+        self.assertIn('state=test-state', response.data['authorization_url'])
+        self.assertNotIn('client-secret', str(response.data))
+
+    def test_royal_mail_oauth_callback_requires_code(self):
+        response = self.client.get('/auth/royalmail/callback')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data['connected'])
+
+    @override_settings(
+        ROYAL_MAIL_CLIENT_ID='client-id',
+        ROYAL_MAIL_CLIENT_SECRET='client-secret',
+        ROYAL_MAIL_OAUTH_CALLBACK_URL='https://www.wims.cloud/auth/royalmail/callback',
+        ROYAL_MAIL_OAUTH_AUTHORIZATION_URL='https://auth.parcel.royalmail.com/oauth2/authorize',
+        ROYAL_MAIL_OAUTH_TOKEN_URL='https://auth.parcel.royalmail.com/oauth2/token',
+        ROYAL_MAIL_OAUTH_SCOPE='orders',
+    )
+    @patch('orders.services.royal_mail.requests.post')
+    def test_royal_mail_oauth_callback_exchanges_code_and_masks_token(self, mock_post):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'access_token': 'new-access-token',
+            'refresh_token': 'new-refresh-token',
+            'token_type': 'Bearer',
+            'expires_in': 3600,
+            'scope': 'orders',
+        }
+        mock_post.return_value = mock_response
+
+        response = self.client.get('/auth/royalmail/callback?code=abc123&state=connect')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['connected'])
+        self.assertEqual(RoyalMailOAuthToken.objects.filter(is_active=True).count(), 1)
+        self.assertNotIn('new-access-token', str(response.data))
+        self.assertNotIn('new-refresh-token', str(response.data))
+
+    @override_settings(ROYAL_MAIL_API_KEY='')
+    def test_royal_mail_config_reports_oauth_connected(self):
+        RoyalMailOAuthToken.objects.create(
+            access_token='active-token',
+            token_type='Bearer',
+            expires_at=timezone.now() + timedelta(hours=1),
+            is_active=True,
+        )
+
+        response = self.client.get('/api/v1/orders/royal-mail/config/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['configured'])
+        self.assertTrue(response.data['booking_enabled'])
+        self.assertTrue(response.data['oauth_connected'])
+        self.assertEqual(response.data['auth_mode'], 'oauth')
+        self.assertNotIn('active-token', str(response.data))
 
     def test_item_lable_printed_endpoint_updates_only_selected_item(self):
         order = Order.objects.create(

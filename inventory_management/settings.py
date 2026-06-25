@@ -221,5 +221,24 @@ ROYAL_MAIL_AUTH_URL = os.environ.get(
 ROYAL_MAIL_USERNAME = os.environ.get('ROYAL_MAIL_USERNAME', '')
 ROYAL_MAIL_PASSWORD = os.environ.get('ROYAL_MAIL_PASSWORD', '')
 ROYAL_MAIL_API_KEY = os.environ.get('ROYAL_MAIL_API_KEY', '')
+ROYAL_MAIL_CLIENT_ID = os.environ.get('ROYAL_MAIL_CLIENT_ID', '')
+ROYAL_MAIL_CLIENT_SECRET = os.environ.get('ROYAL_MAIL_CLIENT_SECRET', '')
+ROYAL_MAIL_OAUTH_CALLBACK_URL = os.environ.get(
+    'ROYAL_MAIL_OAUTH_CALLBACK_URL',
+    'https://www.wims.cloud/auth/royalmail/callback',
+)
+ROYAL_MAIL_OAUTH_CALLBACK_PATH = os.environ.get(
+    'ROYAL_MAIL_OAUTH_CALLBACK_PATH',
+    '/auth/royalmail/callback',
+)
+ROYAL_MAIL_OAUTH_AUTHORIZATION_URL = os.environ.get(
+    'ROYAL_MAIL_OAUTH_AUTHORIZATION_URL',
+    f'{ROYAL_MAIL_AUTH_URL}/oauth2/authorize',
+)
+ROYAL_MAIL_OAUTH_TOKEN_URL = os.environ.get(
+    'ROYAL_MAIL_OAUTH_TOKEN_URL',
+    f'{ROYAL_MAIL_AUTH_URL}/oauth2/token',
+)
+ROYAL_MAIL_OAUTH_SCOPE = os.environ.get('ROYAL_MAIL_OAUTH_SCOPE', '')
 ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT = os.environ.get('ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT', 'Parcel')
 ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS = int(os.environ.get('ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS', '100'))

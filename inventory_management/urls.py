@@ -23,6 +23,7 @@ from .api_views import api_root, dashboard_stats
 from .auth_views import (
     CustomTokenObtainPairView, jwt_user_info, jwt_logout, jwt_register
 )
+from orders.views import royal_mail_oauth_callback
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -30,6 +31,8 @@ urlpatterns = [
     # API root
     path('api/v1/', api_root, name='api-root'),
     path('api/v1/dashboard/stats/', dashboard_stats, name='dashboard-stats'),
+    path('auth/royalmail/callback', royal_mail_oauth_callback, name='royal-mail-oauth-callback'),
+    path('auth/royalmail/callback/', royal_mail_oauth_callback, name='royal-mail-oauth-callback-slash'),
     
     # API endpoints
     path('api/v1/', include('products.urls')),

@@ -1,8 +1,12 @@
 import logging
 from decimal import Decimal
+from urllib.parse import urlencode
 
 import requests
 from django.conf import settings
+from django.utils import timezone
+
+from orders.models import RoyalMailOAuthToken
 
 
 logger = logging.getLogger(__name__)
@@ -19,6 +23,140 @@ class RoyalMailAPIError(RuntimeError):
         self.response_data = response_data
 
 
+class RoyalMailOAuthError(RuntimeError):
+    def __init__(self, message, status_code=None, response_data=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.response_data = response_data
+
+
+class RoyalMailOAuthClient:
+    """OAuth helper for connecting WIMS to Royal Mail Click & Drop."""
+
+    def __init__(self, timeout=30):
+        self.client_id = settings.ROYAL_MAIL_CLIENT_ID
+        self.client_secret = settings.ROYAL_MAIL_CLIENT_SECRET
+        self.callback_url = settings.ROYAL_MAIL_OAUTH_CALLBACK_URL
+        self.authorization_url = settings.ROYAL_MAIL_OAUTH_AUTHORIZATION_URL
+        self.token_url = settings.ROYAL_MAIL_OAUTH_TOKEN_URL
+        self.scope = settings.ROYAL_MAIL_OAUTH_SCOPE
+        self.timeout = timeout
+
+    def ensure_configured(self):
+        missing = []
+        if not self.client_id:
+            missing.append('ROYAL_MAIL_CLIENT_ID')
+        if not self.client_secret:
+            missing.append('ROYAL_MAIL_CLIENT_SECRET')
+        if not self.callback_url:
+            missing.append('ROYAL_MAIL_OAUTH_CALLBACK_URL')
+        if not self.authorization_url:
+            missing.append('ROYAL_MAIL_OAUTH_AUTHORIZATION_URL')
+        if not self.token_url:
+            missing.append('ROYAL_MAIL_OAUTH_TOKEN_URL')
+        if missing:
+            raise RoyalMailConfigError(f"Missing Royal Mail OAuth settings: {', '.join(missing)}")
+
+    def build_authorization_url(self, state=None):
+        self.ensure_configured()
+        params = {
+            'response_type': 'code',
+            'client_id': self.client_id,
+            'redirect_uri': self.callback_url,
+        }
+        if self.scope:
+            params['scope'] = self.scope
+        if state:
+            params['state'] = state
+        return f"{self.authorization_url}?{urlencode(params)}"
+
+    def exchange_code(self, code):
+        self.ensure_configured()
+        if not code:
+            raise RoyalMailOAuthError('Royal Mail callback code is required')
+        return self._request_token({
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': self.callback_url,
+            'client_id': self.client_id,
+            'client_secret': self.client_secret,
+        })
+
+    def refresh_token(self, token=None):
+        self.ensure_configured()
+        token = token or RoyalMailOAuthToken.get_active()
+        if not token or not token.refresh_token:
+            raise RoyalMailOAuthError('Royal Mail refresh token is not available')
+        return self._request_token({
+            'grant_type': 'refresh_token',
+            'refresh_token': token.refresh_token,
+            'client_id': self.client_id,
+            'client_secret': self.client_secret,
+        })
+
+    def get_valid_access_token(self):
+        token = RoyalMailOAuthToken.get_active()
+        if not token:
+            raise RoyalMailConfigError('Royal Mail OAuth is not connected')
+        if token.needs_refresh and token.refresh_token:
+            token = self.refresh_token(token)
+        if token.is_expired:
+            raise RoyalMailConfigError('Royal Mail OAuth token is expired; reconnect Royal Mail')
+        return token.access_token
+
+    def _request_token(self, data):
+        try:
+            response = requests.post(
+                self.token_url,
+                data=data,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                timeout=self.timeout,
+            )
+        except requests.RequestException as exc:
+            raise RoyalMailOAuthError(f'Royal Mail OAuth request failed: {exc}') from exc
+
+        response_data = self._parse_response(response)
+        if response.status_code >= 400:
+            raise RoyalMailOAuthError(
+                f'Royal Mail OAuth returned HTTP {response.status_code}',
+                status_code=response.status_code,
+                response_data=response_data,
+            )
+
+        access_token = response_data.get('access_token')
+        if not access_token:
+            raise RoyalMailOAuthError(
+                'Royal Mail OAuth response did not include an access token',
+                status_code=response.status_code,
+                response_data=response_data,
+            )
+
+        expires_at = None
+        expires_in = response_data.get('expires_in')
+        if expires_in:
+            try:
+                expires_at = timezone.now() + timezone.timedelta(seconds=int(expires_in))
+            except (TypeError, ValueError):
+                expires_at = None
+
+        RoyalMailOAuthToken.objects.filter(is_active=True).update(is_active=False)
+        return RoyalMailOAuthToken.objects.create(
+            access_token=access_token,
+            refresh_token=response_data.get('refresh_token'),
+            token_type=response_data.get('token_type'),
+            scope=response_data.get('scope'),
+            expires_at=expires_at,
+            raw_response=response_data,
+            is_active=True,
+        )
+
+    def _parse_response(self, response):
+        try:
+            return response.json()
+        except ValueError:
+            return {'raw': response.text}
+
+
 class RoyalMailClickDropClient:
     """Client for Royal Mail Click & Drop API order creation."""
 
@@ -28,10 +166,11 @@ class RoyalMailClickDropClient:
         self.timeout = timeout
 
     def ensure_configured(self):
-        if not self.api_key:
-            raise RoyalMailConfigError('ROYAL_MAIL_API_KEY is not configured')
         if not self.base_url:
             raise RoyalMailConfigError('ROYAL_MAIL_API_BASE_URL is not configured')
+        if self.api_key:
+            return
+        RoyalMailOAuthClient().get_valid_access_token()
 
     def create_order(self, order, *, weight_in_grams=None, package_format_identifier=None, service_code=None):
         self.ensure_configured()
@@ -48,10 +187,7 @@ class RoyalMailClickDropClient:
             response = requests.post(
                 url,
                 json=payload,
-                headers={
-                    'Authorization': self.api_key,
-                    'Content-Type': 'application/json',
-                },
+                headers=self._headers(),
                 timeout=self.timeout,
             )
         except requests.RequestException as exc:
@@ -66,6 +202,16 @@ class RoyalMailClickDropClient:
             )
 
         return response_data
+
+    def _headers(self):
+        if self.api_key:
+            authorization = self.api_key
+        else:
+            authorization = f"Bearer {RoyalMailOAuthClient().get_valid_access_token()}"
+        return {
+            'Authorization': authorization,
+            'Content-Type': 'application/json',
+        }
 
     def build_create_order_payload(self, order, *, weight_in_grams=None, package_format_identifier=None, service_code=None):
         weight_in_grams = weight_in_grams or settings.ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS

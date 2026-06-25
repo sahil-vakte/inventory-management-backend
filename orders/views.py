@@ -1,14 +1,14 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 from django.db.models import Sum, Count, Avg, Q, Prefetch
 from django.utils import timezone
 from django.conf import settings
 from decimal import Decimal
-from .models import Order, OrderItem, OrderStatusHistory
+from .models import Order, OrderItem, OrderStatusHistory, RoyalMailOAuthToken
 from .serializers import (
     OrderListSerializer, OrderDetailSerializer, OrderCreateUpdateSerializer,
     OrderListWithItemsSerializer,
@@ -20,9 +20,70 @@ from .services.royal_mail import (
     RoyalMailAPIError,
     RoyalMailClickDropClient,
     RoyalMailConfigError,
+    RoyalMailOAuthClient,
+    RoyalMailOAuthError,
     extract_royal_mail_reference,
     extract_tracking_number,
 )
+
+
+def _serialize_royal_mail_oauth_token(token):
+    if not token:
+        return None
+    return {
+        'connected': bool(token.is_active),
+        'token_type': token.token_type,
+        'scope': token.scope,
+        'expires_at': token.expires_at,
+        'is_expired': token.is_expired,
+        'needs_refresh': token.needs_refresh,
+        'updated_at': token.updated_at,
+    }
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def royal_mail_oauth_callback(request):
+    """Royal Mail redirects here after an admin authorizes WIMS."""
+    error = request.query_params.get('error')
+    if error:
+        return Response(
+            {
+                'connected': False,
+                'error': error,
+                'error_description': request.query_params.get('error_description'),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    code = request.query_params.get('code')
+    if not code:
+        return Response(
+            {'connected': False, 'error': 'Royal Mail callback code is required'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        token = RoyalMailOAuthClient().exchange_code(code)
+    except RoyalMailConfigError as exc:
+        return Response({'connected': False, 'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except RoyalMailOAuthError as exc:
+        return Response(
+            {
+                'connected': False,
+                'error': str(exc),
+                'royal_mail_status_code': exc.status_code,
+                'royal_mail_response': exc.response_data,
+            },
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response({
+        'connected': True,
+        'message': 'Royal Mail OAuth connected successfully',
+        'state': request.query_params.get('state'),
+        'token': _serialize_royal_mail_oauth_token(token),
+    })
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -306,22 +367,78 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='royal-mail/config')
     def royal_mail_config(self, request):
         """Return Royal Mail Click & Drop configuration status without exposing secrets."""
+        active_token = RoyalMailOAuthToken.get_active()
+        oauth_connected = bool(active_token and not active_token.is_expired)
+        api_key_present = bool(settings.ROYAL_MAIL_API_KEY)
+        booking_enabled = api_key_present or oauth_connected
+        if api_key_present:
+            auth_mode = 'api_key'
+            message = 'Royal Mail Click & Drop API key is configured.'
+        elif oauth_connected:
+            auth_mode = 'oauth'
+            message = 'Royal Mail OAuth is connected and can be used for booking.'
+        else:
+            auth_mode = 'not_configured'
+            message = 'Connect Royal Mail OAuth or set ROYAL_MAIL_API_KEY before booking shipments.'
         return Response({
-            'configured': bool(settings.ROYAL_MAIL_API_KEY),
-            'booking_enabled': bool(settings.ROYAL_MAIL_API_KEY),
+            'configured': booking_enabled,
+            'booking_enabled': booking_enabled,
+            'auth_mode': auth_mode,
             'api_base_url': settings.ROYAL_MAIL_API_BASE_URL,
             'auth_url': settings.ROYAL_MAIL_AUTH_URL,
             'username': settings.ROYAL_MAIL_USERNAME,
             'login_credentials_present': bool(settings.ROYAL_MAIL_USERNAME and settings.ROYAL_MAIL_PASSWORD),
             'default_package_format': settings.ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT,
             'default_weight_grams': settings.ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS,
-            'api_key_present': bool(settings.ROYAL_MAIL_API_KEY),
-            'api_key_required_for_booking': True,
-            'message': (
-                'Royal Mail login credentials are present, but shipment booking requires a Click & Drop API key.'
-                if not settings.ROYAL_MAIL_API_KEY else
-                'Royal Mail Click & Drop API key is configured.'
-            ),
+            'api_key_present': api_key_present,
+            'api_key_required_for_booking': False,
+            'oauth_client_id_present': bool(settings.ROYAL_MAIL_CLIENT_ID),
+            'oauth_client_secret_present': bool(settings.ROYAL_MAIL_CLIENT_SECRET),
+            'oauth_callback_url': settings.ROYAL_MAIL_OAUTH_CALLBACK_URL,
+            'oauth_authorization_url': settings.ROYAL_MAIL_OAUTH_AUTHORIZATION_URL,
+            'oauth_token_url_present': bool(settings.ROYAL_MAIL_OAUTH_TOKEN_URL),
+            'oauth_connected': oauth_connected,
+            'oauth_token': _serialize_royal_mail_oauth_token(active_token),
+            'message': message,
+        })
+
+    @action(detail=False, methods=['get'], url_path='royal-mail/oauth/start')
+    def royal_mail_oauth_start(self, request):
+        """Return the Royal Mail authorization URL for connecting the account."""
+        try:
+            authorization_url = RoyalMailOAuthClient().build_authorization_url(
+                state=request.query_params.get('state')
+            )
+        except RoyalMailConfigError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'authorization_url': authorization_url,
+            'callback_url': settings.ROYAL_MAIL_OAUTH_CALLBACK_URL,
+            'client_id_present': bool(settings.ROYAL_MAIL_CLIENT_ID),
+            'client_secret_present': bool(settings.ROYAL_MAIL_CLIENT_SECRET),
+        })
+
+    @action(detail=False, methods=['get'], url_path='royal-mail/oauth/status')
+    def royal_mail_oauth_status(self, request):
+        """Return Royal Mail OAuth connection status without exposing tokens."""
+        active_token = RoyalMailOAuthToken.get_active()
+        return Response({
+            'connected': bool(active_token and not active_token.is_expired),
+            'client_id_present': bool(settings.ROYAL_MAIL_CLIENT_ID),
+            'client_secret_present': bool(settings.ROYAL_MAIL_CLIENT_SECRET),
+            'callback_url': settings.ROYAL_MAIL_OAUTH_CALLBACK_URL,
+            'token': _serialize_royal_mail_oauth_token(active_token),
+        })
+
+    @action(detail=False, methods=['post'], url_path='royal-mail/oauth/disconnect')
+    def royal_mail_oauth_disconnect(self, request):
+        """Deactivate saved Royal Mail OAuth tokens."""
+        updated = RoyalMailOAuthToken.objects.filter(is_active=True).update(is_active=False)
+        return Response({
+            'message': 'Royal Mail OAuth disconnected',
+            'tokens_deactivated': updated,
+            'connected': False,
         })
 
     @action(detail=True, methods=['post'], url_path='book-royal-mail-shipping')
@@ -362,13 +479,22 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': str(exc),
                 'message': (
-                    'Only Royal Mail login credentials are configured. '
-                    'Generate a Click & Drop API key from the Royal Mail account and set ROYAL_MAIL_API_KEY.'
+                    'Connect Royal Mail OAuth or generate a Click & Drop API key from the Royal Mail account '
+                    'and set ROYAL_MAIL_API_KEY.'
                 ),
                 'auth_url': settings.ROYAL_MAIL_AUTH_URL,
                 'username': settings.ROYAL_MAIL_USERNAME,
             }, status=status.HTTP_400_BAD_REQUEST)
         except RoyalMailAPIError as exc:
+            return Response(
+                {
+                    'error': str(exc),
+                    'royal_mail_status_code': exc.status_code,
+                    'royal_mail_response': exc.response_data,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except RoyalMailOAuthError as exc:
             return Response(
                 {
                     'error': str(exc),
