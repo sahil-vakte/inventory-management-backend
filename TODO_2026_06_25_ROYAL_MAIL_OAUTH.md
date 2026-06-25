@@ -6,6 +6,7 @@
 - Royal Mail OAuth callback path: `/auth/royalmail/callback`
 - Royal Mail client ID: `6c5ddb35ba81d232b375948a49751b7c`
 - Royal Mail client secret: store only in `.env` or server secret manager. Do not commit plaintext secret.
+- 2026-06-25 check: `https://auth.parcel.royalmail.com/oauth2/authorize` returned a Royal Mail "page cannot be found" error. Royal Mail Click & Drop API documentation currently documents API-key authentication for Click & Drop API calls.
 
 ## Environment Variables To Add
 
@@ -16,9 +17,15 @@ ROYAL_MAIL_CLIENT_ID=6c5ddb35ba81d232b375948a49751b7c
 ROYAL_MAIL_CLIENT_SECRET=<store real client secret here>
 ROYAL_MAIL_OAUTH_CALLBACK_URL=https://www.wims.cloud/auth/royalmail/callback
 ROYAL_MAIL_OAUTH_CALLBACK_PATH=/auth/royalmail/callback
-ROYAL_MAIL_OAUTH_AUTHORIZATION_URL=https://auth.parcel.royalmail.com/oauth2/authorize
-ROYAL_MAIL_OAUTH_TOKEN_URL=https://auth.parcel.royalmail.com/oauth2/token
+ROYAL_MAIL_OAUTH_AUTHORIZATION_URL=<leave blank until Royal Mail confirms exact URL>
+ROYAL_MAIL_OAUTH_TOKEN_URL=<leave blank until Royal Mail confirms exact URL>
 ROYAL_MAIL_OAUTH_SCOPE=
+```
+
+For current Click & Drop booking, use:
+
+```env
+ROYAL_MAIL_API_KEY=<click-drop-api-authorisation-key>
 ```
 
 ## Implementation TODO
@@ -67,8 +74,9 @@ ROYAL_MAIL_OAUTH_SCOPE=
 
 ## Open Questions
 
-- [ ] Confirm Royal Mail OAuth authorization URL with Royal Mail after first real connect attempt.
-- [ ] Confirm Royal Mail token URL with Royal Mail after first real connect attempt.
+- [ ] Confirm whether this Royal Mail app actually supports OAuth for Click & Drop.
+- [ ] Confirm Royal Mail OAuth authorization URL with Royal Mail before enabling OAuth start endpoint.
+- [ ] Confirm Royal Mail token URL with Royal Mail before enabling OAuth callback exchange.
 - [ ] Confirm required OAuth scopes.
 - [ ] Confirm whether Royal Mail shipment booking uses OAuth token, API key, or both in production.
 - [ ] Confirm token expiry and refresh behavior from live response.

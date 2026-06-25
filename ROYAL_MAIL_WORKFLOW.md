@@ -11,9 +11,36 @@ The system supports two Royal Mail authentication methods:
 
 The API key is used first when configured. If the API key is empty, the system uses the saved OAuth token.
 
-## Step 1 - Connect Royal Mail
+## Current Recommended Setup - API Key
 
-Call:
+Royal Mail's Click & Drop API documentation says requests are authenticated using a Click & Drop API authorisation key in the `Authorization` header.
+
+To get it:
+
+1. Log in to Royal Mail Click & Drop.
+2. Go to `Settings` > `Integrations`.
+3. Select or create `Click & Drop API`.
+4. Expand the integration row.
+5. Copy the displayed authorisation key.
+6. Set it on the server:
+
+```env
+ROYAL_MAIL_API_KEY=<click-drop-api-authorisation-key>
+```
+
+Then restart the backend.
+
+The screenshot error `the page cannot be found` happens because Royal Mail does not expose the guessed OAuth URL:
+
+```text
+https://auth.parcel.royalmail.com/oauth2/authorize
+```
+
+Do not use the OAuth start endpoint unless Royal Mail provides the exact authorization URL and token URL for this account/app.
+
+## Optional OAuth Setup - Only If Royal Mail Provides OAuth URLs
+
+Call only after valid OAuth URLs are confirmed:
 
 ```http
 GET {{base_url}}/api/v1/orders/royal-mail/oauth/start/
@@ -200,15 +227,21 @@ python manage.py migrate
 sudo supervisorctl restart inventory
 ```
 
-Required server environment variables:
+Required server environment variables for API-key mode:
+
+```env
+ROYAL_MAIL_API_KEY=<click-drop-api-authorisation-key>
+```
+
+Do not commit real secrets to git.
+
+Optional OAuth environment variables, only if Royal Mail confirms the URLs:
 
 ```env
 ROYAL_MAIL_CLIENT_ID=<client-id>
 ROYAL_MAIL_CLIENT_SECRET=<client-secret>
 ROYAL_MAIL_OAUTH_CALLBACK_URL=https://www.wims.cloud/auth/royalmail/callback
-ROYAL_MAIL_OAUTH_AUTHORIZATION_URL=https://auth.parcel.royalmail.com/oauth2/authorize
-ROYAL_MAIL_OAUTH_TOKEN_URL=https://auth.parcel.royalmail.com/oauth2/token
+ROYAL_MAIL_OAUTH_AUTHORIZATION_URL=<confirmed-royal-mail-authorization-url>
+ROYAL_MAIL_OAUTH_TOKEN_URL=<confirmed-royal-mail-token-url>
 ROYAL_MAIL_OAUTH_SCOPE=
 ```
-
-Do not commit real secrets to git.
