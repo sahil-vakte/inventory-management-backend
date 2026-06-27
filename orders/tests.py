@@ -1,4 +1,6 @@
 # Tests for Order Management with Employee Assignment
+import os
+import tempfile
 from django.test import TestCase
 from django.test import override_settings
 from django.contrib.auth.models import User
@@ -6,6 +8,7 @@ from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import Mock, patch
+from xml.sax.saxutils import escape
 from rest_framework.test import APIClient
 from .models import Order, OrderItem, RoyalMailOAuthToken
 from colors.models import Color
@@ -143,6 +146,60 @@ class StockManagementTest(TestCase):
     def test_stock_item_has_adjust_method(self):
         """Test that StockItem still has adjust_stock method"""
         self.assertTrue(hasattr(StockItem, 'adjust_stock'))
+
+
+class RemoteTiaknightImportAuditTest(TestCase):
+    @patch('orders.services.remote_tiaknight_import.XMLOrderParser.parse_and_create_orders')
+    @patch('scripts.soap_client.fetch_soap_response')
+    def test_import_reads_auto_update_and_writes_received_refs_audit(self, mock_fetch, mock_parse):
+        from orders.services.remote_tiaknight_import import import_remote_tiaknight_orders
+
+        orders_xml = (
+            '<web_orders>'
+            '<web_order><order><order_reference>WEB100001</order_reference></order></web_order>'
+            '<web_order><order><order_reference>WEB100002</order_reference></order></web_order>'
+            '</web_orders>'
+        )
+        soap_response = (
+            '<Envelope><Body>'
+            '<item><key>RequestID</key><value>REQ-1</value></item>'
+            '<item><key>DateTime</key><value>2026-06-27 16:50:45</value></item>'
+            f'<item><key>Result</key><value>{escape(orders_xml)}</value></item>'
+            '</Body></Envelope>'
+        ).encode('utf-8')
+        mock_fetch.return_value = (soap_response, 200)
+        mock_parse.return_value = {
+            'created_count': 2,
+            'failed_count': 0,
+            'orders': [],
+            'errors': [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audit_path = os.path.join(tmpdir, 'tiaknight_refs.log')
+            with patch.dict(os.environ, {
+                'TIA_URL': 'https://www.tiaknightfabrics.co.uk/api/soap/service',
+                'TIA_CLIENTID': 'Tiaknightfabrics',
+                'TIA_USERNAME': 'UserTiaknightfabrics341',
+                'TIA_PASSWORD': 'secret',
+                'TIA_AUTO_UPDATE': 'true',
+                'TIA_FILE_TYPE': 'xml',
+                'TIA_AUDIT_LOG_PATH': audit_path,
+                'TIA_SAVE_RAW_PAYLOAD': 'false',
+            }, clear=False):
+                result = import_remote_tiaknight_orders(user=None)
+
+            self.assertEqual(mock_fetch.call_args.kwargs['auto_update'], 'true')
+            self.assertEqual(result['received_order_refs_count'], 2)
+            self.assertEqual(result['received_order_refs'], ['WEB100001', 'WEB100002'])
+            self.assertEqual(result['tiaknight_request_id'], 'REQ-1')
+
+            with open(audit_path, encoding='utf-8') as audit_file:
+                audit_line = audit_file.read()
+            self.assertIn('request_id=REQ-1', audit_line)
+            self.assertIn('auto_update=true', audit_line)
+            self.assertIn('orders_received=2', audit_line)
+            self.assertIn('refs=WEB100001,WEB100002', audit_line)
 
 
 class OrderWithItemsAPITest(TestCase):

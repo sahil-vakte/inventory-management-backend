@@ -34,6 +34,22 @@ class Command(BaseCommand):
         ))
         self.stdout.write(f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] orders_created: {result['created_count']}")
         self.stdout.write(f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] orders_failed: {result['failed_count']}")
+        self.stdout.write(
+            f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
+            f"orders_received_from_tiaknight: {result.get('received_order_refs_count', 0)}"
+        )
+        self.stdout.write(
+            f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
+            f"tiaknight_order_refs: {', '.join(result.get('received_order_refs', [])) or '-'}"
+        )
+        self.stdout.write(
+            f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
+            f"tiaknight_request_id: {result.get('tiaknight_request_id') or '-'}"
+        )
+        self.stdout.write(
+            f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
+            f"tiaknight_audit_log: {result.get('tiaknight_audit_log_path') or '-'}"
+        )
         if result['errors']:
             self.stdout.write(f'[{completed_at:%Y-%m-%d %H:%M:%S %Z}] errors:')
             for error in result['errors'][:10]:

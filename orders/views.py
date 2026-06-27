@@ -836,6 +836,13 @@ class OrderViewSet(viewsets.ModelViewSet):
             'orders_failed':  result['failed_count'],
             'orders':  result['orders'],
             'errors':  result['errors'],
+            'orders_received_from_tiaknight': result.get('received_order_refs_count', 0),
+            'tiaknight_order_refs': result.get('received_order_refs', []),
+            'tiaknight_request_id': result.get('tiaknight_request_id'),
+            'tiaknight_source_datetime': result.get('tiaknight_source_datetime'),
+            'tiaknight_auto_update': result.get('tiaknight_auto_update'),
+            'tiaknight_audit_log': result.get('tiaknight_audit_log_path'),
+            'tiaknight_raw_payload': result.get('tiaknight_raw_payload_path'),
         }, status=resp_status)
 
 

@@ -3135,7 +3135,7 @@
                     ""
                   ]
                 },
-                "description": "Checks whether Royal Mail Click & Drop API key or OAuth settings are present without exposing secrets. Booking works with ROYAL_MAIL_API_KEY or a connected OAuth token."
+                "description": "Checks whether Royal Mail Click & Drop booking is configured without exposing secrets. Recommended setup is ROYAL_MAIL_API_KEY from Royal Mail Click & Drop Settings > Integrations > Click & Drop API. OAuth is optional only if Royal Mail provides valid OAuth authorization/token URLs."
               },
               "response": []
             },
@@ -3166,7 +3166,7 @@
                     }
                   ]
                 },
-                "description": "Returns the Royal Mail authorization URL. Open authorization_url in the browser, sign in, and Royal Mail will redirect to /auth/royalmail/callback."
+                "description": "Optional OAuth helper only. Do not use for current Click & Drop setup unless Royal Mail confirms valid OAuth authorization/token URLs. For normal Click & Drop booking, use ROYAL_MAIL_API_KEY instead."
               },
               "response": []
             },
@@ -3190,7 +3190,7 @@
                     ""
                   ]
                 },
-                "description": "Shows whether Royal Mail OAuth is connected. Tokens and secrets are never returned."
+                "description": "Shows optional Royal Mail OAuth connection status. Current recommended Click & Drop setup uses ROYAL_MAIL_API_KEY, so OAuth may remain disconnected."
               },
               "response": []
             },
@@ -3221,7 +3221,7 @@
                     }
                   ]
                 },
-                "description": "Callback endpoint used by Royal Mail. Normally Royal Mail calls this automatically after admin authorization."
+                "description": "Optional OAuth callback endpoint. Only used if Royal Mail confirms and supports OAuth for this app. Current Click & Drop booking should use ROYAL_MAIL_API_KEY."
               },
               "response": []
             },
@@ -3245,7 +3245,7 @@
                     ""
                   ]
                 },
-                "description": "Deactivates saved Royal Mail OAuth tokens without deleting old records."
+                "description": "Deactivates saved optional Royal Mail OAuth tokens without deleting old records. Not required for API-key based Click & Drop booking."
               },
               "response": []
             },
@@ -3273,7 +3273,7 @@
                     ""
                   ]
                 },
-                "description": "Creates this completed order in Royal Mail Click & Drop and marks the local order as SHIPPED after a successful API response. Uses ROYAL_MAIL_API_KEY if present, otherwise uses the connected Royal Mail OAuth token.",
+                "description": "Creates this completed order in Royal Mail Click & Drop and marks the local order as SHIPPED after a successful API response. Recommended setup: set ROYAL_MAIL_API_KEY from Royal Mail Click & Drop Settings > Integrations > Click & Drop API. OAuth fallback is available only if Royal Mail provides valid OAuth endpoints.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"weight_in_grams\": 250,\n  \"package_format_identifier\": \"Parcel\",\n  \"service_code\": \"TPLN\",\n  \"notes\": \"Booked through Royal Mail Click & Drop API\"\n}",
