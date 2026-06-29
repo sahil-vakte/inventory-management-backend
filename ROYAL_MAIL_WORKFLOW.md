@@ -4,12 +4,13 @@
 
 Royal Mail Click & Drop is used to book shipping for completed WIMS orders.
 
-The system supports two Royal Mail authentication methods:
+The system uses the Royal Mail Click & Drop API authorisation key:
 
-1. `ROYAL_MAIL_API_KEY`, if available.
-2. Royal Mail OAuth connection, if API key is not available.
+```env
+ROYAL_MAIL_API_KEY=<click-drop-api-authorisation-key>
+```
 
-The API key is used first when configured. If the API key is empty, the system uses the saved OAuth token.
+Client ID/client secret are not used for this Option 1 integration.
 
 ## Current Recommended Setup - API Key
 
@@ -36,33 +37,9 @@ The screenshot error `the page cannot be found` happens because Royal Mail does 
 https://auth.parcel.royalmail.com/oauth2/authorize
 ```
 
-Do not use the OAuth start endpoint unless Royal Mail provides the exact authorization URL and token URL for this account/app.
+Do not use the OAuth start endpoint for Option 1.
 
-## Optional OAuth Setup - Only If Royal Mail Provides OAuth URLs
-
-Call only after valid OAuth URLs are confirmed:
-
-```http
-GET {{base_url}}/api/v1/orders/royal-mail/oauth/start/
-```
-
-Response gives an `authorization_url`.
-
-Open `authorization_url` in the browser, then log in to Royal Mail Click & Drop and approve WIMS.
-
-## Step 2 - Royal Mail Callback
-
-After approval, Royal Mail redirects to:
-
-```http
-https://www.wims.cloud/auth/royalmail/callback?code=...
-```
-
-The backend receives the `code`, exchanges it with Royal Mail, and saves the OAuth token in the database.
-
-Tokens and secrets are not returned in API responses.
-
-## Step 3 - Check Royal Mail Connection
+## Step 2 - Check Royal Mail Configuration
 
 Call:
 
@@ -78,8 +55,6 @@ Expected connected response:
 }
 ```
 
-You can also check the full Royal Mail configuration status:
-
 ```http
 GET {{base_url}}/api/v1/orders/royal-mail/config/
 ```
@@ -90,18 +65,13 @@ Important response fields:
 {
   "configured": true,
   "booking_enabled": true,
-  "auth_mode": "oauth",
-  "oauth_connected": true
+  "auth_mode": "api_key",
+  "api_key_present": true,
+  "api_key_required_for_booking": true
 }
 ```
 
-`auth_mode` can be:
-
-- `api_key`
-- `oauth`
-- `not_configured`
-
-## Step 4 - Complete Order Before Shipping
+## Step 3 - Complete Order Before Shipping
 
 Royal Mail shipment booking is allowed only when the order is completed.
 
@@ -120,7 +90,7 @@ Before booking Royal Mail shipping, order status must be:
 Completed
 ```
 
-## Step 5 - Book Royal Mail Shipment
+## Step 4 - Book Royal Mail Shipment
 
 Call:
 
@@ -139,7 +109,7 @@ Sample payload:
 }
 ```
 
-## Step 6 - Data Sent To Royal Mail
+## Step 5 - Data Sent To Royal Mail
 
 The backend sends order details to Royal Mail, including:
 
@@ -161,7 +131,7 @@ The backend sends order details to Royal Mail, including:
 - Item quantity
 - Item unit value
 
-## Step 7 - After Successful Booking
+## Step 6 - After Successful Booking
 
 If Royal Mail accepts the shipment booking, WIMS updates the local order.
 
@@ -188,7 +158,7 @@ The booking API response includes:
 }
 ```
 
-## Step 8 - Check Updated Order
+## Step 7 - Check Updated Order
 
 Call:
 
@@ -207,16 +177,6 @@ Expected order fields:
 }
 ```
 
-## Disconnect Royal Mail OAuth
-
-If needed, deactivate saved Royal Mail OAuth tokens:
-
-```http
-POST {{base_url}}/api/v1/orders/royal-mail/oauth/disconnect/
-```
-
-This does not delete old records. It only marks saved OAuth tokens as inactive.
-
 ## Server Deployment Steps
 
 After pushing code to server:
@@ -234,14 +194,3 @@ ROYAL_MAIL_API_KEY=<click-drop-api-authorisation-key>
 ```
 
 Do not commit real secrets to git.
-
-Optional OAuth environment variables, only if Royal Mail confirms the URLs:
-
-```env
-ROYAL_MAIL_CLIENT_ID=<client-id>
-ROYAL_MAIL_CLIENT_SECRET=<client-secret>
-ROYAL_MAIL_OAUTH_CALLBACK_URL=https://www.wims.cloud/auth/royalmail/callback
-ROYAL_MAIL_OAUTH_AUTHORIZATION_URL=<confirmed-royal-mail-authorization-url>
-ROYAL_MAIL_OAUTH_TOKEN_URL=<confirmed-royal-mail-token-url>
-ROYAL_MAIL_OAUTH_SCOPE=
-```

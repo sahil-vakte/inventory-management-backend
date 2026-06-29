@@ -370,16 +370,16 @@ class OrderViewSet(viewsets.ModelViewSet):
         active_token = RoyalMailOAuthToken.get_active()
         oauth_connected = bool(active_token and not active_token.is_expired)
         api_key_present = bool(settings.ROYAL_MAIL_API_KEY)
-        booking_enabled = api_key_present or oauth_connected
+        booking_enabled = api_key_present
         if api_key_present:
             auth_mode = 'api_key'
             message = 'Royal Mail Click & Drop API key is configured.'
-        elif oauth_connected:
-            auth_mode = 'oauth'
-            message = 'Royal Mail OAuth is connected and can be used for booking.'
         else:
             auth_mode = 'not_configured'
-            message = 'Connect Royal Mail OAuth or set ROYAL_MAIL_API_KEY before booking shipments.'
+            message = (
+                'Set ROYAL_MAIL_API_KEY from Royal Mail Click & Drop '
+                'Settings > Integrations > Click & Drop API before booking shipments.'
+            )
         return Response({
             'configured': booking_enabled,
             'booking_enabled': booking_enabled,
@@ -391,13 +391,14 @@ class OrderViewSet(viewsets.ModelViewSet):
             'default_package_format': settings.ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT,
             'default_weight_grams': settings.ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS,
             'api_key_present': api_key_present,
-            'api_key_required_for_booking': False,
+            'api_key_required_for_booking': True,
             'oauth_client_id_present': bool(settings.ROYAL_MAIL_CLIENT_ID),
             'oauth_client_secret_present': bool(settings.ROYAL_MAIL_CLIENT_SECRET),
             'oauth_callback_url': settings.ROYAL_MAIL_OAUTH_CALLBACK_URL,
             'oauth_authorization_url': settings.ROYAL_MAIL_OAUTH_AUTHORIZATION_URL,
             'oauth_token_url_present': bool(settings.ROYAL_MAIL_OAUTH_TOKEN_URL),
             'oauth_connected': oauth_connected,
+            'oauth_used_for_booking': False,
             'oauth_token': _serialize_royal_mail_oauth_token(active_token),
             'message': message,
         })
@@ -479,8 +480,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': str(exc),
                 'message': (
-                    'Connect Royal Mail OAuth or generate a Click & Drop API key from the Royal Mail account '
-                    'and set ROYAL_MAIL_API_KEY.'
+                    'Generate a Click & Drop API authorisation key from Royal Mail '
+                    'Settings > Integrations > Click & Drop API and set ROYAL_MAIL_API_KEY.'
                 ),
                 'auth_url': settings.ROYAL_MAIL_AUTH_URL,
                 'username': settings.ROYAL_MAIL_USERNAME,

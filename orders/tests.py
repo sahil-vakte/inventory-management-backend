@@ -447,7 +447,7 @@ class OrderWithItemsAPITest(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn('OAuth', response.data['error'])
+        self.assertIn('ROYAL_MAIL_API_KEY', response.data['error'])
         self.assertEqual(response.data['auth_url'], 'https://auth.parcel.royalmail.com')
         self.assertEqual(response.data['username'], 'info@civani.co.uk')
         self.assertIn('ROYAL_MAIL_API_KEY', response.data['message'])
@@ -459,18 +459,13 @@ class OrderWithItemsAPITest(TestCase):
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
     )
     @patch('orders.services.royal_mail.requests.post')
-    def test_book_royal_mail_shipping_uses_oauth_token_when_api_key_missing(self, mock_post):
+    def test_book_royal_mail_shipping_requires_api_key_even_if_oauth_token_exists(self, mock_post):
         RoyalMailOAuthToken.objects.create(
             access_token='oauth-access-token',
             token_type='Bearer',
             expires_at=timezone.now() + timedelta(hours=1),
             is_active=True,
         )
-        mock_response = Mock(status_code=200)
-        mock_response.json.return_value = {
-            'items': [{'orderIdentifier': 'RM-OAUTH-1', 'trackingNumber': 'OAUTH123'}]
-        }
-        mock_post.return_value = mock_response
 
         order = Order.objects.create(
             customer_name='Royal Mail OAuth Customer',
@@ -493,12 +488,11 @@ class OrderWithItemsAPITest(TestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 200)
-        request_headers = mock_post.call_args.kwargs['headers']
-        self.assertEqual(request_headers['Authorization'], 'Bearer oauth-access-token')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('ROYAL_MAIL_API_KEY', response.data['error'])
+        mock_post.assert_not_called()
         order.refresh_from_db()
-        self.assertEqual(order.order_status, Order.STATUS_SHIPPED)
-        self.assertEqual(order.tracking_number, 'OAUTH123')
+        self.assertEqual(order.order_status, Order.STATUS_COMPLETED)
 
     @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',
@@ -575,7 +569,7 @@ class OrderWithItemsAPITest(TestCase):
         self.assertNotIn('new-refresh-token', str(response.data))
 
     @override_settings(ROYAL_MAIL_API_KEY='')
-    def test_royal_mail_config_reports_oauth_connected(self):
+    def test_royal_mail_config_does_not_enable_booking_from_oauth_token(self):
         RoyalMailOAuthToken.objects.create(
             access_token='active-token',
             token_type='Bearer',
@@ -586,10 +580,11 @@ class OrderWithItemsAPITest(TestCase):
         response = self.client.get('/api/v1/orders/royal-mail/config/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.data['configured'])
-        self.assertTrue(response.data['booking_enabled'])
+        self.assertFalse(response.data['configured'])
+        self.assertFalse(response.data['booking_enabled'])
         self.assertTrue(response.data['oauth_connected'])
-        self.assertEqual(response.data['auth_mode'], 'oauth')
+        self.assertFalse(response.data['oauth_used_for_booking'])
+        self.assertEqual(response.data['auth_mode'], 'not_configured')
         self.assertNotIn('active-token', str(response.data))
 
     def test_item_lable_printed_endpoint_updates_only_selected_item(self):
