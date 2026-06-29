@@ -15,8 +15,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
     processing_status_display = serializers.CharField(source='get_processing_status_display', read_only=True)
     parent_product_images = serializers.SerializerMethodField()
     child_product_url = serializers.SerializerMethodField()
-    unit_weight_kg = serializers.SerializerMethodField()
-    total_weight_kg = serializers.SerializerMethodField()
+    unit_weight_gm = serializers.SerializerMethodField()
+    total_weight_gm = serializers.SerializerMethodField()
     available_stock_in_mtr = serializers.IntegerField(source='stock_item.available_stock_in_mtr', read_only=True)
 
     def get_assigned_to_username(self, obj):
@@ -32,16 +32,16 @@ class OrderItemSerializer(serializers.ModelSerializer):
         stock_item = getattr(obj, 'stock_item', None)
         return get_product_child_product_url(getattr(stock_item, 'product', None))
 
-    def get_unit_weight_kg(self, obj):
+    def get_unit_weight_gm(self, obj):
         stock_item = getattr(obj, 'stock_item', None)
         weight = get_product_weight_kg(getattr(stock_item, 'product', None))
-        return f"{weight:.3f}"
+        return weight_kg_to_gm(weight)
 
-    def get_total_weight_kg(self, obj):
+    def get_total_weight_gm(self, obj):
         stock_item = getattr(obj, 'stock_item', None)
         weight = get_product_weight_kg(getattr(stock_item, 'product', None))
         total_weight = weight * Decimal(obj.quantity or 0)
-        return f"{total_weight.quantize(Decimal('0.001')):.3f}"
+        return weight_kg_to_gm(total_weight)
     
     class Meta:
         model = OrderItem
@@ -49,7 +49,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'id', 'order', 'stock_item', 'stock_detail',
             'sku', 'product_name', 'product_type', 'color_code',
             'parent_product_images', 'child_product_url', 'available_stock_in_mtr',
-            'unit_weight_kg', 'total_weight_kg',
+            'unit_weight_gm', 'total_weight_gm',
             'quantity', 'quantity_ordered', 'quantity_processed',
             'unit_price', 'line_total', 'tax_rate', 'discount_amount',
             'lable_printed',
@@ -135,7 +135,7 @@ class OrderListSerializer(serializers.ModelSerializer):
     item_count = serializers.IntegerField(read_only=True)
     total_quantity = serializers.IntegerField(read_only=True)
     completion_percentage = serializers.SerializerMethodField()
-    total_weight_kg = serializers.SerializerMethodField()
+    total_weight_gm = serializers.SerializerMethodField()
     items_total = serializers.SerializerMethodField()
     items_completed = serializers.SerializerMethodField()
     items_assigned = serializers.SerializerMethodField()
@@ -144,8 +144,8 @@ class OrderListSerializer(serializers.ModelSerializer):
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
 
-    def get_total_weight_kg(self, obj):
-        return order_total_weight_kg(obj)
+    def get_total_weight_gm(self, obj):
+        return order_total_weight_gm(obj)
 
     def get_items_total(self, obj):
         return obj.items.count()
@@ -169,7 +169,7 @@ class OrderListSerializer(serializers.ModelSerializer):
             'customer_email', 'order_status', 'order_status_display',
             'payment_status', 'payment_status_display', 'order_date',
             'total_amount', 'item_count', 'total_quantity',
-            'total_weight_kg',
+            'total_weight_gm',
             'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code',
             'created_by_username', 'assigned_to', 'assigned_to_username',
             'order_source', 'created_at',
@@ -207,7 +207,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     shipping_address = serializers.CharField(read_only=True)
     billing_address = serializers.CharField(read_only=True)
     completion_percentage = serializers.SerializerMethodField()
-    total_weight_kg = serializers.SerializerMethodField()
+    total_weight_gm = serializers.SerializerMethodField()
     items_total = serializers.SerializerMethodField()
     items_completed = serializers.SerializerMethodField()
     items_assigned = serializers.SerializerMethodField()
@@ -216,8 +216,8 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
 
-    def get_total_weight_kg(self, obj):
-        return order_total_weight_kg(obj)
+    def get_total_weight_gm(self, obj):
+        return order_total_weight_gm(obj)
 
     def get_items_total(self, obj):
         return obj.items.count()
@@ -363,10 +363,14 @@ class OrderStatsSerializer(serializers.Serializer):
     unpaid_orders_value = serializers.DecimalField(max_digits=12, decimal_places=2)
 
 
-def order_total_weight_kg(order):
+def weight_kg_to_gm(weight):
+    return int((Decimal(weight or 0) * Decimal('1000')).quantize(Decimal('1')))
+
+
+def order_total_weight_gm(order):
     total = Decimal('0.000')
     for item in order.items.all():
         stock_item = getattr(item, 'stock_item', None)
         unit_weight = get_product_weight_kg(getattr(stock_item, 'product', None))
         total += unit_weight * Decimal(item.quantity or 0)
-    return f"{total.quantize(Decimal('0.001')):.3f}"
+    return weight_kg_to_gm(total)
