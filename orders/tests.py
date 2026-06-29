@@ -14,7 +14,7 @@ from rest_framework.test import APIClient
 from .models import Order, OrderItem, RoyalMailOAuthToken
 from .services.xml_parser import XMLOrderParser
 from colors.models import Color
-from products.models import Product
+from products.models import Product, ProductExtendedData
 from stock.models import StockItem
 
 
@@ -304,6 +304,62 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         result = next(row for row in response.data['results'] if row['id'] == item.id)
         self.assertEqual(result['available_stock_in_mtr'], 42)
+
+    def test_order_detail_returns_child_product_url_from_stock_product_extended_data(self):
+        color = Color.objects.create(
+            color_code='URL',
+            color_name='URL Color',
+        )
+        product = Product.objects.create(
+            vs_parent_id=10102,
+            vs_child_id=10102,
+            parent_reference='URL SKU',
+            child_reference='URL SKU',
+            parent_product_title='URL Product',
+            child_product_title='URL Product',
+        )
+        ProductExtendedData.objects.create(
+            product=product,
+            source_file_name='backup.csv',
+            row_number=2,
+            row_hash='order-url-row',
+            import_batch_id='order-url-batch',
+            child_product_url='https://example.com/products/url-sku',
+        )
+        stock_item = StockItem.objects.create(
+            sku='URL SKU',
+            product_type='URL',
+            product=product,
+            color=color,
+            available_stock_in_mtr=12,
+        )
+        order = Order.objects.create(
+            customer_name='URL Customer',
+            customer_email='url@example.com',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        item = OrderItem.objects.create(
+            order=order,
+            stock_item=stock_item,
+            sku='URL SKU',
+            product_name='URL Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        detail_response = self.client.get(f'/api/v1/orders/{order.id}/')
+        item_response = self.client.get('/api/v1/order-items/')
+
+        self.assertEqual(detail_response.status_code, 200)
+        order_item = detail_response.data['items'][0]
+        self.assertEqual(order_item['child_product_url'], 'https://example.com/products/url-sku')
+        self.assertEqual(order_item['stock_detail']['child_product_url'], 'https://example.com/products/url-sku')
+        self.assertEqual(order_item['stock_detail']['product']['child_product_url'], 'https://example.com/products/url-sku')
+
+        item_row = next(row for row in item_response.data['results'] if row['id'] == item.id)
+        self.assertEqual(item_row['child_product_url'], 'https://example.com/products/url-sku')
 
     def test_xml_import_saves_tiaknight_courier_fields(self):
         xml_data = b'''

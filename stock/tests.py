@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from colors.models import Color
-from products.models import Product
+from products.models import Product, ProductExtendedData
 from stock.models import StockBatch, StockBatchRoll, StockItem, StockMovement
 from stock.services.product_stock_sync import sync_product_stock_items
 
@@ -103,6 +103,27 @@ class StockBatchIncomingAPITest(TestCase):
         product_data = response.data['results'][0]['product']
         self.assertNotIn('effective_price', product_data)
         self.assertEqual(product_data['price_break_1_price'], '9.50')
+
+    def test_stock_responses_include_child_product_url_from_extended_data(self):
+        ProductExtendedData.objects.create(
+            product=self.product,
+            source_file_name='backup.csv',
+            row_number=1,
+            row_hash='stock-url-row',
+            import_batch_id='stock-url-batch',
+            child_product_url='https://example.com/products/ab-child',
+        )
+
+        list_response = self.client.get('/api/v1/stock/')
+        detail_response = self.client.get(f'/api/v1/stock/{self.stock_item.sku}/')
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(detail_response.status_code, 200)
+        stock_row = list_response.data['results'][0]
+        self.assertEqual(stock_row['child_product_url'], 'https://example.com/products/ab-child')
+        self.assertEqual(stock_row['product']['child_product_url'], 'https://example.com/products/ab-child')
+        self.assertEqual(detail_response.data['child_product_url'], 'https://example.com/products/ab-child')
+        self.assertEqual(detail_response.data['product']['child_product_url'], 'https://example.com/products/ab-child')
 
     def test_label_endpoint_returns_one_label_per_roll(self):
         batch = StockBatch.objects.create(
