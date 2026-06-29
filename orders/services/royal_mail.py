@@ -220,7 +220,7 @@ class RoyalMailClickDropClient:
         }
 
         royal_mail_order = {
-            'orderReference': order.order_number,
+            'orderReference': self._order_reference(order),
             'recipient': {
                 'address': {
                     'fullName': order.customer_name,
@@ -247,6 +247,9 @@ class RoyalMailClickDropClient:
             royal_mail_order['postageDetails'] = {'serviceCode': service_code}
 
         return {'items': [royal_mail_order]}
+
+    def _order_reference(self, order):
+        return (order.external_order_id or order.order_number or '').strip()
 
     def _billing_from_order(self, order):
         address_line1 = order.billing_address_line1 or order.shipping_address_line1 or ''

@@ -472,7 +472,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 service_code=serializer.validated_data.get('service_code') or None,
             )
             tracking_number = extract_tracking_number(response_data)
-            royal_mail_reference = extract_royal_mail_reference(response_data)
+            royal_mail_reference = order.external_order_id or extract_royal_mail_reference(response_data)
 
             note_parts = ['Royal Mail Click & Drop shipment booked.']
             if royal_mail_reference:
