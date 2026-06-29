@@ -3273,7 +3273,7 @@
                     ""
                   ]
                 },
-                "description": "Creates this completed order in Royal Mail Click & Drop and marks the local order as SHIPPED after a successful API response. Recommended setup: set ROYAL_MAIL_API_KEY from Royal Mail Click & Drop Settings > Integrations > Click & Drop API. OAuth fallback is available only if Royal Mail provides valid OAuth endpoints.",
+                "description": "Creates this completed order in Royal Mail Click & Drop and marks the local order as SHIPPED after a successful API response. Option 1 setup requires ROYAL_MAIL_API_KEY from Royal Mail Click & Drop Settings > Integrations > Click & Drop API.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"weight_in_grams\": 250,\n  \"package_format_identifier\": \"Parcel\",\n  \"service_code\": \"TPLN\",\n  \"notes\": \"Booked through Royal Mail Click & Drop API\"\n}",

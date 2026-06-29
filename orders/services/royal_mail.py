@@ -168,9 +168,8 @@ class RoyalMailClickDropClient:
     def ensure_configured(self):
         if not self.base_url:
             raise RoyalMailConfigError('ROYAL_MAIL_API_BASE_URL is not configured')
-        if self.api_key:
-            return
-        RoyalMailOAuthClient().get_valid_access_token()
+        if not self.api_key:
+            raise RoyalMailConfigError('ROYAL_MAIL_API_KEY is not configured')
 
     def create_order(self, order, *, weight_in_grams=None, package_format_identifier=None, service_code=None):
         self.ensure_configured()
@@ -204,12 +203,8 @@ class RoyalMailClickDropClient:
         return response_data
 
     def _headers(self):
-        if self.api_key:
-            authorization = self.api_key
-        else:
-            authorization = f"Bearer {RoyalMailOAuthClient().get_valid_access_token()}"
         return {
-            'Authorization': authorization,
+            'Authorization': self.api_key.strip(),
             'Content-Type': 'application/json',
         }
 
