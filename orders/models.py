@@ -135,6 +135,14 @@ class Order(models.Model):
     tracking_number = models.CharField(max_length=100, blank=True, null=True)
     carrier = models.CharField(max_length=100, blank=True, null=True,
                               help_text="Shipping carrier/courier")
+    courier_service_name = models.CharField(
+        max_length=150, blank=True, null=True,
+        help_text="Raw courier/delivery service received from Tiaknight"
+    )
+    courier_service_code = models.CharField(
+        max_length=50, blank=True, null=True,
+        help_text="WIMS label/export code derived from courier service"
+    )
     
     # Notes and Additional Info
     customer_notes = models.TextField(blank=True, null=True,

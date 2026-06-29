@@ -2954,6 +2954,46 @@
               "response": []
             },
             {
+              "name": "Export Order Label Excel",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/label-excel/?order_status=LABEL_PRINTED",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "label-excel"
+                  ],
+                  "query": [
+                    {
+                      "key": "order_status",
+                      "value": "LABEL_PRINTED",
+                      "description": "Optional. Use any order status: NEW, LABEL_PRINTED, IN_PROGRESS, COMPLETED, SHIPPED, CANCELLED. Disable/remove to export all."
+                    },
+                    {
+                      "key": "date_from",
+                      "value": "2026-06-29",
+                      "disabled": true,
+                      "description": "Optional order_date lower bound."
+                    },
+                    {
+                      "key": "date_to",
+                      "value": "2026-06-29",
+                      "disabled": true,
+                      "description": "Optional order_date upper bound."
+                    }
+                  ]
+                },
+                "description": "Download an Excel label sheet with one row per order item. Includes Courier Service and Courier Code values mapped from Tiaknight delivery methods: STD, INT, NEXT DAY, NEXT DAY 12, SATURDAY, Collect in Store."
+              },
+              "response": []
+            },
+            {
               "name": "My Assigned Orders",
               "request": {
                 "method": "GET",
@@ -3135,117 +3175,7 @@
                     ""
                   ]
                 },
-                "description": "Checks whether Royal Mail Click & Drop booking is configured without exposing secrets. Recommended setup is ROYAL_MAIL_API_KEY from Royal Mail Click & Drop Settings > Integrations > Click & Drop API. OAuth is optional only if Royal Mail provides valid OAuth authorization/token URLs."
-              },
-              "response": []
-            },
-            {
-              "name": "Royal Mail OAuth Start",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/orders/royal-mail/oauth/start/?state=wims-connect",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "orders",
-                    "royal-mail",
-                    "oauth",
-                    "start",
-                    ""
-                  ],
-                  "query": [
-                    {
-                      "key": "state",
-                      "value": "wims-connect",
-                      "description": "Optional value returned by Royal Mail to the callback."
-                    }
-                  ]
-                },
-                "description": "Optional OAuth helper only. Do not use for current Click & Drop setup unless Royal Mail confirms valid OAuth authorization/token URLs. For normal Click & Drop booking, use ROYAL_MAIL_API_KEY instead."
-              },
-              "response": []
-            },
-            {
-              "name": "Royal Mail OAuth Status",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/orders/royal-mail/oauth/status/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "orders",
-                    "royal-mail",
-                    "oauth",
-                    "status",
-                    ""
-                  ]
-                },
-                "description": "Shows optional Royal Mail OAuth connection status. Current recommended Click & Drop setup uses ROYAL_MAIL_API_KEY, so OAuth may remain disconnected."
-              },
-              "response": []
-            },
-            {
-              "name": "Royal Mail OAuth Callback",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/auth/royalmail/callback?code={{royal_mail_oauth_code}}&state=wims-connect",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "auth",
-                    "royalmail",
-                    "callback"
-                  ],
-                  "query": [
-                    {
-                      "key": "code",
-                      "value": "{{royal_mail_oauth_code}}",
-                      "description": "Royal Mail provides this code after authorization."
-                    },
-                    {
-                      "key": "state",
-                      "value": "wims-connect"
-                    }
-                  ]
-                },
-                "description": "Optional OAuth callback endpoint. Only used if Royal Mail confirms and supports OAuth for this app. Current Click & Drop booking should use ROYAL_MAIL_API_KEY."
-              },
-              "response": []
-            },
-            {
-              "name": "Royal Mail OAuth Disconnect",
-              "request": {
-                "method": "POST",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/api/v1/orders/royal-mail/oauth/disconnect/",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "orders",
-                    "royal-mail",
-                    "oauth",
-                    "disconnect",
-                    ""
-                  ]
-                },
-                "description": "Deactivates saved optional Royal Mail OAuth tokens without deleting old records. Not required for API-key based Click & Drop booking."
+                "description": "Checks whether Royal Mail Click & Drop booking is configured without exposing secrets. Option 1 setup requires ROYAL_MAIL_API_KEY from Royal Mail Click & Drop Settings > Integrations > Click & Drop API."
               },
               "response": []
             },

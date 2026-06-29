@@ -7,6 +7,7 @@ from rest_framework import filters
 from django.db.models import Sum, Count, Avg, Q, Prefetch
 from django.utils import timezone
 from django.conf import settings
+from django.http import HttpResponse
 from decimal import Decimal
 from .models import Order, OrderItem, OrderStatusHistory, RoyalMailOAuthToken
 from .serializers import (
@@ -95,11 +96,13 @@ class OrderViewSet(viewsets.ModelViewSet):
     
     filterset_fields = [
         'order_status', 'payment_status', 'order_source', 
-        'customer_email', 'assigned_to', 'is_deleted'
+        'customer_email', 'assigned_to', 'is_deleted',
+        'courier_service_name', 'courier_service_code'
     ]
     search_fields = [
         'order_number', 'external_order_id', 'customer_name', 
-        'customer_email', 'customer_phone', 'tracking_number'
+        'customer_email', 'customer_phone', 'tracking_number',
+        'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code'
     ]
     ordering_fields = [
         'order_number', 'order_date', 'total_amount', 'created_at', 
@@ -406,6 +409,17 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='royal-mail/oauth/start')
     def royal_mail_oauth_start(self, request):
         """Return the Royal Mail authorization URL for connecting the account."""
+        if not settings.ROYAL_MAIL_OAUTH_AUTHORIZATION_URL or not settings.ROYAL_MAIL_OAUTH_TOKEN_URL:
+            return Response({
+                'error': 'Royal Mail OAuth is not configured for this project.',
+                'message': (
+                    'Current Royal Mail implementation uses Option 1: Click & Drop API key. '
+                    'Set ROYAL_MAIL_API_KEY and use /api/v1/orders/{order_id}/book-royal-mail-shipping/.'
+                ),
+                'required_setting': 'ROYAL_MAIL_API_KEY',
+                'config_url': '/api/v1/orders/royal-mail/config/',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             authorization_url = RoyalMailOAuthClient().build_authorization_url(
                 state=request.query_params.get('state')
@@ -768,6 +782,76 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         serializer = OrderStatsSerializer(stats)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='label-excel')
+    def label_excel(self, request):
+        """Export one label row per order item with the WIMS courier code."""
+        try:
+            from openpyxl import Workbook
+        except ImportError:
+            return Response(
+                {'error': 'openpyxl is required to export order label Excel files'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        item_queryset = OrderItem.objects.select_related(
+            'stock_item', 'stock_item__product', 'stock_item__color', 'assigned_to',
+        )
+        base_queryset = self.get_queryset().prefetch_related(None)
+        queryset = self.filter_queryset(
+            base_queryset.prefetch_related(Prefetch('items', queryset=item_queryset))
+        )
+
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = 'Order Labels'
+        headers = [
+            'Order ID',
+            'Order Number',
+            'External Order ID',
+            'Order Date',
+            'Customer Name',
+            'SKU',
+            'Product Name',
+            'Quantity',
+            'Courier Service',
+            'Courier Code',
+            'Shipping Method',
+            'Carrier',
+        ]
+        worksheet.append(headers)
+
+        for order in queryset:
+            order_date = ''
+            if order.order_date:
+                order_date = timezone.localtime(order.order_date).strftime('%Y-%m-%d %H:%M:%S')
+            for item in order.items.all():
+                worksheet.append([
+                    order.id,
+                    order.order_number,
+                    order.external_order_id or '',
+                    order_date,
+                    order.customer_name,
+                    item.sku,
+                    item.product_name,
+                    item.quantity,
+                    order.courier_service_name or '',
+                    order.courier_service_code or '',
+                    order.shipping_method or '',
+                    order.carrier or '',
+                ])
+
+        for column_cells in worksheet.columns:
+            max_length = max(len(str(cell.value or '')) for cell in column_cells)
+            worksheet.column_dimensions[column_cells[0].column_letter].width = min(max_length + 2, 40)
+
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        timestamp = timezone.localtime(timezone.now()).strftime('%Y%m%d_%H%M%S')
+        response['Content-Disposition'] = f'attachment; filename="order_label_export_{timestamp}.xlsx"'
+        workbook.save(response)
+        return response
     
     @action(detail=False, methods=['post'], url_path='upload-xml')
     def upload_xml(self, request):

@@ -28,16 +28,17 @@ class OrderAdmin(admin.ModelAdmin):
     
     list_display = [
         'order_number', 'customer_name', 'order_status_badge', 
-        'payment_status_badge', 'total_amount', 'order_date',
+        'payment_status_badge', 'courier_service_code', 'total_amount', 'order_date',
         'assigned_to', 'item_count','order_source', 'is_deleted'
     ]
     list_filter = [
         'order_status', 'payment_status', 'order_source', 'assigned_to',
-        'is_deleted', 'order_date', 'created_at'
+        'courier_service_code', 'is_deleted', 'order_date', 'created_at'
     ]
     search_fields = [
         'order_number', 'external_order_id', 'customer_name', 
-        'customer_email', 'customer_phone', 'tracking_number'
+        'customer_email', 'customer_phone', 'tracking_number',
+        'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code'
     ]
     readonly_fields = [
         'order_number', 'created_at', 'updated_at', 'created_by', 
@@ -86,7 +87,10 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': ('payment_method', 'payment_reference')
         }),
         ('Shipping Information', {
-            'fields': ('shipping_method', 'tracking_number', 'carrier')
+            'fields': (
+                'shipping_method', 'tracking_number', 'carrier',
+                'courier_service_name', 'courier_service_code'
+            )
         }),
         ('Notes', {
             'fields': ('customer_notes', 'internal_notes'),

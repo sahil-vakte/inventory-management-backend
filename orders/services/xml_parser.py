@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from ..models import Order, OrderItem
+from .courier import courier_service_code, normalize_courier_service_name
 from stock.models import StockItem
 from stock.sku_utils import normalize_sku_reference
 
@@ -219,10 +220,14 @@ class XMLOrderParser:
             if payment_status in dict(Order.PAYMENT_STATUS_CHOICES).keys():
                 order_data['payment_status'] = payment_status
         
-        # Parse shipping info from WIMS
-        order_data['shipping_method'] = self._get_text(order_node, 'courier_name') or self._get_text(order_elem, 'ShippingMethod')
+        # Parse shipping/courier info from WIMS/Tiaknight.
+        courier_name = self._get_courier_name(order_node, order_elem)
+        normalized_courier_name = normalize_courier_service_name(courier_name)
+        order_data['shipping_method'] = normalized_courier_name or self._get_text(order_elem, 'ShippingMethod')
         order_data['tracking_number'] = self._get_text(order_elem, 'TrackingNumber')
-        order_data['carrier'] = self._get_text(order_node, 'courier_name') or self._get_text(order_elem, 'Carrier')
+        order_data['carrier'] = normalized_courier_name or self._get_text(order_elem, 'Carrier')
+        order_data['courier_service_name'] = normalized_courier_name
+        order_data['courier_service_code'] = courier_service_code(normalized_courier_name)
         
         # Parse status - WIMS uses order_state
         order_state = self._get_text(order_node, 'order_state', '')
@@ -252,6 +257,7 @@ class XMLOrderParser:
             existing = Order.all_objects.filter(order_number=str(order_ref)).first()
 
         if existing:
+            self._update_existing_order_courier(existing, order_data)
             # Already exists: return existing order without creating duplicates
             return (existing, False)
 
@@ -340,6 +346,43 @@ class XMLOrderParser:
                 order.save()
 
         return order_item
+
+    def _get_courier_name(self, order_node, order_elem):
+        for tag in [
+            'courier_name',
+            'courier',
+            'courier_service',
+            'delivery_service',
+            'delivery_method',
+            'shipping_method',
+        ]:
+            value = self._get_text(order_node, tag)
+            if value:
+                return value
+        return self._get_text(order_elem, 'ShippingMethod') or self._get_text(order_elem, 'Carrier')
+
+    def _update_existing_order_courier(self, order, order_data):
+        """Fill courier fields on duplicate imports without creating another order."""
+        update_fields = []
+        courier_name = order_data.get('courier_service_name')
+        courier_code = order_data.get('courier_service_code')
+
+        if courier_name and order.courier_service_name != courier_name:
+            order.courier_service_name = courier_name
+            update_fields.append('courier_service_name')
+        if courier_code and order.courier_service_code != courier_code:
+            order.courier_service_code = courier_code
+            update_fields.append('courier_service_code')
+        if courier_name and not order.shipping_method:
+            order.shipping_method = courier_name
+            update_fields.append('shipping_method')
+        if courier_name and not order.carrier:
+            order.carrier = courier_name
+            update_fields.append('carrier')
+
+        if update_fields:
+            update_fields.append('updated_at')
+            order.save(update_fields=update_fields)
     
     def _get_text(self, element, tag, default=None, required=False):
         """Safely extract text from XML element"""
