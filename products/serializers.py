@@ -1,5 +1,26 @@
 from rest_framework import serializers
 from .models import Product, Category, Brand, Location
+
+
+def get_product_child_product_url(product):
+    if not product:
+        return None
+
+    if getattr(product, 'child_product_url', None):
+        return product.child_product_url
+
+    extended_manager = getattr(product, 'extended_data', None)
+    if extended_manager is None:
+        return None
+
+    rows = list(extended_manager.all())
+    rows.sort(key=lambda row: row.id or 0, reverse=True)
+    for row in rows:
+        if row.child_product_url:
+            return row.child_product_url
+    return None
+
+
 class LocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Location
@@ -27,6 +48,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     brand_name = serializers.CharField(source='brand.name', read_only=True)
     effective_price = serializers.ReadOnlyField()
     is_active = serializers.ReadOnlyField()
+    child_product_url = serializers.SerializerMethodField()
     
     primary_location = serializers.CharField(source='primary_location.id', read_only=True)
     secondary_location = serializers.CharField(source='secondary_location.id', read_only=True)
@@ -35,11 +57,14 @@ class ProductListSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'vs_child_id', 'child_reference', 'child_product_title',
-            'parent_product_images',
+            'parent_product_images', 'child_product_url',
             'brand_name', 'effective_price', 'is_active',
             'child_active', 'parent_active', 'featured', 'is_deleted',
             'primary_location', 'secondary_location'
         ]
+
+    def get_child_product_url(self, obj):
+        return get_product_child_product_url(obj)
 
 class ProductDetailSerializer(serializers.ModelSerializer):
     """Detailed serializer for single product views"""
@@ -47,6 +72,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     categories = CategorySerializer(many=True, read_only=True)
     effective_price = serializers.ReadOnlyField()
     is_active = serializers.ReadOnlyField()
+    child_product_url = serializers.SerializerMethodField()
     
     primary_location = LocationSerializer(read_only=True)
     primary_location_id = serializers.CharField(source='primary_location.id', read_only=True)
@@ -57,6 +83,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         model = Product
         fields = '__all__'
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_child_product_url(self, obj):
+        return get_product_child_product_url(obj)
 
 class ProductCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating products"""

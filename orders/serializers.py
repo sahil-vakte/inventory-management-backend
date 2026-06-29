@@ -4,6 +4,7 @@ from decimal import Decimal
 from .models import Order, OrderItem, OrderStatusHistory
 from stock.serializers import StockItemListSerializer
 from stock.sku_utils import normalize_sku_reference
+from products.serializers import get_product_child_product_url
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -13,6 +14,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     assigned_to_username = serializers.SerializerMethodField()
     processing_status_display = serializers.CharField(source='get_processing_status_display', read_only=True)
     parent_product_images = serializers.SerializerMethodField()
+    child_product_url = serializers.SerializerMethodField()
     available_stock_in_mtr = serializers.IntegerField(source='stock_item.available_stock_in_mtr', read_only=True)
 
     def get_assigned_to_username(self, obj):
@@ -23,13 +25,17 @@ class OrderItemSerializer(serializers.ModelSerializer):
     def get_parent_product_images(self, obj):
         stock_item = getattr(obj, 'stock_item', None)
         return getattr(getattr(stock_item, 'product', None), 'parent_product_images', None)
+
+    def get_child_product_url(self, obj):
+        stock_item = getattr(obj, 'stock_item', None)
+        return get_product_child_product_url(getattr(stock_item, 'product', None))
     
     class Meta:
         model = OrderItem
         fields = [
             'id', 'order', 'stock_item', 'stock_detail',
             'sku', 'product_name', 'product_type', 'color_code',
-            'parent_product_images', 'available_stock_in_mtr',
+            'parent_product_images', 'child_product_url', 'available_stock_in_mtr',
             'quantity', 'quantity_ordered', 'quantity_processed',
             'unit_price', 'line_total', 'tax_rate', 'discount_amount',
             'lable_printed',

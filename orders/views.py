@@ -113,7 +113,9 @@ class OrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Return queryset based on include_deleted parameter"""
         include_deleted = self.request.query_params.get('include_deleted', 'false').lower()
-        item_queryset = OrderItem.objects.select_related('assigned_to')
+        item_queryset = OrderItem.objects.select_related(
+            'assigned_to', 'stock_item', 'stock_item__product', 'stock_item__color',
+        ).prefetch_related('stock_item__product__extended_data')
         
         if include_deleted == 'true':
             queryset = Order.all_objects.select_related(
@@ -269,7 +271,9 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='with-items')
     def with_items(self, request):
         """List orders with their nested order items"""
-        item_queryset = OrderItem.objects.select_related('assigned_to')
+        item_queryset = OrderItem.objects.select_related(
+            'assigned_to', 'stock_item', 'stock_item__product', 'stock_item__color',
+        ).prefetch_related('stock_item__product__extended_data')
         base_queryset = self.get_queryset().prefetch_related(None)
         orders = self.filter_queryset(
             base_queryset.prefetch_related(Prefetch('items', queryset=item_queryset))
@@ -689,7 +693,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         items = list(
             base_queryset.select_related(
                 'order', 'stock_item', 'stock_item__product', 'stock_item__color', 'assigned_to',
-            ).filter(id__in=item_ids).order_by('id')
+            ).prefetch_related('stock_item__product__extended_data').filter(id__in=item_ids).order_by('id')
         )
         found_ids = {item.id for item in items}
         missing_ids = [item_id for item_id in item_ids if item_id not in found_ids]
@@ -796,7 +800,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         item_queryset = OrderItem.objects.select_related(
             'stock_item', 'stock_item__product', 'stock_item__color', 'assigned_to',
-        )
+        ).prefetch_related('stock_item__product__extended_data')
         base_queryset = self.get_queryset().prefetch_related(None)
         queryset = self.filter_queryset(
             base_queryset.prefetch_related(Prefetch('items', queryset=item_queryset))
@@ -936,7 +940,7 @@ class OrderItemViewSet(viewsets.ReadOnlyModelViewSet):
     
     queryset = OrderItem.objects.select_related(
         'assigned_to', 'order', 'stock_item', 'stock_item__product', 'stock_item__color',
-    ).all()
+    ).prefetch_related('stock_item__product__extended_data').all()
     serializer_class = OrderItemSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]

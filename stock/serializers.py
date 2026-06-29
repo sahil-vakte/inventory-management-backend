@@ -5,7 +5,7 @@ from .models import StockItem, StockMovement, StockBatch, StockBatchRoll
 from .sku_utils import normalize_sku_reference
 from colors.serializers import ColorListSerializer
 from products.models import Product
-from products.serializers import ProductDetailSerializer
+from products.serializers import ProductDetailSerializer, get_product_child_product_url
 
 class StockMovementSerializer(serializers.ModelSerializer):
     """Serializer for Stock Movement model"""
@@ -24,22 +24,27 @@ class StockProductListSerializer(serializers.ModelSerializer):
     is_active = serializers.ReadOnlyField()
     primary_location = serializers.CharField(source='primary_location.id', read_only=True)
     secondary_location = serializers.CharField(source='secondary_location.id', read_only=True)
+    child_product_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
         fields = [
             'vs_child_id', 'child_reference', 'child_product_title',
-            'parent_product_images',
+            'parent_product_images', 'child_product_url',
             'brand_name', 'price_break_1_price', 'is_active',
             'child_active', 'parent_active', 'featured', 'is_deleted',
             'primary_location', 'secondary_location'
         ]
+
+    def get_child_product_url(self, obj):
+        return get_product_child_product_url(obj)
 
 
 class StockItemListSerializer(serializers.ModelSerializer):
     primary_location = serializers.SerializerMethodField()
     secondary_location = serializers.SerializerMethodField()
     parent_product_images = serializers.SerializerMethodField()
+    child_product_url = serializers.SerializerMethodField()
     """Simplified serializer for stock list views"""
     color = ColorListSerializer(read_only=True)
     product = StockProductListSerializer(read_only=True)
@@ -54,7 +59,7 @@ class StockItemListSerializer(serializers.ModelSerializer):
             'reserved_stock', 'total_available_stock', 'stock_status',
             'is_low_stock', 'is_active', 'is_deleted',
             'primary_location', 'secondary_location',
-            'parent_product_images', 'product'
+            'parent_product_images', 'child_product_url', 'product'
         ]
 
     def get_primary_location(self, obj):
@@ -66,10 +71,14 @@ class StockItemListSerializer(serializers.ModelSerializer):
     def get_parent_product_images(self, obj):
         return getattr(getattr(obj, 'product', None), 'parent_product_images', None)
 
+    def get_child_product_url(self, obj):
+        return get_product_child_product_url(getattr(obj, 'product', None))
+
 class StockItemDetailSerializer(serializers.ModelSerializer):
     primary_location = serializers.SerializerMethodField()
     secondary_location = serializers.SerializerMethodField()
     parent_product_images = serializers.SerializerMethodField()
+    child_product_url = serializers.SerializerMethodField()
     """Detailed serializer for single stock item views"""
     color = ColorListSerializer(read_only=True)
     product = ProductDetailSerializer(read_only=True)
@@ -93,6 +102,9 @@ class StockItemDetailSerializer(serializers.ModelSerializer):
 
     def get_parent_product_images(self, obj):
         return getattr(getattr(obj, 'product', None), 'parent_product_images', None)
+
+    def get_child_product_url(self, obj):
+        return get_product_child_product_url(getattr(obj, 'product', None))
 
 class StockItemCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating stock items"""
