@@ -470,6 +470,7 @@ class OrderWithItemsAPITest(TestCase):
 
         order = Order.objects.create(
             customer_name='Royal Mail Customer',
+            external_order_id='WEB-RM-001',
             customer_email='rm@example.com',
             customer_phone='07123456789',
             shipping_address_line1='1 Test Street',
@@ -503,16 +504,17 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         order.refresh_from_db()
         self.assertEqual(order.order_status, Order.STATUS_SHIPPED)
+        self.assertEqual(response.data['royal_mail_reference'], 'WEB-RM-001')
         self.assertEqual(order.tracking_number, 'RMTRACK123')
         self.assertEqual(order.carrier, 'Royal Mail')
         self.assertEqual(order.shipping_method, 'TPLN')
-        self.assertIn('RM-ORDER-1', order.internal_notes)
+        self.assertIn('WEB-RM-001', order.internal_notes)
         self.assertIn('Booked from API test', order.internal_notes)
 
         request_payload = mock_post.call_args.kwargs['json']
         request_headers = mock_post.call_args.kwargs['headers']
         self.assertEqual(request_headers['Authorization'], 'test-api-key')
-        self.assertEqual(request_payload['items'][0]['orderReference'], order.order_number)
+        self.assertEqual(request_payload['items'][0]['orderReference'], 'WEB-RM-001')
         self.assertEqual(request_payload['items'][0]['billing']['address']['city'], 'London')
         self.assertEqual(request_payload['items'][0]['billing']['address']['postcode'], 'SW1A 1AA')
         self.assertEqual(request_payload['items'][0]['packages'][0]['weightInGrams'], 250)
