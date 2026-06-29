@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from decimal import Decimal, InvalidOperation
 from .models import Product, Category, Brand, Location
 
 
@@ -19,6 +20,47 @@ def get_product_child_product_url(product):
         if row.child_product_url:
             return row.child_product_url
     return None
+
+
+def get_product_weight_kg(product):
+    if not product:
+        return Decimal('0.000')
+
+    weight = getattr(product, 'weight_kg', None)
+    if weight and weight > 0:
+        return Decimal(weight).quantize(Decimal('0.001'))
+
+    extended_manager = getattr(product, 'extended_data', None)
+    if extended_manager is None:
+        return Decimal('0.000')
+
+    rows = list(extended_manager.all())
+    rows.sort(key=lambda row: row.id or 0, reverse=True)
+    for row in rows:
+        parsed = parse_weight_kg(getattr(row, 'weight_in_kgs', None))
+        if parsed > 0:
+            return parsed
+    return Decimal('0.000')
+
+
+def parse_weight_kg(value):
+    if value in [None, '']:
+        return Decimal('0.000')
+
+    normalized = str(value).strip().lower().replace(',', '')
+    multiplier = Decimal('1')
+    if normalized.endswith('kgs'):
+        normalized = normalized[:-3].strip()
+    elif normalized.endswith('kg'):
+        normalized = normalized[:-2].strip()
+    elif normalized.endswith('g'):
+        normalized = normalized[:-1].strip()
+        multiplier = Decimal('0.001')
+
+    try:
+        return (Decimal(normalized) * multiplier).quantize(Decimal('0.001'))
+    except (InvalidOperation, ValueError):
+        return Decimal('0.000')
 
 
 class LocationSerializer(serializers.ModelSerializer):

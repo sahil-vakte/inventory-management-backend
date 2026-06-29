@@ -275,6 +275,7 @@ class OrderWithItemsAPITest(TestCase):
             parent_product_title='Stock Product',
             child_reference='STOCK SKU',
             child_product_title='Stock Product',
+            weight_kg=Decimal('0.250'),
         )
         stock_item = StockItem.objects.create(
             sku='STOCK SKU',
@@ -294,16 +295,27 @@ class OrderWithItemsAPITest(TestCase):
             stock_item=stock_item,
             sku='STOCK SKU',
             product_name='Stock Product',
-            quantity=1,
-            quantity_ordered=1,
+            quantity=3,
+            quantity_ordered=3,
             unit_price=Decimal('10.00'),
         )
 
         response = self.client.get('/api/v1/order-items/')
+        detail_response = self.client.get(f'/api/v1/orders/{order.id}/')
+        list_response = self.client.get('/api/v1/orders/')
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(list_response.status_code, 200)
         result = next(row for row in response.data['results'] if row['id'] == item.id)
         self.assertEqual(result['available_stock_in_mtr'], 42)
+        self.assertEqual(result['unit_weight_kg'], '0.250')
+        self.assertEqual(result['total_weight_kg'], '0.750')
+        self.assertEqual(detail_response.data['items'][0]['unit_weight_kg'], '0.250')
+        self.assertEqual(detail_response.data['items'][0]['total_weight_kg'], '0.750')
+        self.assertEqual(detail_response.data['total_weight_kg'], '0.750')
+        order_row = next(row for row in list_response.data['results'] if row['id'] == order.id)
+        self.assertEqual(order_row['total_weight_kg'], '0.750')
 
     def test_order_detail_returns_child_product_url_from_stock_product_extended_data(self):
         color = Color.objects.create(
@@ -325,6 +337,7 @@ class OrderWithItemsAPITest(TestCase):
             row_hash='order-url-row',
             import_batch_id='order-url-batch',
             child_product_url='https://example.com/products/url-sku',
+            weight_in_kgs='0.125',
         )
         stock_item = StockItem.objects.create(
             sku='URL SKU',
@@ -355,11 +368,14 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(detail_response.status_code, 200)
         order_item = detail_response.data['items'][0]
         self.assertEqual(order_item['child_product_url'], 'https://example.com/products/url-sku')
+        self.assertEqual(order_item['unit_weight_kg'], '0.125')
+        self.assertEqual(order_item['total_weight_kg'], '0.125')
         self.assertEqual(order_item['stock_detail']['child_product_url'], 'https://example.com/products/url-sku')
         self.assertEqual(order_item['stock_detail']['product']['child_product_url'], 'https://example.com/products/url-sku')
 
         item_row = next(row for row in item_response.data['results'] if row['id'] == item.id)
         self.assertEqual(item_row['child_product_url'], 'https://example.com/products/url-sku')
+        self.assertEqual(item_row['unit_weight_kg'], '0.125')
 
     def test_xml_import_saves_tiaknight_courier_fields(self):
         xml_data = b'''
