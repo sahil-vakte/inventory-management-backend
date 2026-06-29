@@ -1,4 +1,5 @@
 # Tests for Order Management with Employee Assignment
+import io
 import os
 import tempfile
 from django.test import TestCase
@@ -11,6 +12,7 @@ from unittest.mock import Mock, patch
 from xml.sax.saxutils import escape
 from rest_framework.test import APIClient
 from .models import Order, OrderItem, RoyalMailOAuthToken
+from .services.xml_parser import XMLOrderParser
 from colors.models import Color
 from products.models import Product
 from stock.models import StockItem
@@ -303,6 +305,94 @@ class OrderWithItemsAPITest(TestCase):
         result = next(row for row in response.data['results'] if row['id'] == item.id)
         self.assertEqual(result['available_stock_in_mtr'], 42)
 
+    def test_xml_import_saves_tiaknight_courier_fields(self):
+        xml_data = b'''
+        <web_orders>
+          <web_order>
+            <order>
+              <order_reference>WEB-C001</order_reference>
+              <order_state>Payment Received</order_state>
+              <order_date>2026-06-29 10:00:00</order_date>
+              <courier_name>Next Day By 12pm (next working day if ordered before 1pm)</courier_name>
+              <grand_total_inc>12.50</grand_total_inc>
+            </order>
+            <customer>
+              <billing_firstname>Courier</billing_firstname>
+              <billing_lastname>Customer</billing_lastname>
+              <billing_email>courier@example.com</billing_email>
+              <delivery_address1>1 Delivery Street</delivery_address1>
+              <delivery_town>London</delivery_town>
+              <delivery_postcode>SW1A 1AA</delivery_postcode>
+            </customer>
+            <payment>
+              <payment_type>Card</payment_type>
+            </payment>
+            <products>
+              <product>
+                <product_reference>SKU-C001</product_reference>
+                <title>Courier Product</title>
+                <quantity>1</quantity>
+                <price_inc>12.50</price_inc>
+              </product>
+            </products>
+          </web_order>
+        </web_orders>
+        '''
+
+        result = XMLOrderParser().parse_and_create_orders(io.BytesIO(xml_data), user=self.user)
+
+        self.assertEqual(result['created_count'], 1)
+        order = Order.objects.get(external_order_id='WEB-C001')
+        self.assertEqual(order.courier_service_name, 'Next Day By 12pm (next working day if ordered before 1pm)')
+        self.assertEqual(order.courier_service_code, 'NEXT DAY 12')
+        self.assertEqual(order.shipping_method, order.courier_service_name)
+        self.assertEqual(order.carrier, order.courier_service_name)
+
+        detail_response = self.client.get(f'/api/v1/orders/{order.id}/')
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data['courier_service_code'], 'NEXT DAY 12')
+
+    def test_label_excel_exports_courier_code_per_order_item(self):
+        order = Order.objects.create(
+            customer_name='Excel Customer',
+            customer_email='excel@example.com',
+            external_order_id='WEB-EXCEL',
+            courier_service_name='Standard Delivery',
+            courier_service_code='STD',
+            shipping_method='Standard Delivery',
+            carrier='Standard Delivery',
+            total_amount=Decimal('20.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-EXCEL',
+            product_name='Excel Product',
+            quantity=2,
+            quantity_ordered=2,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.get('/api/v1/orders/label-excel/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        from openpyxl import load_workbook
+        workbook = load_workbook(io.BytesIO(response.content))
+        worksheet = workbook.active
+        headers = [cell.value for cell in worksheet[1]]
+        values = [cell.value for cell in worksheet[2]]
+        row = dict(zip(headers, values))
+
+        self.assertEqual(row['Order Number'], order.order_number)
+        self.assertEqual(row['SKU'], 'SKU-EXCEL')
+        self.assertEqual(row['Courier Service'], 'Standard Delivery')
+        self.assertEqual(row['Courier Code'], 'STD')
+
     def test_with_items_keeps_order_filters(self):
         pending_order = Order.objects.create(
             customer_name='Pending Customer',
@@ -423,8 +513,69 @@ class OrderWithItemsAPITest(TestCase):
         request_headers = mock_post.call_args.kwargs['headers']
         self.assertEqual(request_headers['Authorization'], 'test-api-key')
         self.assertEqual(request_payload['items'][0]['orderReference'], order.order_number)
+        self.assertEqual(request_payload['items'][0]['billing']['address']['city'], 'London')
+        self.assertEqual(request_payload['items'][0]['billing']['address']['postcode'], 'SW1A 1AA')
         self.assertEqual(request_payload['items'][0]['packages'][0]['weightInGrams'], 250)
         self.assertEqual(request_payload['items'][0]['packages'][0]['contents'][0]['SKU'], 'SKU-001')
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Letter',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=50,
+    )
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_does_not_ship_when_royal_mail_returns_failed_orders(self, mock_post):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'successCount': 0,
+            'errorsCount': 1,
+            'createdOrders': [],
+            'failedOrders': [
+                {
+                    'order': {'orderReference': 'ORD-FAILED'},
+                    'errors': [{'errorMessage': 'Billing address postcode is required'}],
+                }
+            ],
+        }
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='Royal Mail Failed Customer',
+            customer_email='failed@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-FAILED',
+            product_name='Royal Mail Failed Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {
+                'weight_in_grams': 50,
+                'package_format_identifier': 'Letter',
+                'service_code': 'STL2',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.data['error'], 'Royal Mail did not create the shipment')
+        self.assertEqual(response.data['royal_mail_response']['successCount'], 0)
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, Order.STATUS_COMPLETED)
+        self.assertIsNone(order.tracking_number)
 
     @override_settings(
         ROYAL_MAIL_API_KEY='',
@@ -533,6 +684,17 @@ class OrderWithItemsAPITest(TestCase):
         self.assertIn('redirect_uri=https%3A%2F%2Fwww.wims.cloud%2Fauth%2Froyalmail%2Fcallback', response.data['authorization_url'])
         self.assertIn('state=test-state', response.data['authorization_url'])
         self.assertNotIn('client-secret', str(response.data))
+
+    @override_settings(
+        ROYAL_MAIL_OAUTH_AUTHORIZATION_URL='',
+        ROYAL_MAIL_OAUTH_TOKEN_URL='',
+    )
+    def test_royal_mail_oauth_start_explains_api_key_option_when_disabled(self):
+        response = self.client.get('/api/v1/orders/royal-mail/oauth/start/')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['required_setting'], 'ROYAL_MAIL_API_KEY')
+        self.assertIn('Click & Drop API key', response.data['message'])
 
     def test_royal_mail_oauth_callback_requires_code(self):
         response = self.client.get('/auth/royalmail/callback')

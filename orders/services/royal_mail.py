@@ -199,6 +199,7 @@ class RoyalMailClickDropClient:
                 status_code=response.status_code,
                 response_data=response_data,
             )
+        self._raise_for_order_errors(response_data, response.status_code)
 
         return response_data
 
@@ -234,6 +235,7 @@ class RoyalMailClickDropClient:
                 'phoneNumber': order.customer_phone or '',
                 'emailAddress': order.customer_email or '',
             },
+            'billing': self._billing_from_order(order),
             'orderDate': order.order_date.isoformat() if order.order_date else None,
             'subtotal': self._money(order.subtotal),
             'shippingCostCharged': self._money(order.shipping_cost),
@@ -245,6 +247,29 @@ class RoyalMailClickDropClient:
             royal_mail_order['postageDetails'] = {'serviceCode': service_code}
 
         return {'items': [royal_mail_order]}
+
+    def _billing_from_order(self, order):
+        address_line1 = order.billing_address_line1 or order.shipping_address_line1 or ''
+        address_line2 = order.billing_address_line2 or order.shipping_address_line2 or ''
+        city = order.billing_city or order.shipping_city or ''
+        county = order.billing_state or order.shipping_state or ''
+        postcode = order.billing_postal_code or order.shipping_postal_code or ''
+        country = order.billing_country or order.shipping_country
+
+        return {
+            'address': {
+                'fullName': order.customer_name,
+                'companyName': order.customer_company or '',
+                'addressLine1': address_line1,
+                'addressLine2': address_line2,
+                'city': city,
+                'county': county,
+                'postcode': postcode,
+                'countryCode': self._country_code(country),
+            },
+            'phoneNumber': order.customer_phone or '',
+            'emailAddress': order.customer_email or '',
+        }
 
     def _content_from_item(self, item):
         unit_value = item.unit_price or Decimal('0.00')
@@ -276,6 +301,43 @@ class RoyalMailClickDropClient:
             return response.json()
         except ValueError:
             return {'raw': response.text}
+
+    def _raise_for_order_errors(self, response_data, status_code):
+        if not isinstance(response_data, dict):
+            return
+
+        failed_orders = response_data.get('failedOrders') or []
+        errors_count = response_data.get('errorsCount')
+        success_count = response_data.get('successCount')
+        created_orders = response_data.get('createdOrders')
+
+        has_failed_orders = bool(failed_orders)
+        has_errors = False
+        if errors_count is not None:
+            try:
+                has_errors = int(errors_count) > 0
+            except (TypeError, ValueError):
+                has_errors = bool(errors_count)
+
+        parsed_success_count = None
+        if success_count is not None:
+            try:
+                parsed_success_count = int(success_count or 0)
+            except (TypeError, ValueError):
+                parsed_success_count = None
+
+        no_created_orders = (
+            parsed_success_count == 0
+            and created_orders is not None
+            and len(created_orders) == 0
+        )
+
+        if has_failed_orders or has_errors or no_created_orders:
+            raise RoyalMailAPIError(
+                'Royal Mail did not create the shipment',
+                status_code=status_code,
+                response_data=response_data,
+            )
 
 
 def extract_royal_mail_reference(response_data):

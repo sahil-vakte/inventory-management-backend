@@ -145,6 +145,7 @@ class OrderListSerializer(serializers.ModelSerializer):
             'customer_email', 'order_status', 'order_status_display',
             'payment_status', 'payment_status_display', 'order_date',
             'total_amount', 'item_count', 'total_quantity',
+            'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code',
             'created_by_username', 'assigned_to', 'assigned_to_username',
             'order_source', 'created_at',
             'completion_percentage', 'items_total', 'items_completed',
@@ -230,6 +231,7 @@ class OrderCreateUpdateSerializer(serializers.ModelSerializer):
             'order_status', 'payment_status', 'order_date', 'expected_delivery_date',
             'subtotal', 'tax_amount', 'tax_rate', 'shipping_cost', 'discount_amount', 'total_amount',
             'payment_method', 'payment_reference', 'shipping_method',
+            'carrier', 'courier_service_name', 'courier_service_code',
             'customer_notes', 'internal_notes', 'order_source', 'assigned_to', 'items'
         ]
     
