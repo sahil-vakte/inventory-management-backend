@@ -280,6 +280,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         orders = self.filter_queryset(
             base_queryset.prefetch_related(Prefetch('items', queryset=item_queryset))
         )
+        orders = self._apply_with_items_item_filters(orders, request)
         orders = self._apply_with_items_label_window(orders, request)
 
         page = self.paginate_queryset(orders)
@@ -289,6 +290,14 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         serializer = OrderListWithItemsSerializer(orders, many=True, context={'request': request})
         return Response(serializer.data)
+
+    def _apply_with_items_item_filters(self, queryset, request):
+        is_sample = str(request.query_params.get('is_sample', '')).strip().lower()
+        if is_sample in ['1', 'true', 'yes']:
+            return queryset.filter(items__is_sample=True).distinct()
+        if is_sample in ['0', 'false', 'no']:
+            return queryset.exclude(items__is_sample=True).distinct()
+        return queryset
 
     def _apply_with_items_label_window(self, queryset, request):
         """Default queue window: last 3 UK days plus older orders with unprinted items."""

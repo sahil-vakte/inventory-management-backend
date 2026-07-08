@@ -2949,6 +2949,12 @@
                       "description": "Optional. Set true to bypass the default last-days plus older-unprinted window."
                     },
                     {
+                      "key": "is_sample",
+                      "value": "true",
+                      "disabled": true,
+                      "description": "Optional. true returns orders with at least one sample item; false excludes orders with sample items."
+                    },
+                    {
                       "key": "order_status",
                       "value": "NEW",
                       "disabled": true,
@@ -2966,7 +2972,7 @@
                     }
                   ]
                 },
-                "description": "List orders with nested order items. Default response returns orders from the last 3 Tiaknight/UK calendar days plus older orders that still have at least one item with lable_printed=false. Use include_all=true to return all matching orders. Items include sample fields: summary, personalization, sample_name, is_sample."
+                "description": "List orders with nested order items. Default response returns orders from the last 3 Tiaknight/UK calendar days plus older orders that still have at least one item with lable_printed=false. Use include_all=true to return all matching orders. Use is_sample=true to return orders with at least one sample item. Items include sample fields: summary, personalization, sample_name, is_sample."
               },
               "response": []
             },
