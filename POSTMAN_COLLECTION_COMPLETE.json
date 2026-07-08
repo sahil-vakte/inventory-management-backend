@@ -2920,7 +2920,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/v1/orders/with-items/",
+                  "raw": "{{base_url}}/api/v1/orders/with-items/?page=1",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -2931,6 +2931,23 @@
                     "with-items"
                   ],
                   "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Default response window returns last 3 UK order days plus older orders with any lable_printed=false item."
+                    },
+                    {
+                      "key": "days",
+                      "value": "3",
+                      "disabled": true,
+                      "description": "Optional label queue window in UK calendar days. Default is 3."
+                    },
+                    {
+                      "key": "include_all",
+                      "value": "true",
+                      "disabled": true,
+                      "description": "Optional. Set true to bypass the default last-days plus older-unprinted window."
+                    },
                     {
                       "key": "order_status",
                       "value": "NEW",
@@ -2949,7 +2966,7 @@
                     }
                   ]
                 },
-                "description": "List orders with nested order items. Supports same filters as List Orders."
+                "description": "List orders with nested order items. Default response returns orders from the last 3 Tiaknight/UK calendar days plus older orders that still have at least one item with lable_printed=false. Use include_all=true to return all matching orders. Items include sample fields: summary, personalization, sample_name, is_sample."
               },
               "response": []
             },
@@ -2989,7 +3006,7 @@
                     }
                   ]
                 },
-                "description": "Download an Excel label sheet with one row per order item. Includes Courier Service and Courier Code values mapped from Tiaknight delivery methods: STD, INT, NEXT DAY, NEXT DAY 12, SATURDAY, Collect in Store."
+                "description": "Download an Excel label sheet with one row per order item. Includes Courier Service and Courier Code values mapped from Tiaknight delivery methods: STD, INT, NEXT DAY, NEXT DAY 12, SATURDAY, Collect in Store. Also includes Summary, Personalization, Sample Name, and Is Sample columns."
               },
               "response": []
             },
@@ -3590,7 +3607,7 @@
                     "import_from_remote_tiaknightfabrics"
                   ]
                 },
-                "description": "Fetch orders from configured Tiaknight SOAP service and import them."
+                "description": "Fetch orders from configured Tiaknight SOAP service and import them. Naive Tiaknight order dates are treated as Europe/London time, tiaknight_order_date_raw and tiaknight_fetched_at are saved, and sample request values such as `(Design: Gold Animal Sample Request)` are parsed into order item summary, personalization, sample_name, and is_sample."
               },
               "response": []
             }

@@ -10,6 +10,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import Mock, patch
 from xml.sax.saxutils import escape
+from zoneinfo import ZoneInfo
 from rest_framework.test import APIClient
 from .models import Order, OrderItem, RoyalMailOAuthToken
 from .services.xml_parser import XMLOrderParser
@@ -159,7 +160,7 @@ class RemoteTiaknightImportAuditTest(TestCase):
         orders_xml = (
             '<web_orders>'
             '<web_order><order><order_reference>WEB100001</order_reference></order></web_order>'
-            '<web_order><order><order_reference>WEB100002</order_reference></order></web_order>'
+            '<web_order><order><order_reference>WEB100003</order_reference></order></web_order>'
             '</web_orders>'
         )
         soap_response = (
@@ -193,15 +194,38 @@ class RemoteTiaknightImportAuditTest(TestCase):
 
             self.assertEqual(mock_fetch.call_args.kwargs['auto_update'], 'true')
             self.assertEqual(result['received_order_refs_count'], 2)
-            self.assertEqual(result['received_order_refs'], ['WEB100001', 'WEB100002'])
+            self.assertEqual(result['received_order_refs'], ['WEB100001', 'WEB100003'])
             self.assertEqual(result['tiaknight_request_id'], 'REQ-1')
+            self.assertEqual(result['missing_sequence_order_refs'], ['WEB100002'])
 
             with open(audit_path, encoding='utf-8') as audit_file:
                 audit_line = audit_file.read()
             self.assertIn('request_id=REQ-1', audit_line)
             self.assertIn('auto_update=true', audit_line)
             self.assertIn('orders_received=2', audit_line)
-            self.assertIn('refs=WEB100001,WEB100002', audit_line)
+            self.assertIn('refs=WEB100001,WEB100003', audit_line)
+            self.assertIn('missing_sequence_refs=WEB100002', audit_line)
+
+    def test_missing_sequence_detection_uses_previous_audit_max(self):
+        from orders.services.remote_tiaknight_import import detect_missing_sequence_refs
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audit_path = os.path.join(tmpdir, 'tiaknight_refs.log')
+            with open(audit_path, 'w', encoding='utf-8') as audit_file:
+                audit_file.write(
+                    '[2026-07-08 09:00:06 UTC] orders_received=1 refs=WEB236577 '
+                    'missing_sequence_refs=-\n'
+                )
+
+            missing = detect_missing_sequence_refs(
+                ['WEB236582', 'WEB236584', 'WEB236585', 'WEB236586', 'WEB236587'],
+                audit_path,
+            )
+
+        self.assertEqual(
+            missing,
+            ['WEB236578', 'WEB236579', 'WEB236580', 'WEB236581', 'WEB236583'],
+        )
 
 
 class OrderWithItemsAPITest(TestCase):
@@ -424,6 +448,127 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(detail_response.status_code, 200)
         self.assertEqual(detail_response.data['courier_service_code'], 'NEXT DAY 12')
 
+    def test_xml_import_keeps_tiaknight_local_order_time_and_raw_value(self):
+        xml_data = b'''
+        <web_orders>
+          <web_order>
+            <order>
+              <order_reference>WEB-TIME-001</order_reference>
+              <order_state>Payment Received</order_state>
+              <order_date>2026-07-06 12:43:42</order_date>
+              <grand_total_inc>12.50</grand_total_inc>
+            </order>
+            <customer>
+              <billing_firstname>Time</billing_firstname>
+              <billing_lastname>Customer</billing_lastname>
+              <billing_email>time@example.com</billing_email>
+            </customer>
+            <payment>
+              <payment_type>Card</payment_type>
+            </payment>
+            <products>
+              <product>
+                <product_reference>SKU-TIME</product_reference>
+                <title>Time Product</title>
+                <quantity>1</quantity>
+                <price_inc>12.50</price_inc>
+              </product>
+            </products>
+          </web_order>
+        </web_orders>
+        '''
+
+        XMLOrderParser().parse_and_create_orders(io.BytesIO(xml_data), user=self.user)
+
+        order = Order.objects.get(external_order_id='WEB-TIME-001')
+        tiaknight_local = timezone.localtime(order.order_date, ZoneInfo('Europe/London'))
+        self.assertEqual(tiaknight_local.strftime('%Y-%m-%d %H:%M:%S'), '2026-07-06 12:43:42')
+        self.assertEqual(order.tiaknight_order_date_raw, '2026-07-06 12:43:42')
+        self.assertIsNotNone(order.tiaknight_fetched_at)
+
+    def test_xml_import_extracts_sample_personalization_from_product_title(self):
+        xml_data = b'''
+        <web_orders>
+          <web_order>
+            <order>
+              <order_reference>WEB-SAMPLE-001</order_reference>
+              <order_state>Payment Received</order_state>
+              <order_date>2026-07-06 12:43:42</order_date>
+              <grand_total_inc>3.50</grand_total_inc>
+            </order>
+            <customer>
+              <billing_firstname>Sample</billing_firstname>
+              <billing_lastname>Customer</billing_lastname>
+              <billing_email>sample@example.com</billing_email>
+            </customer>
+            <payment>
+              <payment_type>Card</payment_type>
+            </payment>
+            <products>
+              <product>
+                <product_reference>SQ1011 GLD</product_reference>
+                <title>P4P Polar Fleece Material (SQ1011 GLD) (Design: Gold Animal Sample Request)</title>
+                <quantity>1</quantity>
+                <price_inc>3.50</price_inc>
+              </product>
+            </products>
+          </web_order>
+        </web_orders>
+        '''
+
+        XMLOrderParser().parse_and_create_orders(io.BytesIO(xml_data), user=self.user)
+
+        item = OrderItem.objects.get(order__external_order_id='WEB-SAMPLE-001')
+        self.assertTrue(item.is_sample)
+        self.assertEqual(item.sample_name, 'Gold Animal Sample Request')
+        self.assertEqual(item.personalization, 'Design: Gold Animal Sample Request')
+        self.assertEqual(item.summary, 'Gold Animal Sample Request')
+
+        detail_response = self.client.get(f'/api/v1/orders/{item.order_id}/')
+        self.assertEqual(detail_response.status_code, 200)
+        response_item = detail_response.data['items'][0]
+        self.assertTrue(response_item['is_sample'])
+        self.assertEqual(response_item['sample_name'], 'Gold Animal Sample Request')
+        self.assertEqual(response_item['personalization'], 'Design: Gold Animal Sample Request')
+
+    def test_xml_import_extracts_length_sample_items(self):
+        xml_data = b'''
+        <web_orders>
+          <web_order>
+            <order>
+              <order_reference>WEB-SAMPLE-LENGTH-001</order_reference>
+              <order_state>Payment Received</order_state>
+              <order_date>2026-07-06 12:43:42</order_date>
+              <grand_total_inc>0.50</grand_total_inc>
+            </order>
+            <customer>
+              <billing_firstname>Length</billing_firstname>
+              <billing_lastname>Sample</billing_lastname>
+              <billing_email>length-sample@example.com</billing_email>
+            </customer>
+            <payment>
+              <payment_type>Card</payment_type>
+            </payment>
+            <products>
+              <product>
+                <product_reference>SAMPLE-SQ209 RBL</product_reference>
+                <title>Cotton Fine Rib 1x1 Elastane Stretch T-Shirt Fabric- SQ209 Colour: Royal Blue, Length: Sample (6 x 6")</title>
+                <quantity>1</quantity>
+                <price_inc>0.50</price_inc>
+              </product>
+            </products>
+          </web_order>
+        </web_orders>
+        '''
+
+        XMLOrderParser().parse_and_create_orders(io.BytesIO(xml_data), user=self.user)
+
+        item = OrderItem.objects.get(order__external_order_id='WEB-SAMPLE-LENGTH-001')
+        self.assertTrue(item.is_sample)
+        self.assertEqual(item.sample_name, 'Sample (6 x 6")')
+        self.assertEqual(item.personalization, 'Length: Sample (6 x 6")')
+        self.assertEqual(item.summary, 'Sample (6 x 6")')
+
     def test_label_excel_exports_courier_code_per_order_item(self):
         order = Order.objects.create(
             customer_name='Excel Customer',
@@ -443,6 +588,10 @@ class OrderWithItemsAPITest(TestCase):
             quantity=2,
             quantity_ordered=2,
             unit_price=Decimal('10.00'),
+            summary='Excel Summary',
+            personalization='Design: Blue Sample Request',
+            sample_name='Blue Sample Request',
+            is_sample=True,
         )
 
         response = self.client.get('/api/v1/orders/label-excel/')
@@ -464,6 +613,10 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(row['SKU'], 'SKU-EXCEL')
         self.assertEqual(row['Courier Service'], 'Standard Delivery')
         self.assertEqual(row['Courier Code'], 'STD')
+        self.assertEqual(row['Summary'], 'Excel Summary')
+        self.assertEqual(row['Personalization'], 'Design: Blue Sample Request')
+        self.assertEqual(row['Sample Name'], 'Blue Sample Request')
+        self.assertTrue(row['Is Sample'])
 
     def test_with_items_keeps_order_filters(self):
         pending_order = Order.objects.create(
@@ -484,6 +637,73 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['results'][0]['id'], pending_order.id)
+
+    def test_with_items_defaults_to_last_three_days_plus_older_unprinted_items(self):
+        tiaknight_tz = ZoneInfo('Europe/London')
+        today = timezone.localtime(timezone.now(), tiaknight_tz).date()
+
+        recent_order = Order.objects.create(
+            customer_name='Recent Customer',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        old_unprinted_order = Order.objects.create(
+            customer_name='Old Unprinted Customer',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        old_printed_order = Order.objects.create(
+            customer_name='Old Printed Customer',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        Order.objects.filter(pk=recent_order.pk).update(order_date=timezone.make_aware(
+            timezone.datetime.combine(today - timedelta(days=2), timezone.datetime.min.time()),
+            tiaknight_tz,
+        ))
+        Order.objects.filter(pk=old_unprinted_order.pk).update(order_date=timezone.make_aware(
+            timezone.datetime.combine(today - timedelta(days=5), timezone.datetime.min.time()),
+            tiaknight_tz,
+        ))
+        Order.objects.filter(pk=old_printed_order.pk).update(order_date=timezone.make_aware(
+            timezone.datetime.combine(today - timedelta(days=5), timezone.datetime.min.time()),
+            tiaknight_tz,
+        ))
+        OrderItem.objects.create(
+            order=recent_order,
+            sku='RECENT',
+            product_name='Recent Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+            lable_printed=True,
+        )
+        OrderItem.objects.create(
+            order=old_unprinted_order,
+            sku='OLD-UNPRINTED',
+            product_name='Old Unprinted Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+            lable_printed=False,
+        )
+        OrderItem.objects.create(
+            order=old_printed_order,
+            sku='OLD-PRINTED',
+            product_name='Old Printed Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+            lable_printed=True,
+        )
+
+        response = self.client.get('/api/v1/orders/with-items/')
+
+        self.assertEqual(response.status_code, 200)
+        returned_ids = {row['id'] for row in response.data['results']}
+        self.assertIn(recent_order.id, returned_ids)
+        self.assertIn(old_unprinted_order.id, returned_ids)
+        self.assertNotIn(old_printed_order.id, returned_ids)
 
     def test_label_printed_endpoint_updates_order_status(self):
         order = Order.objects.create(

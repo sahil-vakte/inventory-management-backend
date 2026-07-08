@@ -63,6 +63,7 @@ def import_remote_tiaknight_orders(user=None):
         raise RemoteTiaknightParseError('Could not find <Result> value in SOAP response')
 
     order_refs = extract_order_references_from_xml(orders_xml_str)
+    missing_sequence_refs = detect_missing_sequence_refs(order_refs, audit_log_path)
     request_id = extract_soap_value(soap_bytes, 'RequestID')
     source_datetime = extract_soap_value(soap_bytes, 'DateTime')
     raw_payload_path = None
@@ -80,6 +81,7 @@ def import_remote_tiaknight_orders(user=None):
         auto_update=auto_update,
         file_type=file_type,
         order_refs=order_refs,
+        missing_sequence_refs=missing_sequence_refs,
         raw_payload_path=raw_payload_path,
     )
 
@@ -93,6 +95,7 @@ def import_remote_tiaknight_orders(user=None):
     result['tiaknight_auto_update'] = auto_update
     result['tiaknight_audit_log_path'] = audit_log_path
     result['tiaknight_raw_payload_path'] = raw_payload_path
+    result['missing_sequence_order_refs'] = missing_sequence_refs
     return result
 
 
@@ -144,6 +147,7 @@ def write_import_audit(
     auto_update,
     file_type,
     order_refs,
+    missing_sequence_refs=None,
     raw_payload_path=None,
 ):
     """Append received Tiaknight order refs to a dedicated audit log."""
@@ -151,16 +155,92 @@ def write_import_audit(
     path.parent.mkdir(parents=True, exist_ok=True)
     now = timezone.localtime()
     refs = ','.join(order_refs) if order_refs else '-'
+    missing_refs = ','.join(missing_sequence_refs or []) if missing_sequence_refs else '-'
     raw_payload_note = f" raw_payload={raw_payload_path}" if raw_payload_path else ''
     line = (
         f"[{now:%Y-%m-%d %H:%M:%S %Z}] "
         f"http_status={http_status} request_id={request_id or '-'} "
         f"source_datetime={source_datetime or '-'} auto_update={auto_update} "
         f"file_type={file_type} orders_received={len(order_refs)} refs={refs}"
+        f" missing_sequence_refs={missing_refs}"
         f"{raw_payload_note}\n"
     )
     with path.open('a', encoding='utf-8') as audit_log:
         audit_log.write(line)
+
+
+def detect_missing_sequence_refs(order_refs, audit_log_path):
+    """Detect numeric order-reference gaps against current payload and previous audit max."""
+    current = [_split_order_ref(ref) for ref in order_refs]
+    current = [(prefix, number) for prefix, number in current if prefix and number is not None]
+    if not current:
+        return []
+
+    missing = set()
+    by_prefix = {}
+    for prefix, number in current:
+        by_prefix.setdefault(prefix, set()).add(number)
+
+    previous_max = _previous_max_refs_by_prefix(audit_log_path)
+    for prefix, numbers in by_prefix.items():
+        min_number = min(numbers)
+        max_number = max(numbers)
+        start = min_number
+        if previous_max.get(prefix) and previous_max[prefix] < min_number:
+            start = previous_max[prefix] + 1
+        for number in range(start, max_number + 1):
+            if number not in numbers:
+                missing.add(f'{prefix}{number}')
+
+    return sorted(missing, key=lambda ref: (_split_order_ref(ref)[0], _split_order_ref(ref)[1] or 0))
+
+
+def _previous_max_refs_by_prefix(audit_log_path):
+    path = Path(audit_log_path)
+    if not path.exists():
+        return {}
+
+    max_by_prefix = {}
+    try:
+        lines = path.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return {}
+
+    for line in lines:
+        refs_value = _audit_value(line, 'refs')
+        if not refs_value or refs_value == '-':
+            continue
+        for ref in refs_value.split(','):
+            prefix, number = _split_order_ref(ref.strip())
+            if not prefix or number is None:
+                continue
+            max_by_prefix[prefix] = max(number, max_by_prefix.get(prefix, number))
+    return max_by_prefix
+
+
+def _audit_value(line, key):
+    marker = f'{key}='
+    start = line.find(marker)
+    if start == -1:
+        return None
+    start += len(marker)
+    end = line.find(' ', start)
+    if end == -1:
+        end = len(line)
+    return line[start:end].strip()
+
+
+def _split_order_ref(ref):
+    ref = str(ref or '').strip()
+    if not ref:
+        return None, None
+
+    index = len(ref)
+    while index > 0 and ref[index - 1].isdigit():
+        index -= 1
+    if index == len(ref):
+        return ref, None
+    return ref[:index], int(ref[index:])
 
 
 def write_raw_payload(orders_xml_str, *, raw_payload_dir, request_id=None):

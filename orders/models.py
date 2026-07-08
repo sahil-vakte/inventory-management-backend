@@ -108,6 +108,14 @@ class Order(models.Model):
     
     # Dates
     order_date = models.DateTimeField(default=timezone.now)
+    tiaknight_order_date_raw = models.CharField(
+        max_length=100, blank=True, null=True,
+        help_text="Original order date value received from Tiaknight before timezone conversion"
+    )
+    tiaknight_fetched_at = models.DateTimeField(
+        blank=True, null=True,
+        help_text="When this order was fetched/imported from Tiaknight"
+    )
     confirmed_date = models.DateTimeField(blank=True, null=True)
     shipped_date = models.DateTimeField(blank=True, null=True)
     delivered_date = models.DateTimeField(blank=True, null=True)
@@ -470,6 +478,10 @@ class OrderItem(models.Model):
     
     # Additional Info
     notes = models.TextField(blank=True, null=True, help_text="Item-specific notes")
+    summary = models.TextField(blank=True, null=True, help_text="Item summary received from Tiaknight")
+    personalization = models.TextField(blank=True, null=True, help_text="Item personalization/design value received from Tiaknight")
+    sample_name = models.CharField(max_length=255, blank=True, null=True, help_text="Sample name parsed from Tiaknight item data")
+    is_sample = models.BooleanField(default=False, help_text="True when the Tiaknight item is a sample request")
     lable_printed = models.BooleanField(default=False)
 
     # Item-level processing

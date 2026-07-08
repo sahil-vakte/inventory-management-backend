@@ -44,6 +44,10 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
+            f"missing_sequence_order_refs: {', '.join(result.get('missing_sequence_order_refs', [])) or '-'}"
+        )
+        self.stdout.write(
+            f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
             f"tiaknight_request_id: {result.get('tiaknight_request_id') or '-'}"
         )
         self.stdout.write(

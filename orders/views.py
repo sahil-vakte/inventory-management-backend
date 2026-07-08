@@ -8,7 +8,9 @@ from django.db.models import Sum, Count, Avg, Q, Prefetch
 from django.utils import timezone
 from django.conf import settings
 from django.http import HttpResponse
+from datetime import datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from .models import Order, OrderItem, OrderStatusHistory, RoyalMailOAuthToken
 from .serializers import (
     OrderListSerializer, OrderDetailSerializer, OrderCreateUpdateSerializer,
@@ -278,6 +280,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         orders = self.filter_queryset(
             base_queryset.prefetch_related(Prefetch('items', queryset=item_queryset))
         )
+        orders = self._apply_with_items_label_window(orders, request)
 
         page = self.paginate_queryset(orders)
         if page is not None:
@@ -286,6 +289,28 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         serializer = OrderListWithItemsSerializer(orders, many=True, context={'request': request})
         return Response(serializer.data)
+
+    def _apply_with_items_label_window(self, queryset, request):
+        """Default queue window: last 3 UK days plus older orders with unprinted items."""
+        include_all = str(request.query_params.get('include_all', '')).lower() in ['1', 'true', 'yes']
+        if include_all:
+            return queryset
+
+        try:
+            days = int(request.query_params.get('days', 3))
+        except (TypeError, ValueError):
+            days = 3
+        days = max(days, 1)
+
+        tiaknight_tz = ZoneInfo('Europe/London')
+        today = timezone.localtime(timezone.now(), tiaknight_tz).date()
+        start_date = today - timedelta(days=days - 1)
+        start_at = timezone.make_aware(datetime.combine(start_date, time.min), tiaknight_tz)
+
+        return queryset.filter(
+            Q(order_date__gte=start_at) |
+            Q(order_date__lt=start_at, items__lable_printed=False)
+        ).distinct()
     
     @action(detail=True, methods=['post'], url_path='confirm')
     def confirm(self, request, pk=None):
@@ -822,13 +847,17 @@ class OrderViewSet(viewsets.ModelViewSet):
             'Courier Code',
             'Shipping Method',
             'Carrier',
+            'Summary',
+            'Personalization',
+            'Sample Name',
+            'Is Sample',
         ]
         worksheet.append(headers)
 
         for order in queryset:
             order_date = ''
             if order.order_date:
-                order_date = timezone.localtime(order.order_date).strftime('%Y-%m-%d %H:%M:%S')
+                order_date = timezone.localtime(order.order_date, ZoneInfo('Europe/London')).strftime('%Y-%m-%d %H:%M:%S')
             for item in order.items.all():
                 worksheet.append([
                     order.id,
@@ -843,6 +872,10 @@ class OrderViewSet(viewsets.ModelViewSet):
                     order.courier_service_code or '',
                     order.shipping_method or '',
                     order.carrier or '',
+                    item.summary or '',
+                    item.personalization or '',
+                    item.sample_name or '',
+                    item.is_sample,
                 ])
 
         for column_cells in worksheet.columns:
@@ -932,6 +965,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             'tiaknight_auto_update': result.get('tiaknight_auto_update'),
             'tiaknight_audit_log': result.get('tiaknight_audit_log_path'),
             'tiaknight_raw_payload': result.get('tiaknight_raw_payload_path'),
+            'missing_sequence_order_refs': result.get('missing_sequence_order_refs', []),
         }, status=resp_status)
 
 

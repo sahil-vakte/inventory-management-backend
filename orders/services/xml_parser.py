@@ -1,11 +1,24 @@
 import xml.etree.ElementTree as ET
+import re
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from django.db import transaction
 from django.utils import timezone
 from ..models import Order, OrderItem
 from .courier import courier_service_code, normalize_courier_service_name
 from stock.models import StockItem
 from stock.sku_utils import normalize_sku_reference
+
+
+TIAKNIGHT_TIME_ZONE = ZoneInfo('Europe/London')
+SAMPLE_TEXT_PATTERN = re.compile(
+    r'\((?P<label>design|sample(?:\s+name)?|personalisation|personalization)\s*:\s*(?P<value>[^)]*sample[^)]*)\)',
+    re.IGNORECASE,
+)
+LENGTH_SAMPLE_PATTERN = re.compile(
+    r'length\s*:\s*(?P<value>sample\s*\([^)]*\)|sample\b[^,;]*)',
+    re.IGNORECASE,
+)
 
 
 class XMLOrderParser:
@@ -82,7 +95,7 @@ class XMLOrderParser:
                             created_count += 1
                 except Exception as e:
                     failed_count += 1
-                    order_ref = self._get_text(order_elem, 'OrderNumber', 'Unknown')
+                    order_ref = self._order_reference_from_element(order_elem)
                     errors.append({
                         'order_reference': order_ref,
                         'error': str(e)
@@ -194,6 +207,8 @@ class XMLOrderParser:
         # Parse dates from WIMS format
         order_date_str = self._get_text(order_node, 'order_date') or self._get_text(order_elem, 'OrderDate')
         if order_date_str and order_date_str != '0000-00-00 00:00:00':
+            order_data['tiaknight_order_date_raw'] = order_date_str
+            order_data['tiaknight_fetched_at'] = timezone.now()
             order_data['order_date'] = self._parse_datetime(order_date_str)
         
         delivery_date_str = self._get_text(order_node, 'dispatch_date') or self._get_text(order_elem, 'ExpectedDeliveryDate')
@@ -257,7 +272,7 @@ class XMLOrderParser:
             existing = Order.all_objects.filter(order_number=str(order_ref)).first()
 
         if existing:
-            self._update_existing_order_courier(existing, order_data)
+            self._update_existing_order_from_import(existing, order_data)
             # Already exists: return existing order without creating duplicates
             return (existing, False)
 
@@ -282,6 +297,17 @@ class XMLOrderParser:
             order.save()
         
         return (order, True)
+
+    def _order_reference_from_element(self, order_elem):
+        order_node = order_elem.find('order')
+        if order_node is None:
+            order_node = order_elem
+        return (
+            self._get_text(order_node, 'order_reference')
+            or self._get_text(order_node, 'order_id')
+            or self._get_text(order_elem, 'OrderNumber')
+            or 'Unknown'
+        )
     
     def _parse_order_item(self, item_elem, order, is_wims_format=False):
         """Parse a single Item XML element and create OrderItem, assigning location from related product if available"""
@@ -318,6 +344,7 @@ class XMLOrderParser:
             'discount_amount': self._get_decimal(item_elem, 'DiscountAmount', Decimal('0.00')),
             'notes': self._get_text(item_elem, 'Notes'),
         }
+        item_data.update(self._get_item_sample_metadata(item_elem, product_name, sku))
 
         # Product lookup removed; only stock_item is used for OrderItem
 
@@ -361,8 +388,8 @@ class XMLOrderParser:
                 return value
         return self._get_text(order_elem, 'ShippingMethod') or self._get_text(order_elem, 'Carrier')
 
-    def _update_existing_order_courier(self, order, order_data):
-        """Fill courier fields on duplicate imports without creating another order."""
+    def _update_existing_order_from_import(self, order, order_data):
+        """Refresh non-destructive Tiaknight fields on duplicate imports."""
         update_fields = []
         courier_name = order_data.get('courier_service_name')
         courier_code = order_data.get('courier_service_code')
@@ -379,10 +406,72 @@ class XMLOrderParser:
         if courier_name and not order.carrier:
             order.carrier = courier_name
             update_fields.append('carrier')
+        if order_data.get('tiaknight_order_date_raw') and order.tiaknight_order_date_raw != order_data['tiaknight_order_date_raw']:
+            order.tiaknight_order_date_raw = order_data['tiaknight_order_date_raw']
+            update_fields.append('tiaknight_order_date_raw')
+        if order_data.get('tiaknight_fetched_at'):
+            order.tiaknight_fetched_at = order_data['tiaknight_fetched_at']
+            update_fields.append('tiaknight_fetched_at')
+        if order_data.get('order_date') and order.order_date != order_data['order_date']:
+            order.order_date = order_data['order_date']
+            update_fields.append('order_date')
 
         if update_fields:
             update_fields.append('updated_at')
             order.save(update_fields=update_fields)
+
+    def _get_item_sample_metadata(self, item_elem, product_name, sku=None):
+        summary = (
+            self._get_text(item_elem, 'summary')
+            or self._get_text(item_elem, 'product_summary')
+            or self._get_text(item_elem, 'Summary')
+        )
+        personalization = (
+            self._get_text(item_elem, 'personalization')
+            or self._get_text(item_elem, 'personalisation')
+            or self._get_text(item_elem, 'Personalization')
+            or self._get_text(item_elem, 'Personalisation')
+            or self._get_text(item_elem, 'design')
+            or self._get_text(item_elem, 'Design')
+        )
+        sample_name = (
+            self._get_text(item_elem, 'sample_name')
+            or self._get_text(item_elem, 'SampleName')
+            or self._get_text(item_elem, 'sample')
+        )
+
+        source_text = ' '.join(filter(None, [sku, product_name, summary, personalization, sample_name]))
+        match = SAMPLE_TEXT_PATTERN.search(source_text)
+        if match:
+            label = match.group('label').strip()
+            value = match.group('value').strip()
+            sample_name = sample_name or value
+            personalization = personalization or f"{label.title()}: {value}"
+            summary = summary or value
+
+        length_match = LENGTH_SAMPLE_PATTERN.search(source_text)
+        if length_match:
+            value = ' '.join(length_match.group('value').strip().split())
+            sample_name = sample_name or value
+            personalization = personalization or f"Length: {value}"
+            summary = summary or value
+
+        sku_is_sample = str(sku or '').upper().startswith('SAMPLE-')
+        is_sample = (
+            bool(sample_name)
+            or sku_is_sample
+            or 'sample request' in source_text.lower()
+            or 'length: sample' in source_text.lower()
+        )
+        if is_sample and sku_is_sample and not sample_name:
+            sample_name = 'Sample'
+            summary = summary or 'Sample'
+        return {
+            'summary': summary,
+            'personalization': personalization,
+            'sample_name': sample_name,
+            'is_sample': is_sample,
+        }
     
     def _get_text(self, element, tag, default=None, required=False):
         """Safely extract text from XML element"""
@@ -406,13 +495,12 @@ class XMLOrderParser:
         return default
     
     def _parse_datetime(self, date_string):
-        """Parse datetime string in various formats"""
+        """Parse Tiaknight datetime values, treating naive values as UK local time."""
         from dateutil import parser
         try:
             dt = parser.parse(date_string)
-            # Make timezone-aware if naive
             if dt.tzinfo is None:
-                dt = timezone.make_aware(dt)
+                dt = timezone.make_aware(dt, TIAKNIGHT_TIME_ZONE)
             return dt
         except:
             # If parsing fails, return current time
