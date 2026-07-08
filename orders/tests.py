@@ -705,6 +705,44 @@ class OrderWithItemsAPITest(TestCase):
         self.assertIn(old_unprinted_order.id, returned_ids)
         self.assertNotIn(old_printed_order.id, returned_ids)
 
+    def test_with_items_filters_by_sample_items(self):
+        sample_order = Order.objects.create(
+            customer_name='Sample Customer',
+            total_amount=Decimal('0.50'),
+            created_by=self.user,
+        )
+        regular_order = Order.objects.create(
+            customer_name='Regular Customer',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=sample_order,
+            sku='SAMPLE-SQ209 RBL',
+            product_name='Cotton Fine Rib, Length: Sample (6 x 6")',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('0.50'),
+            is_sample=True,
+        )
+        OrderItem.objects.create(
+            order=regular_order,
+            sku='SQ209 RBL',
+            product_name='Cotton Fine Rib',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+            is_sample=False,
+        )
+
+        sample_response = self.client.get('/api/v1/orders/with-items/?is_sample=true')
+        regular_response = self.client.get('/api/v1/orders/with-items/?is_sample=false')
+
+        self.assertEqual(sample_response.status_code, 200)
+        self.assertEqual(regular_response.status_code, 200)
+        self.assertEqual({row['id'] for row in sample_response.data['results']}, {sample_order.id})
+        self.assertEqual({row['id'] for row in regular_response.data['results']}, {regular_order.id})
+
     def test_label_printed_endpoint_updates_order_status(self):
         order = Order.objects.create(
             customer_name='Label Customer',
