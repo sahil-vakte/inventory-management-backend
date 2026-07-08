@@ -2972,7 +2972,7 @@
                     }
                   ]
                 },
-                "description": "List orders with nested order items. Default response returns orders from the last 3 Tiaknight/UK calendar days plus older orders that still have at least one item with lable_printed=false. Use include_all=true to return all matching orders. Use is_sample=true to return orders with at least one sample item. Items include sample fields: summary, personalization, sample_name, is_sample."
+                "description": "List orders with nested order items. Default response returns orders from the last 3 Tiaknight/UK calendar days plus older orders that still have at least one item with lable_printed=false. Use include_all=true to return all matching orders. Use is_sample=true to return orders with at least one sample item. Items include Tiaknight summary/personalization fields plus sample_name and is_sample."
               },
               "response": []
             },
@@ -3012,7 +3012,7 @@
                     }
                   ]
                 },
-                "description": "Download an Excel label sheet with one row per order item. Includes Courier Service and Courier Code values mapped from Tiaknight delivery methods: STD, INT, NEXT DAY, NEXT DAY 12, SATURDAY, Collect in Store. Also includes Summary, Personalization, Sample Name, and Is Sample columns."
+                "description": "Download an Excel label sheet with one row per order item. Includes Courier Service and Courier Code values mapped from Tiaknight delivery methods: STD, INT, NEXT DAY, NEXT DAY 12, SATURDAY, Collect in Store. Also includes Tiaknight Summary, Tiaknight Personalization, Sample Name, and Is Sample columns."
               },
               "response": []
             },
@@ -3613,7 +3613,7 @@
                     "import_from_remote_tiaknightfabrics"
                   ]
                 },
-                "description": "Fetch orders from configured Tiaknight SOAP service and import them. Naive Tiaknight order dates are treated as Europe/London time, tiaknight_order_date_raw and tiaknight_fetched_at are saved, and sample request values such as `(Design: Gold Animal Sample Request)` are parsed into order item summary, personalization, sample_name, and is_sample."
+                "description": "Fetch orders from configured Tiaknight SOAP service and import them. Duplicate orders are skipped by external_order_id/order_number. If a numeric WEB order-reference gap is detected, WIMS retries GetNewOrders and merges unique order refs before importing. Response includes missing_sequence_order_refs and tiaknight_gap_recovery_* fields. Naive Tiaknight order dates are treated as Europe/London time. Tiaknight summary/personalization fields are saved as-is on order items; sample text in product names is only used for sample_name/is_sample."
               },
               "response": []
             }

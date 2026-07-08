@@ -48,6 +48,10 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
+            f"tiaknight_gap_recovery_attempts: {result.get('tiaknight_gap_recovery_attempts', 0)}"
+        )
+        self.stdout.write(
+            f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
             f"tiaknight_request_id: {result.get('tiaknight_request_id') or '-'}"
         )
         self.stdout.write(
