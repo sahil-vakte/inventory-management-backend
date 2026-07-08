@@ -1,5 +1,6 @@
 import io
 import os
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -34,6 +35,8 @@ def import_remote_tiaknight_orders(user=None):
     audit_log_path = os.environ.get('TIA_AUDIT_LOG_PATH', 'logs/remote_tiaknight_order_refs.log')
     save_raw_payload = _env_bool(os.environ.get('TIA_SAVE_RAW_PAYLOAD', 'false'))
     raw_payload_dir = os.environ.get('TIA_RAW_PAYLOAD_DIR', 'logs/tiaknight_payloads')
+    gap_recovery_attempts = _env_int(os.environ.get('TIA_GAP_RECOVERY_ATTEMPTS'), 2)
+    gap_recovery_delay_seconds = _env_float(os.environ.get('TIA_GAP_RECOVERY_DELAY_SECONDS'), 0)
 
     if not all([url, clientid, username, password]):
         raise RemoteTiaknightConfigError(
@@ -46,18 +49,15 @@ def import_remote_tiaknight_orders(user=None):
     except Exception as exc:
         raise RemoteTiaknightFetchError(f'Could not import SOAP client: {exc}') from exc
 
-    try:
-        soap_bytes, http_status = fetch_soap_response(
-            url=url,
-            clientid=clientid,
-            username=username,
-            password=password,
-            auto_update=auto_update,
-            file_type=file_type,
-        )
-    except RuntimeError as exc:
-        raise RemoteTiaknightFetchError(str(exc)) from exc
-
+    soap_bytes, http_status = _fetch_tiaknight_soap(
+        fetch_soap_response,
+        url=url,
+        clientid=clientid,
+        username=username,
+        password=password,
+        auto_update=auto_update,
+        file_type=file_type,
+    )
     orders_xml_str = extract_result_xml(soap_bytes)
     if orders_xml_str is None:
         raise RemoteTiaknightParseError('Could not find <Result> value in SOAP response')
@@ -66,6 +66,24 @@ def import_remote_tiaknight_orders(user=None):
     missing_sequence_refs = detect_missing_sequence_refs(order_refs, audit_log_path)
     request_id = extract_soap_value(soap_bytes, 'RequestID')
     source_datetime = extract_soap_value(soap_bytes, 'DateTime')
+    recovery_fetches = []
+
+    if missing_sequence_refs and gap_recovery_attempts > 0:
+        orders_xml_str, order_refs, missing_sequence_refs, recovery_fetches = recover_missing_sequence_orders(
+            fetch_soap_response,
+            extract_result_xml,
+            orders_xml_str,
+            audit_log_path=audit_log_path,
+            missing_sequence_refs=missing_sequence_refs,
+            attempts=gap_recovery_attempts,
+            delay_seconds=gap_recovery_delay_seconds,
+            url=url,
+            clientid=clientid,
+            username=username,
+            password=password,
+            auto_update=auto_update,
+            file_type=file_type,
+        )
     raw_payload_path = None
     if save_raw_payload:
         raw_payload_path = write_raw_payload(
@@ -83,6 +101,7 @@ def import_remote_tiaknight_orders(user=None):
         order_refs=order_refs,
         missing_sequence_refs=missing_sequence_refs,
         raw_payload_path=raw_payload_path,
+        recovery_fetches=recovery_fetches,
     )
 
     parser = XMLOrderParser()
@@ -96,7 +115,54 @@ def import_remote_tiaknight_orders(user=None):
     result['tiaknight_audit_log_path'] = audit_log_path
     result['tiaknight_raw_payload_path'] = raw_payload_path
     result['missing_sequence_order_refs'] = missing_sequence_refs
+    result['tiaknight_gap_recovery_attempts'] = len(recovery_fetches)
+    result['tiaknight_gap_recovery_fetches'] = recovery_fetches
     return result
+
+
+def _fetch_tiaknight_soap(fetch_soap_response, **kwargs):
+    try:
+        return fetch_soap_response(**kwargs)
+    except RuntimeError as exc:
+        raise RemoteTiaknightFetchError(str(exc)) from exc
+
+
+def recover_missing_sequence_orders(
+    fetch_soap_response,
+    extract_result_xml,
+    orders_xml_str,
+    *,
+    audit_log_path,
+    missing_sequence_refs,
+    attempts,
+    delay_seconds,
+    **fetch_kwargs,
+):
+    """Retry GetNewOrders when a sequence gap appears and merge unique orders by reference."""
+    current_xml = orders_xml_str
+    current_refs = extract_order_references_from_xml(current_xml)
+    recovery_fetches = []
+
+    for attempt in range(1, attempts + 1):
+        if delay_seconds > 0:
+            time.sleep(delay_seconds)
+
+        soap_bytes, http_status = _fetch_tiaknight_soap(fetch_soap_response, **fetch_kwargs)
+        retry_xml = extract_result_xml(soap_bytes)
+        retry_refs = extract_order_references_from_xml(retry_xml or '')
+        current_xml = merge_order_xml_payloads(current_xml, retry_xml)
+        current_refs = extract_order_references_from_xml(current_xml)
+        missing_sequence_refs = detect_missing_sequence_refs(current_refs, audit_log_path)
+        recovery_fetches.append({
+            'attempt': attempt,
+            'http_status': http_status,
+            'received_order_refs': retry_refs,
+            'missing_sequence_order_refs_after_attempt': missing_sequence_refs,
+        })
+        if not missing_sequence_refs:
+            break
+
+    return current_xml, current_refs, missing_sequence_refs, recovery_fetches
 
 
 def extract_soap_value(soap_bytes, key):
@@ -138,6 +204,56 @@ def extract_order_references_from_xml(orders_xml_str):
     return refs
 
 
+def merge_order_xml_payloads(primary_xml, secondary_xml):
+    """Merge Tiaknight web_order XML payloads without duplicate order references."""
+    if not secondary_xml:
+        return primary_xml
+    try:
+        primary_root = ET.fromstring(primary_xml)
+        secondary_root = ET.fromstring(secondary_xml)
+    except ET.ParseError:
+        return primary_xml
+
+    primary_orders = _order_elements_from_root(primary_root)
+    secondary_orders = _order_elements_from_root(secondary_root)
+    seen_refs = {
+        _order_ref_from_element(order_elem)
+        for order_elem in primary_orders
+        if _order_ref_from_element(order_elem)
+    }
+
+    target_root = primary_root
+    if primary_root.tag.lower() in {'order', 'web_order'}:
+        target_root = ET.Element('web_orders')
+        target_root.append(primary_root)
+
+    for order_elem in secondary_orders:
+        ref = _order_ref_from_element(order_elem)
+        if not ref or ref in seen_refs:
+            continue
+        target_root.append(order_elem)
+        seen_refs.add(ref)
+
+    return ET.tostring(target_root, encoding='unicode')
+
+
+def _order_elements_from_root(root):
+    if root.tag.lower() in {'order', 'web_order'}:
+        return [root]
+    return list(root)
+
+
+def _order_ref_from_element(order_elem):
+    order_node = order_elem.find('order')
+    if order_node is None:
+        order_node = order_elem
+    return (
+        _find_text(order_node, 'order_reference')
+        or _find_text(order_node, 'order_id')
+        or _find_text(order_elem, 'OrderNumber')
+    )
+
+
 def write_import_audit(
     *,
     audit_log_path,
@@ -149,6 +265,7 @@ def write_import_audit(
     order_refs,
     missing_sequence_refs=None,
     raw_payload_path=None,
+    recovery_fetches=None,
 ):
     """Append received Tiaknight order refs to a dedicated audit log."""
     path = Path(audit_log_path)
@@ -157,12 +274,14 @@ def write_import_audit(
     refs = ','.join(order_refs) if order_refs else '-'
     missing_refs = ','.join(missing_sequence_refs or []) if missing_sequence_refs else '-'
     raw_payload_note = f" raw_payload={raw_payload_path}" if raw_payload_path else ''
+    recovery_note = f" recovery_attempts={len(recovery_fetches or [])}"
     line = (
         f"[{now:%Y-%m-%d %H:%M:%S %Z}] "
         f"http_status={http_status} request_id={request_id or '-'} "
         f"source_datetime={source_datetime or '-'} auto_update={auto_update} "
         f"file_type={file_type} orders_received={len(order_refs)} refs={refs}"
         f" missing_sequence_refs={missing_refs}"
+        f"{recovery_note}"
         f"{raw_payload_note}\n"
     )
     with path.open('a', encoding='utf-8') as audit_log:
@@ -263,3 +382,17 @@ def _find_text(element, tag):
 
 def _env_bool(value):
     return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _env_int(value, default):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(value, default):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default

@@ -189,6 +189,7 @@ class RemoteTiaknightImportAuditTest(TestCase):
                 'TIA_FILE_TYPE': 'xml',
                 'TIA_AUDIT_LOG_PATH': audit_path,
                 'TIA_SAVE_RAW_PAYLOAD': 'false',
+                'TIA_GAP_RECOVERY_ATTEMPTS': '0',
             }, clear=False):
                 result = import_remote_tiaknight_orders(user=None)
 
@@ -205,6 +206,76 @@ class RemoteTiaknightImportAuditTest(TestCase):
             self.assertIn('orders_received=2', audit_line)
             self.assertIn('refs=WEB100001,WEB100003', audit_line)
             self.assertIn('missing_sequence_refs=WEB100002', audit_line)
+
+    @patch('orders.services.remote_tiaknight_import.XMLOrderParser.parse_and_create_orders')
+    @patch('scripts.soap_client.fetch_soap_response')
+    def test_import_retries_and_merges_when_sequence_gap_is_recovered(self, mock_fetch, mock_parse):
+        from orders.services.remote_tiaknight_import import import_remote_tiaknight_orders
+
+        first_orders_xml = (
+            '<web_orders>'
+            '<web_order><order><order_reference>WEB100001</order_reference></order></web_order>'
+            '<web_order><order><order_reference>WEB100003</order_reference></order></web_order>'
+            '</web_orders>'
+        )
+        second_orders_xml = (
+            '<web_orders>'
+            '<web_order><order><order_reference>WEB100001</order_reference></order></web_order>'
+            '<web_order><order><order_reference>WEB100002</order_reference></order></web_order>'
+            '<web_order><order><order_reference>WEB100003</order_reference></order></web_order>'
+            '</web_orders>'
+        )
+        first_response = (
+            '<Envelope><Body>'
+            '<item><key>RequestID</key><value>REQ-1</value></item>'
+            f'<item><key>Result</key><value>{escape(first_orders_xml)}</value></item>'
+            '</Body></Envelope>'
+        ).encode('utf-8')
+        second_response = (
+            '<Envelope><Body>'
+            '<item><key>RequestID</key><value>REQ-2</value></item>'
+            f'<item><key>Result</key><value>{escape(second_orders_xml)}</value></item>'
+            '</Body></Envelope>'
+        ).encode('utf-8')
+        mock_fetch.side_effect = [(first_response, 200), (second_response, 200)]
+        mock_parse.return_value = {
+            'created_count': 3,
+            'failed_count': 0,
+            'orders': [],
+            'errors': [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audit_path = os.path.join(tmpdir, 'tiaknight_refs.log')
+            with patch.dict(os.environ, {
+                'TIA_URL': 'https://www.tiaknightfabrics.co.uk/api/soap/service',
+                'TIA_CLIENTID': 'Tiaknightfabrics',
+                'TIA_USERNAME': 'UserTiaknightfabrics341',
+                'TIA_PASSWORD': 'secret',
+                'TIA_AUTO_UPDATE': 'false',
+                'TIA_FILE_TYPE': 'xml',
+                'TIA_AUDIT_LOG_PATH': audit_path,
+                'TIA_SAVE_RAW_PAYLOAD': 'false',
+                'TIA_GAP_RECOVERY_ATTEMPTS': '2',
+                'TIA_GAP_RECOVERY_DELAY_SECONDS': '0',
+            }, clear=False):
+                result = import_remote_tiaknight_orders(user=None)
+
+            self.assertEqual(mock_fetch.call_count, 2)
+            self.assertEqual(result['missing_sequence_order_refs'], [])
+            self.assertEqual(result['tiaknight_gap_recovery_attempts'], 1)
+            self.assertEqual(set(result['received_order_refs']), {'WEB100001', 'WEB100002', 'WEB100003'})
+
+            imported_xml = mock_parse.call_args.args[0].getvalue().decode('utf-8')
+            self.assertEqual(imported_xml.count('WEB100001'), 1)
+            self.assertEqual(imported_xml.count('WEB100002'), 1)
+            self.assertEqual(imported_xml.count('WEB100003'), 1)
+
+            with open(audit_path, encoding='utf-8') as audit_file:
+                audit_line = audit_file.read()
+            self.assertIn('orders_received=3', audit_line)
+            self.assertIn('missing_sequence_refs=-', audit_line)
+            self.assertIn('recovery_attempts=1', audit_line)
 
     def test_missing_sequence_detection_uses_previous_audit_max(self):
         from orders.services.remote_tiaknight_import import detect_missing_sequence_refs
@@ -521,15 +592,165 @@ class OrderWithItemsAPITest(TestCase):
         item = OrderItem.objects.get(order__external_order_id='WEB-SAMPLE-001')
         self.assertTrue(item.is_sample)
         self.assertEqual(item.sample_name, 'Gold Animal Sample Request')
-        self.assertEqual(item.personalization, 'Design: Gold Animal Sample Request')
-        self.assertEqual(item.summary, 'Gold Animal Sample Request')
+        self.assertIsNone(item.personalization)
+        self.assertIsNone(item.summary)
 
         detail_response = self.client.get(f'/api/v1/orders/{item.order_id}/')
         self.assertEqual(detail_response.status_code, 200)
         response_item = detail_response.data['items'][0]
         self.assertTrue(response_item['is_sample'])
         self.assertEqual(response_item['sample_name'], 'Gold Animal Sample Request')
-        self.assertEqual(response_item['personalization'], 'Design: Gold Animal Sample Request')
+        self.assertIsNone(response_item['personalization'])
+
+    def test_xml_import_saves_tiaknight_summary_and_personalization_fields(self):
+        xml_data = b'''
+        <web_orders>
+          <web_order>
+            <order>
+              <order_reference>WEB-PERSONAL-001</order_reference>
+              <order_state>Payment Received</order_state>
+              <order_date>2026-07-06 12:43:42</order_date>
+              <grand_total_inc>3.50</grand_total_inc>
+            </order>
+            <customer>
+              <billing_firstname>Personal</billing_firstname>
+              <billing_lastname>Customer</billing_lastname>
+              <billing_email>personal@example.com</billing_email>
+            </customer>
+            <payment>
+              <payment_type>Card</payment_type>
+            </payment>
+            <products>
+              <product>
+                <product_reference>SQ1011 GLD</product_reference>
+                <title>P4P Polar Fleece Material (SQ1011 GLD) (Design: Gold Animal Sample Request)</title>
+                <summary>Tiaknight Summary Text</summary>
+                <personalisation>Tiaknight Personalisation Text</personalisation>
+                <quantity>1</quantity>
+                <price_inc>3.50</price_inc>
+              </product>
+            </products>
+          </web_order>
+        </web_orders>
+        '''
+
+        XMLOrderParser().parse_and_create_orders(io.BytesIO(xml_data), user=self.user)
+
+        item = OrderItem.objects.get(order__external_order_id='WEB-PERSONAL-001')
+        self.assertTrue(item.is_sample)
+        self.assertEqual(item.sample_name, 'Gold Animal Sample Request')
+        self.assertEqual(item.summary, 'Tiaknight Summary Text')
+        self.assertEqual(item.personalization, 'Tiaknight Personalisation Text')
+
+    def test_xml_reimport_updates_existing_item_summary_and_personalization_without_duplicates(self):
+        order = Order.objects.create(
+            customer_name='Existing Customer',
+            external_order_id='WEB-EXISTING-PERSONAL',
+            total_amount=Decimal('3.50'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SQ1011 GLD',
+            product_name='Existing Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('3.50'),
+        )
+        xml_data = b'''
+        <web_orders>
+          <web_order>
+            <order>
+              <order_reference>WEB-EXISTING-PERSONAL</order_reference>
+              <order_state>Payment Received</order_state>
+              <order_date>2026-07-06 12:43:42</order_date>
+              <grand_total_inc>3.50</grand_total_inc>
+            </order>
+            <customer>
+              <billing_firstname>Existing</billing_firstname>
+              <billing_lastname>Customer</billing_lastname>
+              <billing_email>existing-personal@example.com</billing_email>
+            </customer>
+            <payment>
+              <payment_type>Card</payment_type>
+            </payment>
+            <products>
+              <product>
+                <product_reference>SQ1011 GLD</product_reference>
+                <title>P4P Polar Fleece Material (SQ1011 GLD)</title>
+                <summary>Updated Tiaknight Summary</summary>
+                <personalization>Updated Tiaknight Personalization</personalization>
+                <quantity>1</quantity>
+                <price_inc>3.50</price_inc>
+              </product>
+            </products>
+          </web_order>
+        </web_orders>
+        '''
+
+        result = XMLOrderParser().parse_and_create_orders(io.BytesIO(xml_data), user=self.user)
+
+        self.assertEqual(result['created_count'], 0)
+        self.assertEqual(order.items.count(), 1)
+        item = order.items.get()
+        self.assertEqual(item.summary, 'Updated Tiaknight Summary')
+        self.assertEqual(item.personalization, 'Updated Tiaknight Personalization')
+
+    def test_xml_reimport_updates_existing_order_payment_status_from_order_state(self):
+        order = Order.objects.create(
+            customer_name='Existing Payment Customer',
+            external_order_id='WEB-EXISTING-PAYMENT',
+            payment_status=Order.PAYMENT_UNPAID,
+            total_amount=Decimal('3.50'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SQ1011 GLD',
+            product_name='Existing Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('3.50'),
+        )
+        xml_data = b'''
+        <web_orders>
+          <web_order>
+            <order>
+              <order_reference>WEB-EXISTING-PAYMENT</order_reference>
+              <order_state>Processing Order</order_state>
+              <order_date>2026-07-06 12:43:42</order_date>
+              <grand_total_inc>3.50</grand_total_inc>
+            </order>
+            <customer>
+              <billing_firstname>Existing</billing_firstname>
+              <billing_lastname>Payment</billing_lastname>
+              <billing_email>existing-payment@example.com</billing_email>
+            </customer>
+            <payment>
+              <payment_type>PayPal Express</payment_type>
+              <transaction_reference>PAYMENT-123</transaction_reference>
+            </payment>
+            <products>
+              <product>
+                <product_reference>SQ1011 GLD</product_reference>
+                <title>P4P Polar Fleece Material (SQ1011 GLD)</title>
+                <quantity>1</quantity>
+                <price_inc>3.50</price_inc>
+              </product>
+            </products>
+          </web_order>
+        </web_orders>
+        '''
+
+        result = XMLOrderParser().parse_and_create_orders(io.BytesIO(xml_data), user=self.user)
+
+        self.assertEqual(result['created_count'], 0)
+        self.assertEqual(Order.objects.filter(external_order_id='WEB-EXISTING-PAYMENT').count(), 1)
+        order.refresh_from_db()
+        self.assertEqual(order.payment_status, Order.PAYMENT_PAID)
+        self.assertEqual(order.payment_method, 'PayPal Express')
+        self.assertEqual(order.payment_reference, 'PAYMENT-123')
+        self.assertEqual(order.items.count(), 1)
 
     def test_xml_import_extracts_length_sample_items(self):
         xml_data = b'''
@@ -566,8 +787,8 @@ class OrderWithItemsAPITest(TestCase):
         item = OrderItem.objects.get(order__external_order_id='WEB-SAMPLE-LENGTH-001')
         self.assertTrue(item.is_sample)
         self.assertEqual(item.sample_name, 'Sample (6 x 6")')
-        self.assertEqual(item.personalization, 'Length: Sample (6 x 6")')
-        self.assertEqual(item.summary, 'Sample (6 x 6")')
+        self.assertIsNone(item.personalization)
+        self.assertIsNone(item.summary)
 
     def test_label_excel_exports_courier_code_per_order_item(self):
         order = Order.objects.create(

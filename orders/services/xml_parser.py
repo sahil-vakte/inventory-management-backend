@@ -273,23 +273,15 @@ class XMLOrderParser:
 
         if existing:
             self._update_existing_order_from_import(existing, order_data)
+            self._update_existing_order_items_from_import(existing, order_elem)
             # Already exists: return existing order without creating duplicates
             return (existing, False)
 
         # Create order
         order = Order.objects.create(**order_data)
         
-        # Parse and create order items from WIMS <products> node
-        products_elem = order_elem.find('products')
-        if products_elem is not None:
-            for item_elem in products_elem.findall('product'):
-                self._parse_order_item(item_elem, order, is_wims_format=True)
-        else:
-            # Fallback to standard <Items> structure
-            items_elem = order_elem.find('Items')
-            if items_elem is not None:
-                for item_elem in items_elem.findall('Item'):
-                    self._parse_order_item(item_elem, order, is_wims_format=False)
+        for item_elem, is_wims_format in self._iter_order_item_elements(order_elem):
+            self._parse_order_item(item_elem, order, is_wims_format=is_wims_format)
         
         # Recalculate totals if not provided
         if order_data['total_amount'] == Decimal('0.00'):
@@ -308,29 +300,28 @@ class XMLOrderParser:
             or self._get_text(order_elem, 'OrderNumber')
             or 'Unknown'
         )
+
+    def _iter_order_item_elements(self, order_elem):
+        products_elem = order_elem.find('products')
+        if products_elem is not None:
+            for item_elem in products_elem.findall('product'):
+                yield item_elem, True
+            return
+
+        items_elem = order_elem.find('Items')
+        if items_elem is not None:
+            for item_elem in items_elem.findall('Item'):
+                yield item_elem, False
     
     def _parse_order_item(self, item_elem, order, is_wims_format=False):
         """Parse a single Item XML element and create OrderItem, assigning location from related product if available"""
 
-        if is_wims_format:
-            sku = (self._get_text(item_elem, 'product_reference')
-                   or self._get_text(item_elem, 'child_product_reference')
-                   or self._get_text(item_elem, 'reference')
-                   or self._get_text(item_elem, 'model')
-                   or self._get_text(item_elem, 'ean')
-                   or f"PROD-{self._get_text(item_elem, 'order_product_id', 'UNKNOWN')}")
-            quantity = int(self._get_text(item_elem, 'quantity', '1'))
-            unit_price = self._get_decimal(item_elem, 'price_inc', Decimal('0.00'))
-            product_name = self._get_text(item_elem, 'title', sku)
-            tax_rate = self._get_decimal(item_elem, 'tax_rate', Decimal('20.00'))
-        else:
-            sku = self._get_text(item_elem, 'SKU', required=True)
-            quantity = int(self._get_text(item_elem, 'Quantity', '1'))
-            unit_price = self._get_decimal(item_elem, 'UnitPrice', Decimal('0.00'))
-            product_name = self._get_text(item_elem, 'ProductName', sku)
-            tax_rate = self._get_decimal(item_elem, 'TaxRate', Decimal('20.00'))
-
-        sku = normalize_sku_reference(sku)
+        item_values = self._extract_order_item_values(item_elem, is_wims_format)
+        sku = item_values['sku']
+        quantity = item_values['quantity']
+        unit_price = item_values['unit_price']
+        product_name = item_values['product_name']
+        tax_rate = item_values['tax_rate']
 
         item_data = {
             'order': order,
@@ -344,7 +335,7 @@ class XMLOrderParser:
             'discount_amount': self._get_decimal(item_elem, 'DiscountAmount', Decimal('0.00')),
             'notes': self._get_text(item_elem, 'Notes'),
         }
-        item_data.update(self._get_item_sample_metadata(item_elem, product_name, sku))
+        item_data.update(self._get_item_tiaknight_metadata(item_elem, product_name, sku))
 
         # Product lookup removed; only stock_item is used for OrderItem
 
@@ -373,6 +364,66 @@ class XMLOrderParser:
                 order.save()
 
         return order_item
+
+    def _extract_order_item_values(self, item_elem, is_wims_format=False):
+        if is_wims_format:
+            sku = (self._get_text(item_elem, 'product_reference')
+                   or self._get_text(item_elem, 'child_product_reference')
+                   or self._get_text(item_elem, 'reference')
+                   or self._get_text(item_elem, 'model')
+                   or self._get_text(item_elem, 'ean')
+                   or f"PROD-{self._get_text(item_elem, 'order_product_id', 'UNKNOWN')}")
+            quantity = int(self._get_text(item_elem, 'quantity', '1'))
+            unit_price = self._get_decimal(item_elem, 'price_inc', Decimal('0.00'))
+            product_name = self._get_text(item_elem, 'title', sku)
+            tax_rate = self._get_decimal(item_elem, 'tax_rate', Decimal('20.00'))
+        else:
+            sku = self._get_text(item_elem, 'SKU', required=True)
+            quantity = int(self._get_text(item_elem, 'Quantity', '1'))
+            unit_price = self._get_decimal(item_elem, 'UnitPrice', Decimal('0.00'))
+            product_name = self._get_text(item_elem, 'ProductName', sku)
+            tax_rate = self._get_decimal(item_elem, 'TaxRate', Decimal('20.00'))
+
+        return {
+            'sku': normalize_sku_reference(sku),
+            'quantity': quantity,
+            'unit_price': unit_price,
+            'product_name': product_name,
+            'tax_rate': tax_rate,
+        }
+
+    def _update_existing_order_items_from_import(self, order, order_elem):
+        for item_elem, is_wims_format in self._iter_order_item_elements(order_elem):
+            try:
+                item_values = self._extract_order_item_values(item_elem, is_wims_format)
+            except Exception:
+                continue
+
+            metadata = self._get_item_tiaknight_metadata(
+                item_elem,
+                item_values['product_name'],
+                item_values['sku'],
+            )
+            if not any(value not in [None, ''] for value in metadata.values()):
+                continue
+
+            item = order.items.filter(sku=item_values['sku']).order_by('id').first()
+            if item is None:
+                continue
+
+            update_fields = []
+            for field in ['summary', 'personalization', 'sample_name', 'is_sample']:
+                value = metadata.get(field)
+                if value in [None, ''] and field != 'is_sample':
+                    continue
+                if field == 'is_sample' and not value:
+                    continue
+                if getattr(item, field) != value:
+                    setattr(item, field, value)
+                    update_fields.append(field)
+            if update_fields:
+                update_fields.append('updated_at')
+                item.save(update_fields=update_fields)
 
     def _get_courier_name(self, order_node, order_elem):
         for tag in [
@@ -406,6 +457,18 @@ class XMLOrderParser:
         if courier_name and not order.carrier:
             order.carrier = courier_name
             update_fields.append('carrier')
+        payment_status = order_data.get('payment_status')
+        if payment_status and order.payment_status != payment_status:
+            order.payment_status = payment_status
+            update_fields.append('payment_status')
+        payment_method = order_data.get('payment_method')
+        if payment_method and order.payment_method != payment_method:
+            order.payment_method = payment_method
+            update_fields.append('payment_method')
+        payment_reference = order_data.get('payment_reference')
+        if payment_reference and order.payment_reference != payment_reference:
+            order.payment_reference = payment_reference
+            update_fields.append('payment_reference')
         if order_data.get('tiaknight_order_date_raw') and order.tiaknight_order_date_raw != order_data['tiaknight_order_date_raw']:
             order.tiaknight_order_date_raw = order_data['tiaknight_order_date_raw']
             update_fields.append('tiaknight_order_date_raw')
@@ -420,41 +483,30 @@ class XMLOrderParser:
             update_fields.append('updated_at')
             order.save(update_fields=update_fields)
 
-    def _get_item_sample_metadata(self, item_elem, product_name, sku=None):
-        summary = (
-            self._get_text(item_elem, 'summary')
-            or self._get_text(item_elem, 'product_summary')
-            or self._get_text(item_elem, 'Summary')
-        )
-        personalization = (
-            self._get_text(item_elem, 'personalization')
-            or self._get_text(item_elem, 'personalisation')
-            or self._get_text(item_elem, 'Personalization')
-            or self._get_text(item_elem, 'Personalisation')
-            or self._get_text(item_elem, 'design')
-            or self._get_text(item_elem, 'Design')
-        )
-        sample_name = (
-            self._get_text(item_elem, 'sample_name')
-            or self._get_text(item_elem, 'SampleName')
-            or self._get_text(item_elem, 'sample')
-        )
+    def _get_item_tiaknight_metadata(self, item_elem, product_name, sku=None):
+        summary = self._get_first_text(item_elem, [
+            'summary', 'product_summary', 'item_summary', 'Summary', 'ProductSummary', 'ItemSummary',
+        ])
+        personalization = self._get_first_text(item_elem, [
+            'personalization', 'personalisation', 'product_personalization',
+            'product_personalisation', 'personalization_text', 'personalisation_text',
+            'Personalization', 'Personalisation', 'ProductPersonalization',
+            'ProductPersonalisation', 'PersonalizationText', 'PersonalisationText',
+        ])
+        sample_name = self._get_first_text(item_elem, [
+            'sample_name', 'sample', 'SampleName', 'Sample',
+        ])
 
         source_text = ' '.join(filter(None, [sku, product_name, summary, personalization, sample_name]))
         match = SAMPLE_TEXT_PATTERN.search(source_text)
         if match:
-            label = match.group('label').strip()
             value = match.group('value').strip()
             sample_name = sample_name or value
-            personalization = personalization or f"{label.title()}: {value}"
-            summary = summary or value
 
         length_match = LENGTH_SAMPLE_PATTERN.search(source_text)
         if length_match:
             value = ' '.join(length_match.group('value').strip().split())
             sample_name = sample_name or value
-            personalization = personalization or f"Length: {value}"
-            summary = summary or value
 
         sku_is_sample = str(sku or '').upper().startswith('SAMPLE-')
         is_sample = (
@@ -465,7 +517,6 @@ class XMLOrderParser:
         )
         if is_sample and sku_is_sample and not sample_name:
             sample_name = 'Sample'
-            summary = summary or 'Sample'
         return {
             'summary': summary,
             'personalization': personalization,
@@ -483,6 +534,19 @@ class XMLOrderParser:
             raise ValueError(f"Required field '{tag}' not found in XML")
         
         return default
+
+    def _get_first_text(self, element, tags):
+        tag_lookup = {tag.lower() for tag in tags}
+        for tag in tags:
+            value = self._get_text(element, tag)
+            if value:
+                return value
+
+        for child in element.iter():
+            local_name = child.tag.rsplit('}', 1)[-1].lower()
+            if local_name in tag_lookup and child.text and child.text.strip():
+                return child.text.strip()
+        return None
     
     def _get_decimal(self, element, tag, default=Decimal('0.00')):
         """Safely extract decimal value from XML element"""

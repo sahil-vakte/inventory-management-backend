@@ -975,6 +975,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             'tiaknight_audit_log': result.get('tiaknight_audit_log_path'),
             'tiaknight_raw_payload': result.get('tiaknight_raw_payload_path'),
             'missing_sequence_order_refs': result.get('missing_sequence_order_refs', []),
+            'tiaknight_gap_recovery_attempts': result.get('tiaknight_gap_recovery_attempts', 0),
+            'tiaknight_gap_recovery_fetches': result.get('tiaknight_gap_recovery_fetches', []),
         }, status=resp_status)
 
 
