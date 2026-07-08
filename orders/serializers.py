@@ -52,6 +52,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'unit_weight_gm', 'total_weight_gm',
             'quantity', 'quantity_ordered', 'quantity_processed',
             'unit_price', 'line_total', 'tax_rate', 'discount_amount',
+            'summary', 'personalization', 'sample_name', 'is_sample',
             'lable_printed',
             'assigned_to', 'assigned_to_username',
             'processing_status', 'processing_status_display',
@@ -76,7 +77,8 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
         fields = [
             'stock_item', 'sku', 'product_name', 
             'product_type', 'color_code', 'quantity', 'unit_price', 
-            'tax_rate', 'discount_amount', 'lable_printed', 'notes'
+            'tax_rate', 'discount_amount', 'summary', 'personalization',
+            'sample_name', 'is_sample', 'lable_printed', 'notes'
         ]
     
     def validate(self, data):
@@ -168,6 +170,7 @@ class OrderListSerializer(serializers.ModelSerializer):
             'id', 'order_number', 'external_order_id', 'customer_name', 
             'customer_email', 'order_status', 'order_status_display',
             'payment_status', 'payment_status_display', 'order_date',
+            'tiaknight_order_date_raw', 'tiaknight_fetched_at',
             'total_amount', 'item_count', 'total_quantity',
             'total_weight_gm',
             'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code',

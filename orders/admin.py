@@ -8,7 +8,8 @@ class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 1
     fields = [
-        'sku', 'product_name', 'quantity', 'unit_price', 'line_total', 'lable_printed'
+        'sku', 'product_name', 'quantity', 'unit_price', 'line_total',
+        'sample_name', 'is_sample', 'lable_printed'
     ]
     readonly_fields = ['line_total']
 
@@ -74,7 +75,8 @@ class OrderAdmin(admin.ModelAdmin):
         ('Dates', {
             'fields': (
                 'order_date', 'confirmed_date', 'shipped_date', 
-                'delivered_date', 'expected_delivery_date'
+                'delivered_date', 'expected_delivery_date',
+                'tiaknight_order_date_raw', 'tiaknight_fetched_at'
             )
         }),
         ('Financial Information', {
@@ -207,10 +209,10 @@ class OrderItemAdmin(admin.ModelAdmin):
     
     list_display = [
         'id', 'order_link', 'sku', 'product_name', 'quantity', 
-        'unit_price', 'line_total', 'lable_printed'
+        'unit_price', 'line_total', 'sample_name', 'is_sample', 'lable_printed'
     ]
-    list_filter = ['lable_printed', 'created_at']
-    search_fields = ['sku', 'product_name', 'order__order_number']
+    list_filter = ['is_sample', 'lable_printed', 'created_at']
+    search_fields = ['sku', 'product_name', 'sample_name', 'order__order_number']
     readonly_fields = ['line_total', 'created_at', 'updated_at']
     
     fieldsets = (
@@ -220,7 +222,8 @@ class OrderItemAdmin(admin.ModelAdmin):
         ('Product Information', {
             'fields': (
                 'stock_item', 'sku', 'product_name', 
-                'product_type', 'color_code', 'lable_printed'
+                'product_type', 'color_code', 'summary', 'personalization',
+                'sample_name', 'is_sample', 'lable_printed'
             )
         }),
         ('Pricing', {
