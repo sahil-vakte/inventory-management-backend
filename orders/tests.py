@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 from rest_framework.test import APIClient
-from .models import Order, OrderItem, RoyalMailOAuthToken
+from .models import Order, OrderItem, OrderBatch, RoyalMailOAuthToken
 from .services.xml_parser import XMLOrderParser
 from colors.models import Color
 from products.models import Product, ProductExtendedData
@@ -334,6 +334,162 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(len(response.data['results'][0]['items']), 1)
         self.assertEqual(response.data['results'][0]['items'][0]['sku'], 'SKU-001')
         self.assertFalse(response.data['results'][0]['items'][0]['lable_printed'])
+
+    def test_order_type_filter_returns_retail_and_wholesale_orders(self):
+        retail_order = Order.objects.create(
+            customer_name='Retail Customer',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=retail_order,
+            sku='RET-001',
+            product_name='Retail Product',
+            quantity=19,
+            quantity_ordered=19,
+            unit_price=Decimal('1.00'),
+        )
+        wholesale_order = Order.objects.create(
+            customer_name='Wholesale Customer',
+            total_amount=Decimal('25.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=wholesale_order,
+            sku='WHO-001',
+            product_name='Wholesale Product',
+            quantity=20,
+            quantity_ordered=20,
+            unit_price=Decimal('1.00'),
+        )
+
+        retail_response = self.client.get('/api/v1/orders/?order_type=retail')
+        wholesale_response = self.client.get('/api/v1/orders/?order_type=wholesale')
+
+        self.assertEqual(retail_response.status_code, 200)
+        self.assertEqual(wholesale_response.status_code, 200)
+        retail_ids = {row['id'] for row in retail_response.data['results']}
+        wholesale_ids = {row['id'] for row in wholesale_response.data['results']}
+        self.assertIn(retail_order.id, retail_ids)
+        self.assertNotIn(wholesale_order.id, retail_ids)
+        self.assertIn(wholesale_order.id, wholesale_ids)
+        self.assertNotIn(retail_order.id, wholesale_ids)
+        self.assertEqual(retail_response.data['results'][0]['order_type'], 'retail')
+
+    def test_order_batch_create_detail_and_label_printed_flow(self):
+        first_order = Order.objects.create(
+            customer_name='Batch Customer 1',
+            total_amount=Decimal('10.00'),
+            order_source=Order.SOURCE_WEBSITE,
+            courier_service_code='STD',
+            courier_service_name='Standard Delivery',
+            created_by=self.user,
+        )
+        first_item = OrderItem.objects.create(
+            order=first_order,
+            sku='BATCH-001',
+            product_name='Batch Product 1',
+            quantity=2,
+            quantity_ordered=2,
+            unit_price=Decimal('5.00'),
+        )
+        second_order = Order.objects.create(
+            customer_name='Batch Customer 2',
+            total_amount=Decimal('20.00'),
+            order_source=Order.SOURCE_WEBSITE,
+            courier_service_code='STD',
+            courier_service_name='Standard Delivery',
+            created_by=self.user,
+        )
+        second_item = OrderItem.objects.create(
+            order=second_order,
+            sku='BATCH-002',
+            product_name='Batch Product 2',
+            quantity=4,
+            quantity_ordered=4,
+            unit_price=Decimal('5.00'),
+        )
+
+        response = self.client.post(
+            '/api/v1/order-batches/',
+            {
+                'batch_number': 1,
+                'batch_date': '2026-08-11',
+                'order_ids': [first_order.id, second_order.id],
+                'filters_snapshot': {
+                    'platform': 'web',
+                    'courier_service_code': 'STD',
+                    'order_type': 'retail',
+                },
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['batch_name'], '11082026-B1')
+        self.assertEqual(response.data['orders_count'], 2)
+        self.assertEqual(len(response.data['orders']), 2)
+        self.assertEqual(len(response.data['labels']), 2)
+        self.assertEqual(response.data['details']['retail_orders_count'], 2)
+        self.assertEqual(response.data['details']['wholesale_orders_count'], 0)
+
+        batch_id = response.data['id']
+        detail_response = self.client.get(f'/api/v1/order-batches/{batch_id}/')
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertIn('orders', detail_response.data)
+        self.assertIn('labels', detail_response.data)
+        self.assertIn('details', detail_response.data)
+
+        printed_response = self.client.patch(
+            f'/api/v1/order-batches/{batch_id}/labels/printed/',
+            {'lable_printed': True, 'order_item_ids': [first_item.id, second_item.id]},
+            format='json',
+        )
+
+        self.assertEqual(printed_response.status_code, 200)
+        self.assertEqual(printed_response.data['updated_count'], 2)
+        first_item.refresh_from_db()
+        second_item.refresh_from_db()
+        self.assertTrue(first_item.lable_printed)
+        self.assertTrue(second_item.lable_printed)
+
+    def test_order_batch_rejects_order_already_in_active_batch(self):
+        first_order = Order.objects.create(
+            customer_name='Duplicate Batch Customer',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=first_order,
+            sku='DUP-001',
+            product_name='Duplicate Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        first_response = self.client.post(
+            '/api/v1/order-batches/',
+            {
+                'batch_number': 1,
+                'batch_date': '2026-08-11',
+                'order_ids': [first_order.id],
+            },
+            format='json',
+        )
+        second_response = self.client.post(
+            '/api/v1/order-batches/',
+            {
+                'batch_number': 2,
+                'batch_date': '2026-08-11',
+                'order_ids': [first_order.id],
+            },
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, 201)
+        self.assertEqual(second_response.status_code, 400)
+        self.assertEqual(OrderBatch.objects.count(), 1)
 
     def test_order_detail_returns_item_lable_printed(self):
         order = Order.objects.create(

@@ -44,6 +44,11 @@ def api_root(request, format=None):
                 'stats': request.build_absolute_uri('/api/v1/stock/stats/'),
                 'low_stock': request.build_absolute_uri('/api/v1/stock/low-stock/'),
             },
+            'orders': {
+                'list': request.build_absolute_uri('/api/v1/orders/'),
+                'with_items': request.build_absolute_uri('/api/v1/orders/with-items/'),
+                'order_batches': request.build_absolute_uri('/api/v1/order-batches/'),
+            },
             'dashboard': {
                 'stats': request.build_absolute_uri('/api/v1/dashboard/stats/'),
             },

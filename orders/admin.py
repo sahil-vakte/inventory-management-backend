@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Order, OrderItem, OrderStatusHistory, RoyalMailOAuthToken
+from .models import Order, OrderItem, OrderBatch, OrderBatchOrder, OrderStatusHistory, RoyalMailOAuthToken
 
 
 class OrderItemInline(admin.TabularInline):
@@ -21,6 +21,15 @@ class OrderStatusHistoryInline(admin.TabularInline):
     fields = ['from_status', 'to_status', 'changed_by', 'change_reason', 'timestamp']
     readonly_fields = ['timestamp']
     can_delete = False
+
+
+class OrderBatchOrderInline(admin.TabularInline):
+    """Inline admin for orders inside a batch."""
+
+    model = OrderBatchOrder
+    extra = 0
+    fields = ['order', 'created_at']
+    readonly_fields = ['created_at']
 
 
 @admin.register(Order)
@@ -248,6 +257,50 @@ class OrderItemAdmin(admin.ModelAdmin):
         url = reverse('admin:orders_order_change', args=[obj.order.id])
         return format_html('<a href="{}">{}</a>', url, obj.order.order_number)
     order_link.short_description = 'Order'
+
+
+@admin.register(OrderBatch)
+class OrderBatchAdmin(admin.ModelAdmin):
+    """Admin interface for manual order batches."""
+
+    list_display = [
+        'batch_name', 'batch_number', 'batch_date', 'orders_count',
+        'labels_printed_count', 'labels_total_count', 'created_by', 'is_deleted', 'created_at'
+    ]
+    list_filter = ['batch_date', 'batch_number', 'created_by', 'is_deleted', 'created_at']
+    search_fields = ['batch_name', 'notes', 'order_links__order__order_number', 'order_links__order__external_order_id']
+    readonly_fields = [
+        'batch_name', 'orders_count', 'labels_printed_count',
+        'labels_total_count', 'created_at', 'updated_at', 'deleted_at', 'deleted_by'
+    ]
+    inlines = [OrderBatchOrderInline]
+    actions = ['soft_delete_batches']
+
+    fieldsets = (
+        ('Batch Information', {
+            'fields': (
+                'batch_name', 'batch_number', 'batch_date', 'filters_snapshot', 'notes'
+            )
+        }),
+        ('Counts', {
+            'fields': ('orders_count', 'labels_printed_count', 'labels_total_count')
+        }),
+        ('Audit', {
+            'fields': (
+                'created_by', 'created_at', 'updated_at',
+                'is_deleted', 'deleted_at', 'deleted_by'
+            ),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def soft_delete_batches(self, request, queryset):
+        count = 0
+        for batch in queryset.filter(is_deleted=False):
+            batch.soft_delete(user=request.user)
+            count += 1
+        self.message_user(request, f'{count} order batch(es) deleted.')
+    soft_delete_batches.short_description = 'Soft delete selected order batches'
 
 
 @admin.register(OrderStatusHistory)
