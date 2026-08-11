@@ -11,13 +11,14 @@ from django.http import HttpResponse
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
-from .models import Order, OrderItem, OrderStatusHistory, RoyalMailOAuthToken
+from .models import Order, OrderItem, OrderBatch, OrderBatchOrder, OrderStatusHistory, RoyalMailOAuthToken
 from .serializers import (
     OrderListSerializer, OrderDetailSerializer, OrderCreateUpdateSerializer,
     OrderListWithItemsSerializer,
     OrderItemSerializer, OrderItemCreateSerializer, OrderStatusHistorySerializer,
     OrderConfirmSerializer, OrderShipSerializer, OrderCancelSerializer,
-    OrderStatsSerializer, RoyalMailShipmentSerializer
+    OrderStatsSerializer, RoyalMailShipmentSerializer,
+    OrderBatchListSerializer, OrderBatchCreateSerializer, OrderBatchDetailSerializer
 )
 from .services.royal_mail import (
     RoyalMailAPIError,
@@ -149,8 +150,38 @@ class OrderViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(total_amount__gte=min_total)
         if max_total:
             queryset = queryset.filter(total_amount__lte=max_total)
+
+        source = self.request.query_params.get('source') or self.request.query_params.get('platform')
+        if source:
+            queryset = queryset.filter(order_source__iexact=self._normalize_order_source(source))
+
+        order_type = str(self.request.query_params.get('order_type', '')).strip().lower()
+        if order_type == 'wholesale':
+            queryset = queryset.filter(items__quantity__gte=20).distinct()
+        elif order_type == 'retail':
+            queryset = queryset.exclude(items__quantity__gte=20).distinct()
+
+        lable_printed = str(self.request.query_params.get('lable_printed', '')).strip().lower()
+        if lable_printed in ['1', 'true', 'yes']:
+            queryset = queryset.filter(items__lable_printed=True).distinct()
+        elif lable_printed in ['0', 'false', 'no']:
+            queryset = queryset.filter(items__lable_printed=False).distinct()
         
         return queryset
+
+    def _normalize_order_source(self, source):
+        source_map = {
+            'web': Order.SOURCE_WEBSITE,
+            'website': Order.SOURCE_WEBSITE,
+            'tiaknight': Order.SOURCE_WEBSITE,
+            'manual': Order.SOURCE_MANUAL,
+            'xml': Order.SOURCE_XML,
+            'ebay': Order.SOURCE_EBAY,
+            'api': Order.SOURCE_API,
+            'amazon': 'AMAZON',
+            'etsy': 'ETSY',
+        }
+        return source_map.get(str(source).strip().lower(), str(source).strip())
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
@@ -1093,6 +1124,122 @@ class OrderItemViewSet(viewsets.ReadOnlyModelViewSet):
             'quantity': item.quantity,
             'quantity_processed': item.quantity_processed,
             'completion_pct': round((item.quantity_processed / item.quantity) * 100) if item.quantity else 0,
+        })
+
+
+class OrderBatchViewSet(viewsets.ModelViewSet):
+    """ViewSet for manual order batches used by warehouse label processing."""
+
+    queryset = OrderBatch.objects.filter(is_deleted=False).select_related(
+        'created_by', 'deleted_by'
+    ).prefetch_related(
+        Prefetch(
+            'order_links',
+            queryset=OrderBatchOrder.objects.select_related(
+                'order', 'order__created_by', 'order__assigned_to'
+            ).prefetch_related('order__items')
+        )
+    )
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['batch_date', 'batch_number', 'batch_name', 'created_by', 'is_deleted']
+    search_fields = ['batch_name', 'notes']
+    ordering_fields = ['batch_date', 'batch_number', 'created_at', 'updated_at']
+    ordering = ['-batch_date', 'batch_number', '-created_at']
+
+    def get_queryset(self):
+        include_deleted = self.request.query_params.get('include_deleted', 'false').lower() == 'true'
+        queryset = OrderBatch.objects.all() if include_deleted else OrderBatch.objects.filter(is_deleted=False)
+        queryset = queryset.select_related('created_by', 'deleted_by').prefetch_related(
+            Prefetch(
+                'order_links',
+                queryset=OrderBatchOrder.objects.select_related(
+                    'order', 'order__created_by', 'order__assigned_to'
+                ).prefetch_related('order__items')
+            )
+        )
+
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        if date_from:
+            queryset = queryset.filter(batch_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(batch_date__lte=date_to)
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return OrderBatchCreateSerializer
+        if self.action == 'retrieve':
+            return OrderBatchDetailSerializer
+        return OrderBatchListSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        batch = serializer.save()
+        output = OrderBatchDetailSerializer(batch, context={'request': request})
+        return Response(output.data, status=status.HTTP_201_CREATED)
+
+    def destroy(self, request, *args, **kwargs):
+        batch = self.get_object()
+        batch.soft_delete(user=request.user)
+        return Response({'message': 'Order batch deleted successfully'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['patch'], url_path='labels/printed')
+    def labels_printed(self, request, pk=None):
+        batch = self.get_object()
+        value = request.data.get('lable_printed', True)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized not in {'true', 'false', '1', '0', 'yes', 'no'}:
+                return Response(
+                    {'error': 'lable_printed must be a boolean'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            value = normalized in {'true', '1', 'yes'}
+        else:
+            value = bool(value)
+
+        raw_ids = request.data.get('order_item_ids')
+        items = OrderItem.objects.filter(order__batch_links__batch=batch).select_related(
+            'order', 'assigned_to', 'stock_item', 'stock_item__product', 'stock_item__color',
+        ).prefetch_related('stock_item__product__extended_data')
+        requested_ids = None
+        if raw_ids:
+            if isinstance(raw_ids, str):
+                raw_ids = [part.strip() for part in raw_ids.split(',') if part.strip()]
+            try:
+                requested_ids = list(dict.fromkeys(int(raw_id) for raw_id in raw_ids))
+            except (TypeError, ValueError):
+                return Response(
+                    {'error': 'order_item_ids must contain integers'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            items = items.filter(id__in=requested_ids)
+
+        items = list(items.order_by('id'))
+        if requested_ids is not None:
+            found_ids = {item.id for item in items}
+            missing_ids = [item_id for item_id in requested_ids if item_id not in found_ids]
+            if missing_ids:
+                return Response(
+                    {
+                        'error': 'Some order items were not found in this batch',
+                        'missing_order_item_ids': missing_ids,
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+        for item in items:
+            item.lable_printed = value
+            item.save(update_fields=['lable_printed', 'updated_at'])
+
+        return Response({
+            'message': 'Batch label printed flags updated successfully',
+            'batch': OrderBatchDetailSerializer(batch, context={'request': request}).data,
+            'updated_count': len(items),
+            'items': OrderItemSerializer(items, many=True, context={'request': request}).data,
         })
 
 

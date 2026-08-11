@@ -1,7 +1,10 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.db import transaction
+from django.db.models import Count
+from django.utils import timezone
 from decimal import Decimal
-from .models import Order, OrderItem, OrderStatusHistory
+from .models import Order, OrderItem, OrderBatch, OrderBatchOrder, OrderStatusHistory
 from stock.serializers import StockItemListSerializer
 from stock.sku_utils import normalize_sku_reference
 from products.serializers import get_product_child_product_url, get_product_weight_kg
@@ -142,6 +145,7 @@ class OrderListSerializer(serializers.ModelSerializer):
     items_completed = serializers.SerializerMethodField()
     items_assigned = serializers.SerializerMethodField()
     items_pending = serializers.SerializerMethodField()
+    order_type = serializers.CharField(read_only=True)
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -175,7 +179,7 @@ class OrderListSerializer(serializers.ModelSerializer):
             'total_weight_gm',
             'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code',
             'created_by_username', 'assigned_to', 'assigned_to_username',
-            'order_source', 'created_at',
+            'order_source', 'order_type', 'created_at',
             'completion_percentage', 'items_total', 'items_completed',
             'items_assigned', 'items_pending',
         ]
@@ -364,6 +368,175 @@ class OrderStatsSerializer(serializers.Serializer):
     average_order_value = serializers.DecimalField(max_digits=12, decimal_places=2)
     unpaid_orders_count = serializers.IntegerField()
     unpaid_orders_value = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
+class OrderBatchListSerializer(serializers.ModelSerializer):
+    """Serializer for listing order batches."""
+
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    orders_count = serializers.IntegerField(read_only=True)
+    labels_printed_count = serializers.IntegerField(read_only=True)
+    labels_total_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = OrderBatch
+        fields = [
+            'id', 'batch_name', 'batch_number', 'batch_date',
+            'orders_count', 'labels_printed_count', 'labels_total_count',
+            'filters_snapshot', 'notes', 'created_by', 'created_by_username',
+            'is_deleted', 'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'batch_name', 'orders_count', 'labels_printed_count',
+            'labels_total_count', 'created_by', 'created_at', 'updated_at',
+        ]
+
+
+class OrderBatchCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating manual order batches from selected orders."""
+
+    order_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        write_only=True,
+        allow_empty=False,
+    )
+    batch_date = serializers.DateField(required=False)
+
+    class Meta:
+        model = OrderBatch
+        fields = ['batch_number', 'batch_date', 'order_ids', 'filters_snapshot', 'notes']
+
+    def validate_batch_number(self, value):
+        if value not in range(1, 6):
+            raise serializers.ValidationError('batch_number must be between 1 and 5')
+        return value
+
+    def validate(self, attrs):
+        batch_date = attrs.get('batch_date') or timezone.localdate()
+        attrs['batch_date'] = batch_date
+
+        order_ids = list(dict.fromkeys(attrs.get('order_ids') or []))
+        attrs['order_ids'] = order_ids
+        orders = list(Order.objects.filter(id__in=order_ids).prefetch_related('items'))
+        found_ids = {order.id for order in orders}
+        missing_ids = [order_id for order_id in order_ids if order_id not in found_ids]
+        if missing_ids:
+            raise serializers.ValidationError({'order_ids': f'Orders not found: {missing_ids}'})
+        attrs['orders'] = orders
+
+        batch_number = attrs['batch_number']
+        if OrderBatch.objects.filter(
+            batch_date=batch_date,
+            batch_number=batch_number,
+            is_deleted=False,
+        ).exists():
+            raise serializers.ValidationError(
+                {'batch_number': f'Batch {batch_number} already exists for {batch_date}'}
+            )
+
+        active_links = OrderBatchOrder.objects.filter(
+            order_id__in=order_ids,
+            batch__is_deleted=False,
+        ).select_related('batch', 'order')
+        if active_links.exists():
+            duplicates = [
+                {
+                    'order_id': link.order_id,
+                    'order_number': link.order.order_number,
+                    'batch_id': link.batch_id,
+                    'batch_name': link.batch.batch_name,
+                }
+                for link in active_links
+            ]
+            raise serializers.ValidationError({'order_ids': duplicates})
+
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        orders = validated_data.pop('orders')
+        order_ids = validated_data.pop('order_ids', None)
+        request = self.context.get('request')
+        user = request.user if request and request.user.is_authenticated else None
+
+        batch = OrderBatch.objects.create(
+            created_by=user,
+            **validated_data,
+        )
+        OrderBatchOrder.objects.bulk_create([
+            OrderBatchOrder(batch=batch, order=order)
+            for order in orders
+        ])
+        return batch
+
+
+class OrderBatchDetailSerializer(OrderBatchListSerializer):
+    """Detailed batch serializer shaped for Orders, Labels, and Details tabs."""
+
+    orders = serializers.SerializerMethodField()
+    labels = serializers.SerializerMethodField()
+    details = serializers.SerializerMethodField()
+
+    class Meta(OrderBatchListSerializer.Meta):
+        fields = OrderBatchListSerializer.Meta.fields + ['orders', 'labels', 'details']
+
+    def get_orders(self, obj):
+        orders = [link.order for link in obj.order_links.all()]
+        return OrderListSerializer(orders, many=True, context=self.context).data
+
+    def get_labels(self, obj):
+        labels = []
+        items = OrderItem.objects.filter(
+            order__batch_links__batch=obj,
+        ).select_related(
+            'order', 'assigned_to', 'stock_item', 'stock_item__product', 'stock_item__color',
+        ).prefetch_related('stock_item__product__extended_data').order_by('order__order_date', 'id')
+        for item in items:
+            labels.append({
+                'order_id': item.order_id,
+                'order_number': item.order.order_number,
+                'external_order_id': item.order.external_order_id,
+                'customer_name': item.order.customer_name,
+                'courier_service_name': item.order.courier_service_name,
+                'courier_service_code': item.order.courier_service_code,
+                'shipping_method': item.order.shipping_method,
+                'carrier': item.order.carrier,
+                'item': OrderItemSerializer(item, context=self.context).data,
+            })
+        return labels
+
+    def get_details(self, obj):
+        order_ids = obj.order_links.values_list('order_id', flat=True)
+        orders = Order.objects.filter(id__in=order_ids)
+        items = OrderItem.objects.filter(order_id__in=order_ids)
+        status_counts = dict(
+            orders.values_list('order_status').annotate(count=Count('id')).order_by()
+        )
+        source_counts = dict(
+            orders.values_list('order_source').annotate(count=Count('id')).order_by()
+        )
+        courier_counts = dict(
+            orders.values_list('courier_service_code').annotate(count=Count('id')).order_by()
+        )
+        wholesale_order_ids = set(
+            items.filter(quantity__gte=20).values_list('order_id', flat=True).distinct()
+        )
+        total_orders = orders.count()
+        return {
+            'batch_id': obj.id,
+            'batch_name': obj.batch_name,
+            'batch_number': obj.batch_number,
+            'batch_date': obj.batch_date,
+            'filters_snapshot': obj.filters_snapshot,
+            'orders_count': total_orders,
+            'labels_total_count': items.count(),
+            'labels_printed_count': items.filter(lable_printed=True).count(),
+            'status_counts': status_counts,
+            'source_counts': source_counts,
+            'courier_service_code_counts': courier_counts,
+            'retail_orders_count': total_orders - len(wholesale_order_ids),
+            'wholesale_orders_count': len(wholesale_order_ids),
+        }
 
 
 def weight_kg_to_gm(weight):

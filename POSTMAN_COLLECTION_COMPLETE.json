@@ -105,6 +105,11 @@
       "key": "order_item_ids",
       "value": "1,2",
       "type": "string"
+    },
+    {
+      "key": "order_batch_id",
+      "value": "1",
+      "type": "string"
     }
   ],
   "item": [
@@ -3055,6 +3060,266 @@
                   ]
                 },
                 "description": "Returns order statuses: NEW, LABEL_PRINTED, IN_PROGRESS, COMPLETED, SHIPPED, CANCELLED."
+              },
+              "response": []
+            },
+            {
+              "name": "List Retail Orders With Items",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/with-items/?include_all=true&order_type=retail",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "with-items"
+                  ],
+                  "query": [
+                    {
+                      "key": "include_all",
+                      "value": "true"
+                    },
+                    {
+                      "key": "order_type",
+                      "value": "retail"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            },
+            {
+              "name": "List Wholesale Orders With Items",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/with-items/?include_all=true&order_type=wholesale",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "with-items"
+                  ],
+                  "query": [
+                    {
+                      "key": "include_all",
+                      "value": "true"
+                    },
+                    {
+                      "key": "order_type",
+                      "value": "wholesale"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            },
+            {
+              "name": "List Orders By Platform And Courier",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/?platform=web&courier_service_code=STD&lable_printed=false",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders"
+                  ],
+                  "query": [
+                    {
+                      "key": "platform",
+                      "value": "web"
+                    },
+                    {
+                      "key": "courier_service_code",
+                      "value": "STD"
+                    },
+                    {
+                      "key": "lable_printed",
+                      "value": "false"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Order Batches",
+          "item": [
+            {
+              "name": "List Order Batches",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/order-batches/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "order-batches"
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            },
+            {
+              "name": "List Order Batches By Date",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/order-batches/?batch_date=2026-08-11",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "order-batches"
+                  ],
+                  "query": [
+                    {
+                      "key": "batch_date",
+                      "value": "2026-08-11"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            },
+            {
+              "name": "Create Order Batch",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/order-batches/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "order-batches"
+                  ]
+                },
+                "description": "Creates DDMMYYYY-B1/B2/B3/B4/B5 order batch from selected order ids.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"batch_number\": 1,\n  \"batch_date\": \"2026-08-11\",\n  \"order_ids\": [\n    101,\n    102,\n    103\n  ],\n  \"filters_snapshot\": {\n    \"platform\": \"web\",\n    \"courier_service_code\": \"STD\",\n    \"order_type\": \"retail\",\n    \"lable_printed\": false,\n    \"date_from\": \"2026-08-11\",\n    \"date_to\": \"2026-08-11\"\n  },\n  \"notes\": \"Standard web retail orders\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get Order Batch Detail",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/order-batches/{{order_batch_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "order-batches",
+                    "{{order_batch_id}}"
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            },
+            {
+              "name": "Mark Batch Labels Printed",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/order-batches/{{order_batch_id}}/labels/printed/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "order-batches",
+                    "{{order_batch_id}}",
+                    "labels",
+                    "printed"
+                  ]
+                },
+                "description": "If order_item_ids is omitted, all order items in the batch are updated.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"lable_printed\": true,\n  \"order_item_ids\": [\n    1001,\n    1002,\n    1003\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Order Batch",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/order-batches/{{order_batch_id}}/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "order-batches",
+                    "{{order_batch_id}}"
+                  ]
+                },
+                "description": ""
               },
               "response": []
             }

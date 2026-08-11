@@ -410,6 +410,16 @@ class Order(models.Model):
     def total_quantity(self):
         """Total quantity of all items"""
         return sum(item.quantity for item in self.items.all())
+
+    @property
+    def is_wholesale(self):
+        """Wholesale when any single order item quantity is 20 or more."""
+        return self.items.filter(quantity__gte=20).exists()
+
+    @property
+    def order_type(self):
+        """Retail/wholesale classification used for batch filters."""
+        return 'wholesale' if self.is_wholesale else 'retail'
     
     @property
     def is_paid(self):
@@ -537,6 +547,105 @@ class OrderItem(models.Model):
         if not self.line_total or self.line_total == 0:
             self.line_total = (self.unit_price * self.quantity) - self.discount_amount
         super().save(*args, **kwargs)
+
+
+class OrderBatch(models.Model):
+    """Manual grouping of selected orders for warehouse label processing."""
+
+    BATCH_NUMBER_CHOICES = [(number, f'Batch {number}') for number in range(1, 6)]
+
+    batch_name = models.CharField(max_length=30, unique=True)
+    batch_number = models.PositiveSmallIntegerField(choices=BATCH_NUMBER_CHOICES)
+    batch_date = models.DateField(default=timezone.localdate)
+    filters_snapshot = models.JSONField(default=dict, blank=True)
+    notes = models.TextField(blank=True, null=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='order_batches_created'
+    )
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='order_batches_deleted'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'order_batches'
+        ordering = ['-batch_date', 'batch_number', '-created_at']
+        verbose_name = 'Order Batch'
+        verbose_name_plural = 'Order Batches'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['batch_date', 'batch_number'],
+                name='unique_order_batch_date_number'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['batch_date', 'batch_number']),
+            models.Index(fields=['batch_name']),
+            models.Index(fields=['is_deleted']),
+        ]
+
+    def __str__(self):
+        return self.batch_name
+
+    @classmethod
+    def build_batch_name(cls, batch_date, batch_number):
+        return f"{batch_date.strftime('%d%m%Y')}-B{batch_number}"
+
+    def save(self, *args, **kwargs):
+        if not self.batch_name:
+            self.batch_name = self.build_batch_name(self.batch_date, self.batch_number)
+        super().save(*args, **kwargs)
+
+    def soft_delete(self, user=None):
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        if user:
+            self.deleted_by = user
+        self.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by', 'updated_at'])
+
+    @property
+    def orders_count(self):
+        return self.order_links.count()
+
+    @property
+    def labels_printed_count(self):
+        return OrderItem.objects.filter(
+            order__batch_links__batch=self,
+            lable_printed=True,
+        ).count()
+
+    @property
+    def labels_total_count(self):
+        return OrderItem.objects.filter(order__batch_links__batch=self).count()
+
+
+class OrderBatchOrder(models.Model):
+    """Join table between order batches and orders."""
+
+    batch = models.ForeignKey(OrderBatch, on_delete=models.CASCADE, related_name='order_links')
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='batch_links')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'order_batch_orders'
+        ordering = ['id']
+        verbose_name = 'Order Batch Order'
+        verbose_name_plural = 'Order Batch Orders'
+        constraints = [
+            models.UniqueConstraint(fields=['batch', 'order'], name='unique_order_in_batch'),
+        ]
+        indexes = [
+            models.Index(fields=['batch', 'order']),
+            models.Index(fields=['order']),
+        ]
+
+    def __str__(self):
+        return f"{self.batch.batch_name} - {self.order.order_number}"
 
 
 class OrderStatusHistory(models.Model):
