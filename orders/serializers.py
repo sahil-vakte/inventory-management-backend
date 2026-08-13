@@ -403,6 +403,7 @@ class RoyalMailShipmentSerializer(serializers.Serializer):
     package_format_identifier = serializers.CharField(required=False, allow_blank=True)
     service_code = serializers.CharField(required=False, allow_blank=True)
     notes = serializers.CharField(required=False, allow_blank=True)
+    return_label_pdf = serializers.BooleanField(required=False, default=False)
 
 
 class OrderCancelSerializer(serializers.Serializer):

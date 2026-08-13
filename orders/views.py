@@ -752,6 +752,13 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         response_status = status.HTTP_200_OK if label_url else status.HTTP_202_ACCEPTED
+        if label_url and serializer.validated_data.get('return_label_pdf'):
+            return FileResponse(
+                default_storage.open(order.shipping_label_file, 'rb'),
+                content_type='application/pdf',
+                filename=f'order-{order.id}-label.pdf',
+            )
+
         return Response({
             'message': (
                 'Royal Mail shipment booked, order marked as shipped, and label saved'
