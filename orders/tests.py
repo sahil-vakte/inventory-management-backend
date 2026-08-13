@@ -1287,6 +1287,9 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(request_payload['items'][0]['billing']['address']['postcode'], 'SW1A 1AA')
         self.assertEqual(request_payload['items'][0]['packages'][0]['weightInGrams'], 250)
         self.assertEqual(request_payload['items'][0]['packages'][0]['contents'][0]['SKU'], 'SKU-001')
+        self.assertEqual(request_payload['items'][0]['label']['includeLabelInResponse'], True)
+        self.assertEqual(request_payload['items'][0]['label']['includeReturnsLabel'], False)
+        self.assertEqual(request_payload['items'][0]['label']['includeCN'], False)
         self.assertEqual(
             mock_get.call_args.args[0],
             'https://api.parcel.royalmail.com/api/v1/orders/RM-ORDER-1/label',
@@ -1369,6 +1372,101 @@ class OrderWithItemsAPITest(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('No Royal Mail order identifier', response.data['error'])
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+    )
+    @patch('orders.services.royal_mail.requests.get')
+    def test_shipping_label_returns_clear_postage_not_applied_error(self, mock_get):
+        mock_response = Mock(status_code=400)
+        mock_response.headers = {'Content-Type': 'application/json'}
+        mock_response.json.return_value = [
+            {
+                'accountOrderNumber': 157272,
+                'channelOrderReference': 'WEB238404',
+                'code': 'OrderValidationError',
+                'message': 'Label generation only available for orders with postage applied status',
+            }
+        ]
+        mock_get.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='Postage Pending Customer',
+            external_order_id='WEB238404',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            royal_mail_order_identifier='157272',
+            created_by=self.user,
+        )
+
+        response = self.client.get(f'/api/v1/orders/{order.id}/shipping-label/')
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['code'], 'ROYAL_MAIL_POSTAGE_NOT_APPLIED')
+        self.assertIn('postage has not been applied', response.data['message'])
+        self.assertEqual(response.data['royal_mail_response'][0]['channelOrderReference'], 'WEB238404')
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    @patch('orders.services.royal_mail.requests.get')
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_does_not_mark_shipped_when_postage_not_applied(self, mock_post, mock_get):
+        create_response = Mock(status_code=200)
+        create_response.json.return_value = {
+            'items': [{'orderIdentifier': '157272', 'orderReference': 'WEB238404'}],
+        }
+        mock_post.return_value = create_response
+
+        label_response = Mock(status_code=400)
+        label_response.headers = {'Content-Type': 'application/json'}
+        label_response.json.return_value = [
+            {
+                'accountOrderNumber': 157272,
+                'channelOrderReference': 'WEB238404',
+                'code': 'OrderValidationError',
+                'message': 'Label generation only available for orders with postage applied status',
+            }
+        ]
+        mock_get.return_value = label_response
+
+        order = Order.objects.create(
+            customer_name='Postage Pending Booking Customer',
+            external_order_id='WEB238404',
+            customer_email='pending@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-PENDING',
+            product_name='Postage Pending Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 100, 'service_code': 'STD'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data['label_download_error']['code'], 'ROYAL_MAIL_POSTAGE_NOT_APPLIED')
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, Order.STATUS_COMPLETED)
+        self.assertEqual(order.royal_mail_order_identifier, '157272')
+        self.assertFalse(order.shipping_label_file)
 
     @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',
