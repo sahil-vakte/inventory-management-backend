@@ -210,8 +210,8 @@ class RoyalMailClickDropClient:
         order_identifier,
         *,
         document_type=None,
-        include_returns_label=False,
-        include_cn=False,
+        include_returns_label=None,
+        include_cn=None,
     ):
         """Fetch the printable PDF label/document for a Royal Mail order."""
         self.ensure_configured()
@@ -219,18 +219,28 @@ class RoyalMailClickDropClient:
             raise RoyalMailAPIError('Royal Mail order identifier is required for label download')
 
         url = f"{self.base_url}/orders/{order_identifier}/label"
-        params = {}
-        if document_type:
-            params['documentType'] = document_type
-        if include_returns_label:
-            params['includeReturnsLabel'] = 'true'
-        if include_cn:
+        resolved_document_type = document_type or settings.ROYAL_MAIL_LABEL_DOCUMENT_TYPE
+        resolved_include_returns_label = (
+            settings.ROYAL_MAIL_LABEL_INCLUDE_RETURNS_LABEL
+            if include_returns_label is None else
+            include_returns_label
+        )
+        resolved_include_cn = (
+            settings.ROYAL_MAIL_LABEL_INCLUDE_CN
+            if include_cn is None else
+            include_cn
+        )
+        params = {
+            'documentType': resolved_document_type,
+            'includeReturnsLabel': str(bool(resolved_include_returns_label)).lower(),
+        }
+        if resolved_include_cn:
             params['includeCN'] = 'true'
 
         try:
             response = requests.get(
                 url,
-                params=params or None,
+                params=params,
                 headers=self._headers(accept='application/pdf'),
                 timeout=self.timeout,
             )

@@ -3523,7 +3523,7 @@
                     ""
                   ]
                 },
-                "description": "Returns the saved printable shipping label PDF. If the label file is missing but royal_mail_order_identifier is saved, WIMS fetches the PDF from Royal Mail using GET /orders/{orderIdentifier}/label and saves it for reprint. This does not create another Royal Mail order."
+                "description": "Returns the saved printable shipping label PDF. If the label file is missing but royal_mail_order_identifier is saved, WIMS fetches the PDF from Royal Mail using GET /orders/{orderIdentifier}/label with documentType=postageLabel and includeReturnsLabel=false, then saves it for reprint. This does not create another Royal Mail order."
               },
               "response": []
             },
