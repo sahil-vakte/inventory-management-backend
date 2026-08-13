@@ -362,11 +362,21 @@ class RoyalMailClickDropClient:
             delivery_code_override=delivery_code_override,
         )
         explicit_package = None if delivery_code_override else package_format_identifier
+        resolved_package = explicit_package or derived_package or settings.ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT
+        resolved_service = explicit_service_code or derived_service
+
+        if not resolved_service:
+            delivery_code = delivery_code_override or self._delivery_code(order) or 'UNKNOWN'
+            raise ValueError(
+                'No Royal Mail service code mapping found for '
+                f'delivery method {delivery_code} and weight {resolved_weight}g. '
+                'Update the Royal Mail criteria or pass a valid Royal Mail service_code.'
+            )
 
         return {
             'weight_in_grams': resolved_weight,
-            'package_format_identifier': explicit_package or derived_package or settings.ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT,
-            'service_code': explicit_service_code or derived_service,
+            'package_format_identifier': resolved_package,
+            'service_code': resolved_service,
         }
 
     def _derive_package_and_service(self, order, weight_in_grams, delivery_code_override=None):
@@ -383,7 +393,7 @@ class RoyalMailClickDropClient:
             if 501 <= weight_in_grams <= 2500:
                 return 'Parcel', 'TPS48'
 
-        if delivery_code == 'NEXTDAY' and self._is_amazon_friday_order(order):
+        if delivery_code == 'NEXTDAY':
             if 101 <= weight_in_grams <= 500:
                 return 'Large Letter', 'TRN24'
             if 501 <= weight_in_grams <= 2500:

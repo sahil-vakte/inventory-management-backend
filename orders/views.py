@@ -652,6 +652,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         try:
             royal_mail_client = RoyalMailClickDropClient()
+            royal_mail_client.ensure_configured()
             replaced_royal_mail_order_identifier = None
             replace_response = None
             if order.royal_mail_order_identifier and settings.ROYAL_MAIL_REPLACE_UNPOSTAGED_ORDERS:
@@ -774,7 +775,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             'replaced_royal_mail_order_identifier': replaced_royal_mail_order_identifier,
             'royal_mail_replace_response': replace_response,
             'royal_mail_response': response_data,
-            'order': OrderDetailSerializer(order).data,
+            'order': OrderDetailSerializer(order, context={'request': request}).data,
         }, status=response_status)
 
     @action(detail=True, methods=['get'], url_path='shipping-label')

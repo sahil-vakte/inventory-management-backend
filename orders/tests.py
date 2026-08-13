@@ -1840,6 +1840,101 @@ class OrderWithItemsAPITest(TestCase):
     @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',
         ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    @patch('orders.services.royal_mail.requests.get')
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_auto_selects_web_next_day_parcel_service(self, mock_post, mock_get):
+        self._mock_royal_mail_label_response(mock_get)
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'items': [{'orderIdentifier': 'RM-ORDER-WEB-ND', 'trackingNumber': 'RMWEBND'}]
+        }
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='Web Next Day Customer',
+            external_order_id='WEB238423',
+            customer_email='web-next-day@example.com',
+            shipping_address_line1='42 Hornbeam Way',
+            shipping_city='Leeds',
+            shipping_postal_code='LS14 2HP',
+            shipping_country='UK - Mainland',
+            order_source=Order.SOURCE_WEBSITE,
+            courier_service_code='NEXT DAY',
+            courier_service_name='Next Day Delivery (next working day if ordered before 1pm)',
+            total_amount=Decimal('26.48'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SQ921 NYWHT',
+            product_name='Printed Matte Swimwear Nylon Lycra 4 Way Stretch Fabric',
+            quantity=3,
+            quantity_ordered=3,
+            unit_price=Decimal('8.83'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 900},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['label_url'].startswith('http://testserver/'))
+        self.assertTrue(response.data['order']['shipping_label_url'].startswith('http://testserver/'))
+        self.assertEqual(response.data['royal_mail_booking_options']['package_format_identifier'], 'Parcel')
+        self.assertEqual(response.data['royal_mail_booking_options']['service_code'], 'TPN24')
+        request_payload = mock_post.call_args.kwargs['json']
+        self.assertEqual(request_payload['items'][0]['packages'][0]['packageFormatIdentifier'], 'Parcel')
+        self.assertEqual(request_payload['items'][0]['postageDetails']['serviceCode'], 'TPN24')
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_requires_known_service_mapping(self, mock_post):
+        order = Order.objects.create(
+            customer_name='Unsupported Delivery Customer',
+            external_order_id='WEB-RM-UNSUPPORTED',
+            customer_email='unsupported@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            courier_service_code='SATURDAY',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-UNSUPPORTED',
+            product_name='Unsupported Delivery Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 900},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('No Royal Mail service code mapping found', response.data['error'])
+        mock_post.assert_not_called()
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Letter',
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=50,
     )
