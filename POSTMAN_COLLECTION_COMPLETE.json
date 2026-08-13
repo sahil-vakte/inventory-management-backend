@@ -3491,7 +3491,7 @@
                     ""
                   ]
                 },
-                "description": "Books shipment in Royal Mail. If package_format_identifier/service_code are omitted, WIMS derives them from order weight and delivery method: STD <=100g -> Letter/STL2; STD 101-500g -> Large Letter/TRS48; STD 501-2500g -> Parcel/TPS48; Amazon Friday NEXT DAY 101-500g -> Large Letter/TRN24; Amazon Friday NEXT DAY 501-2500g -> Parcel/TPN24; fleece STD up to 5m -> Parcel/TPS48.",
+                "description": "Books shipment in Royal Mail. If package_format_identifier/service_code are omitted, WIMS derives them from order weight and delivery method: STD <=100g -> Letter/STL2; STD 101-500g -> Large Letter/TRS48; STD 501-2500g -> Parcel/TPS48; Amazon Friday NEXT DAY 101-500g -> Large Letter/TRN24; Amazon Friday NEXT DAY 501-2500g -> Parcel/TPN24; fleece STD up to 5m -> Parcel/TPS48. Do not send WIMS courier code STD directly to Royal Mail; if payload service_code=STD is sent, WIMS treats it as delivery method and converts it to the Royal Mail service code.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"weight_in_grams\": 250,\n  \"package_format_identifier\": \"Parcel\",\n  \"service_code\": \"TPLN\",\n  \"notes\": \"Booked through Royal Mail Click & Drop API\"\n}",
@@ -3580,7 +3580,7 @@
                     "book-royal-mail-shipping"
                   ]
                 },
-                "description": "Send weight only and let WIMS select Royal Mail shipment type and service code from criteria.",
+                "description": "Send weight only and let WIMS select Royal Mail shipment type and service code from criteria. Payload service_code=STD is also accepted as a WIMS delivery-method hint and will be converted before sending to Royal Mail.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"weight_in_grams\": 100,\n  \"notes\": \"Auto criteria example: STD up to 100g becomes Letter + STL2\"\n}",
