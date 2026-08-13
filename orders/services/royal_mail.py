@@ -206,6 +206,34 @@ class RoyalMailClickDropClient:
 
         return response_data
 
+    def delete_order(self, order_identifier):
+        """Delete an existing Royal Mail order before replacing an unpostaged draft."""
+        self.ensure_configured()
+        if not order_identifier:
+            raise RoyalMailAPIError('Royal Mail order identifier is required for deletion')
+
+        url = f'{self.base_url}/orders/{order_identifier}'
+        logger.info('Deleting Royal Mail order %s before rebooking', order_identifier)
+
+        try:
+            response = requests.delete(
+                url,
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+        except requests.RequestException as exc:
+            raise RoyalMailAPIError(f'Royal Mail delete request failed: {exc}') from exc
+
+        response_data = self._parse_response(response)
+        if response.status_code >= 400:
+            raise RoyalMailAPIError(
+                f'Royal Mail returned HTTP {response.status_code} while deleting order',
+                status_code=response.status_code,
+                response_data=response_data,
+            )
+
+        return response_data
+
     def get_order_label_pdf(
         self,
         order_identifier,

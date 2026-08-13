@@ -246,6 +246,10 @@ ROYAL_MAIL_CREATE_LABEL_IN_RESPONSE = os.environ.get(
     'ROYAL_MAIL_CREATE_LABEL_IN_RESPONSE',
     'true',
 ).strip().lower() in {'1', 'true', 'yes', 'on'}
+ROYAL_MAIL_REPLACE_UNPOSTAGED_ORDERS = os.environ.get(
+    'ROYAL_MAIL_REPLACE_UNPOSTAGED_ORDERS',
+    'true',
+).strip().lower() in {'1', 'true', 'yes', 'on'}
 ROYAL_MAIL_LABEL_DOCUMENT_TYPE = os.environ.get('ROYAL_MAIL_LABEL_DOCUMENT_TYPE', 'postageLabel')
 ROYAL_MAIL_LABEL_INCLUDE_RETURNS_LABEL = os.environ.get(
     'ROYAL_MAIL_LABEL_INCLUDE_RETURNS_LABEL',
