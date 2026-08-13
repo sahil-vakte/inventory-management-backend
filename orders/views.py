@@ -551,11 +551,18 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            response_data = RoyalMailClickDropClient().create_order(
+            royal_mail_client = RoyalMailClickDropClient()
+            shipping_options = royal_mail_client.resolve_shipping_options(
                 order,
                 weight_in_grams=serializer.validated_data.get('weight_in_grams'),
                 package_format_identifier=serializer.validated_data.get('package_format_identifier') or None,
                 service_code=serializer.validated_data.get('service_code') or None,
+            )
+            response_data = royal_mail_client.create_order(
+                order,
+                weight_in_grams=shipping_options['weight_in_grams'],
+                package_format_identifier=shipping_options['package_format_identifier'],
+                service_code=shipping_options['service_code'],
             )
             tracking_number = extract_tracking_number(response_data)
             royal_mail_reference = order.external_order_id or extract_royal_mail_reference(response_data)
@@ -567,8 +574,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 note_parts.append(serializer.validated_data['notes'])
             note = ' '.join(note_parts)
             order.internal_notes = f"{order.internal_notes}\n{note}".strip() if order.internal_notes else note
-            if serializer.validated_data.get('service_code'):
-                order.shipping_method = serializer.validated_data['service_code']
+            if shipping_options.get('service_code'):
+                order.shipping_method = shipping_options['service_code']
             order.save(update_fields=['internal_notes', 'shipping_method', 'updated_at'])
 
             order.mark_shipped(
@@ -611,6 +618,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             'message': 'Royal Mail shipment booked and order marked as shipped',
             'tracking_number': tracking_number,
             'royal_mail_reference': royal_mail_reference,
+            'royal_mail_booking_options': shipping_options,
             'royal_mail_response': response_data,
             'order': OrderDetailSerializer(order).data,
         })

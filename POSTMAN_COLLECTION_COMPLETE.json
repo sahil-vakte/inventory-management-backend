@@ -3491,7 +3491,7 @@
                     ""
                   ]
                 },
-                "description": "Creates this completed order in Royal Mail Click & Drop and marks the local order as SHIPPED after a successful API response. Option 1 setup requires ROYAL_MAIL_API_KEY from Royal Mail Click & Drop Settings > Integrations > Click & Drop API.",
+                "description": "Books shipment in Royal Mail. If package_format_identifier/service_code are omitted, WIMS derives them from order weight and delivery method: STD <=100g -> Letter/STL2; STD 101-500g -> Large Letter/TRS48; STD 501-2500g -> Parcel/TPS48; Amazon Friday NEXT DAY 101-500g -> Large Letter/TRN24; Amazon Friday NEXT DAY 501-2500g -> Parcel/TPN24; fleece STD up to 5m -> Parcel/TPS48.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"weight_in_grams\": 250,\n  \"package_format_identifier\": \"Parcel\",\n  \"service_code\": \"TPLN\",\n  \"notes\": \"Booked through Royal Mail Click & Drop API\"\n}",
@@ -3553,6 +3553,42 @@
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"reason\": \"Customer requested cancellation\"\n}"
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Book Royal Mail Shipping - Auto Criteria",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/book-royal-mail-shipping/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "{{order_id}}",
+                    "book-royal-mail-shipping"
+                  ]
+                },
+                "description": "Send weight only and let WIMS select Royal Mail shipment type and service code from criteria.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"weight_in_grams\": 100,\n  \"notes\": \"Auto criteria example: STD up to 100g becomes Letter + STL2\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 }
               },
               "response": []
