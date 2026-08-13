@@ -550,6 +550,18 @@ class OrderViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        if order.order_status == Order.STATUS_SHIPPED:
+            return Response(
+                {
+                    'error': 'Shipment already booked for this order.',
+                    'message': 'Order is already shipped, so Royal Mail booking was not called again.',
+                    'order_status': order.order_status,
+                    'tracking_number': order.tracking_number,
+                    'carrier': order.carrier,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         try:
             royal_mail_client = RoyalMailClickDropClient()
             shipping_options = royal_mail_client.resolve_shipping_options(
