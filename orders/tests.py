@@ -1291,6 +1291,8 @@ class OrderWithItemsAPITest(TestCase):
             mock_get.call_args.args[0],
             'https://api.parcel.royalmail.com/api/v1/orders/RM-ORDER-1/label',
         )
+        self.assertEqual(mock_get.call_args.kwargs['params']['documentType'], 'postageLabel')
+        self.assertEqual(mock_get.call_args.kwargs['params']['includeReturnsLabel'], 'false')
 
     @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',
@@ -1352,6 +1354,8 @@ class OrderWithItemsAPITest(TestCase):
             mock_get.call_args.args[0],
             'https://api.parcel.royalmail.com/api/v1/orders/RM-LABEL-1/label',
         )
+        self.assertEqual(mock_get.call_args.kwargs['params']['documentType'], 'postageLabel')
+        self.assertEqual(mock_get.call_args.kwargs['params']['includeReturnsLabel'], 'false')
 
     def test_shipping_label_requires_saved_royal_mail_identifier(self):
         order = Order.objects.create(
