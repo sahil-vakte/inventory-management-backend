@@ -310,6 +310,12 @@ class OrderWithItemsAPITest(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
+    def _mock_royal_mail_label_response(self, mock_get, content=b'%PDF-1.4 test label pdf'):
+        mock_response = Mock(status_code=200)
+        mock_response.headers = {'Content-Type': 'application/pdf'}
+        mock_response.content = content
+        mock_get.return_value = mock_response
+
     def test_with_items_returns_orders_with_nested_items(self):
         order = Order.objects.create(
             customer_name='Test Customer',
@@ -1211,8 +1217,10 @@ class OrderWithItemsAPITest(TestCase):
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
     )
+    @patch('orders.services.royal_mail.requests.get')
     @patch('orders.services.royal_mail.requests.post')
-    def test_book_royal_mail_shipping_creates_remote_order_and_marks_shipped(self, mock_post):
+    def test_book_royal_mail_shipping_creates_remote_order_and_marks_shipped(self, mock_post, mock_get):
+        self._mock_royal_mail_label_response(mock_get)
         royal_mail_response = {
             'items': [
                 {
@@ -1265,6 +1273,9 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(order.tracking_number, 'RMTRACK123')
         self.assertEqual(order.carrier, 'Royal Mail')
         self.assertEqual(order.shipping_method, 'TPLN')
+        self.assertEqual(order.royal_mail_order_identifier, 'RM-ORDER-1')
+        self.assertTrue(order.shipping_label_file)
+        self.assertTrue(response.data['label_url'].endswith(f'/api/v1/orders/{order.id}/shipping-label/'))
         self.assertIn('WEB-RM-001', order.internal_notes)
         self.assertIn('Booked from API test', order.internal_notes)
 
@@ -1276,6 +1287,10 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(request_payload['items'][0]['billing']['address']['postcode'], 'SW1A 1AA')
         self.assertEqual(request_payload['items'][0]['packages'][0]['weightInGrams'], 250)
         self.assertEqual(request_payload['items'][0]['packages'][0]['contents'][0]['SKU'], 'SKU-001')
+        self.assertEqual(
+            mock_get.call_args.args[0],
+            'https://api.parcel.royalmail.com/api/v1/orders/RM-ORDER-1/label',
+        )
 
     @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',
@@ -1312,11 +1327,55 @@ class OrderWithItemsAPITest(TestCase):
     @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',
         ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+    )
+    @patch('orders.services.royal_mail.requests.get')
+    def test_shipping_label_fetches_and_returns_pdf_from_royal_mail(self, mock_get):
+        self._mock_royal_mail_label_response(mock_get, content=b'%PDF-1.4 fetched label')
+        order = Order.objects.create(
+            customer_name='Label Customer',
+            external_order_id='WEB-LABEL-001',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_SHIPPED,
+            royal_mail_order_identifier='RM-LABEL-1',
+            created_by=self.user,
+        )
+
+        response = self.client.get(f'/api/v1/orders/{order.id}/shipping-label/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertEqual(b''.join(response.streaming_content), b'%PDF-1.4 fetched label')
+        order.refresh_from_db()
+        self.assertTrue(order.shipping_label_file)
+        self.assertIsNotNone(order.shipping_label_downloaded_at)
+        self.assertEqual(
+            mock_get.call_args.args[0],
+            'https://api.parcel.royalmail.com/api/v1/orders/RM-LABEL-1/label',
+        )
+
+    def test_shipping_label_requires_saved_royal_mail_identifier(self):
+        order = Order.objects.create(
+            customer_name='No Label Customer',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_SHIPPED,
+            created_by=self.user,
+        )
+
+        response = self.client.get(f'/api/v1/orders/{order.id}/shipping-label/')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('No Royal Mail order identifier', response.data['error'])
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
     )
+    @patch('orders.services.royal_mail.requests.get')
     @patch('orders.services.royal_mail.requests.post')
-    def test_book_royal_mail_shipping_auto_selects_letter_stl2_for_std_up_to_100g(self, mock_post):
+    def test_book_royal_mail_shipping_auto_selects_letter_stl2_for_std_up_to_100g(self, mock_post, mock_get):
+        self._mock_royal_mail_label_response(mock_get)
         mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             'items': [{'orderIdentifier': 'RM-ORDER-STD-100', 'trackingNumber': 'RMSTD100'}]
@@ -1367,8 +1426,10 @@ class OrderWithItemsAPITest(TestCase):
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
     )
+    @patch('orders.services.royal_mail.requests.get')
     @patch('orders.services.royal_mail.requests.post')
-    def test_book_royal_mail_shipping_converts_payload_std_to_royal_mail_service_code(self, mock_post):
+    def test_book_royal_mail_shipping_converts_payload_std_to_royal_mail_service_code(self, mock_post, mock_get):
+        self._mock_royal_mail_label_response(mock_get)
         mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             'items': [{'orderIdentifier': 'RM-ORDER-STD-PAYLOAD', 'trackingNumber': 'RMSTDPAY'}]
@@ -1420,8 +1481,10 @@ class OrderWithItemsAPITest(TestCase):
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
     )
+    @patch('orders.services.royal_mail.requests.get')
     @patch('orders.services.royal_mail.requests.post')
-    def test_book_royal_mail_shipping_auto_selects_large_letter_for_std_101_to_500g(self, mock_post):
+    def test_book_royal_mail_shipping_auto_selects_large_letter_for_std_101_to_500g(self, mock_post, mock_get):
+        self._mock_royal_mail_label_response(mock_get)
         mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             'items': [{'orderIdentifier': 'RM-ORDER-STD-500', 'trackingNumber': 'RMSTD500'}]
@@ -1467,8 +1530,10 @@ class OrderWithItemsAPITest(TestCase):
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
     )
+    @patch('orders.services.royal_mail.requests.get')
     @patch('orders.services.royal_mail.requests.post')
-    def test_book_royal_mail_shipping_auto_selects_amazon_friday_next_day_service(self, mock_post):
+    def test_book_royal_mail_shipping_auto_selects_amazon_friday_next_day_service(self, mock_post, mock_get):
+        self._mock_royal_mail_label_response(mock_get)
         mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             'items': [{'orderIdentifier': 'RM-ORDER-AMZ', 'trackingNumber': 'RMAMZ'}]
@@ -1516,8 +1581,10 @@ class OrderWithItemsAPITest(TestCase):
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Letter',
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=50,
     )
+    @patch('orders.services.royal_mail.requests.get')
     @patch('orders.services.royal_mail.requests.post')
-    def test_book_royal_mail_shipping_auto_selects_fleece_parcel_for_std_up_to_5m(self, mock_post):
+    def test_book_royal_mail_shipping_auto_selects_fleece_parcel_for_std_up_to_5m(self, mock_post, mock_get):
+        self._mock_royal_mail_label_response(mock_get)
         mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
             'items': [{'orderIdentifier': 'RM-ORDER-FLEECE', 'trackingNumber': 'RMFLEECE'}]

@@ -150,6 +150,7 @@ class OrderListSerializer(serializers.ModelSerializer):
     batch_id = serializers.SerializerMethodField()
     batch_name = serializers.SerializerMethodField()
     source_display = serializers.SerializerMethodField()
+    shipping_label_url = serializers.SerializerMethodField()
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -185,6 +186,13 @@ class OrderListSerializer(serializers.ModelSerializer):
 
     def get_source_display(self, obj):
         return get_order_source_display_value(obj)
+
+    def get_shipping_label_url(self, obj):
+        if not obj.shipping_label_file and not obj.royal_mail_order_identifier:
+            return None
+        request = self.context.get('request')
+        path = f'/api/v1/orders/{obj.id}/shipping-label/'
+        return request.build_absolute_uri(path) if request else path
     
     class Meta:
         model = Order
@@ -196,6 +204,8 @@ class OrderListSerializer(serializers.ModelSerializer):
             'total_amount', 'item_count', 'total_quantity',
             'total_weight_gm',
             'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code',
+            'royal_mail_order_identifier', 'shipping_label_file',
+            'shipping_label_downloaded_at', 'shipping_label_url',
             'created_by_username', 'assigned_to', 'assigned_to_username',
             'order_source', 'source_display', 'order_type',
             'batch_assigned', 'batch_id', 'batch_name', 'created_at',
@@ -242,6 +252,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     batch_id = serializers.SerializerMethodField()
     batch_name = serializers.SerializerMethodField()
     source_display = serializers.SerializerMethodField()
+    shipping_label_url = serializers.SerializerMethodField()
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -277,6 +288,13 @@ class OrderDetailSerializer(serializers.ModelSerializer):
 
     def get_source_display(self, obj):
         return get_order_source_display_value(obj)
+
+    def get_shipping_label_url(self, obj):
+        if not obj.shipping_label_file and not obj.royal_mail_order_identifier:
+            return None
+        request = self.context.get('request')
+        path = f'/api/v1/orders/{obj.id}/shipping-label/'
+        return request.build_absolute_uri(path) if request else path
     
     class Meta:
         model = Order

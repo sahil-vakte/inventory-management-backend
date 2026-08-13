@@ -151,6 +151,15 @@ class Order(models.Model):
         max_length=50, blank=True, null=True,
         help_text="WIMS label/export code derived from courier service"
     )
+    royal_mail_order_identifier = models.CharField(
+        max_length=120, blank=True, null=True,
+        help_text="Royal Mail Click & Drop order identifier used for label retrieval"
+    )
+    shipping_label_file = models.CharField(
+        max_length=500, blank=True, null=True,
+        help_text="Stored printable carrier label file path under MEDIA_ROOT"
+    )
+    shipping_label_downloaded_at = models.DateTimeField(blank=True, null=True)
     
     # Notes and Additional Info
     customer_notes = models.TextField(blank=True, null=True,

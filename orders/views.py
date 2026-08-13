@@ -7,7 +7,9 @@ from rest_framework import filters
 from django.db.models import Sum, Count, Avg, Q, Prefetch
 from django.utils import timezone
 from django.conf import settings
-from django.http import HttpResponse
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+from django.http import FileResponse, HttpResponse
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -26,6 +28,7 @@ from .services.royal_mail import (
     RoyalMailConfigError,
     RoyalMailOAuthClient,
     RoyalMailOAuthError,
+    extract_royal_mail_order_identifier,
     extract_royal_mail_reference,
     extract_tracking_number,
 )
@@ -42,6 +45,32 @@ def _serialize_royal_mail_oauth_token(token):
         'is_expired': token.is_expired,
         'needs_refresh': token.needs_refresh,
         'updated_at': token.updated_at,
+    }
+
+
+def _shipping_label_api_url(request, order):
+    return request.build_absolute_uri(f'/api/v1/orders/{order.id}/shipping-label/')
+
+
+def _save_shipping_label_pdf(order, pdf_content):
+    if not pdf_content:
+        return None
+
+    path = f'shipping_labels/royal_mail/order-{order.id}-label.pdf'
+    if default_storage.exists(path):
+        default_storage.delete(path)
+    saved_path = default_storage.save(path, ContentFile(pdf_content))
+    order.shipping_label_file = saved_path
+    order.shipping_label_downloaded_at = timezone.now()
+    order.save(update_fields=['shipping_label_file', 'shipping_label_downloaded_at', 'updated_at'])
+    return saved_path
+
+
+def _label_error_payload(exc):
+    return {
+        'error': str(exc),
+        'royal_mail_status_code': getattr(exc, 'status_code', None),
+        'royal_mail_response': getattr(exc, 'response_data', None),
     }
 
 
@@ -558,6 +587,20 @@ class OrderViewSet(viewsets.ModelViewSet):
                     'order_status': order.order_status,
                     'tracking_number': order.tracking_number,
                     'carrier': order.carrier,
+                    'label_url': _shipping_label_api_url(request, order) if order.shipping_label_file else None,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if order.royal_mail_order_identifier:
+            return Response(
+                {
+                    'error': 'Royal Mail shipment already exists for this order.',
+                    'message': 'Royal Mail booking was not called again. Use the shipping-label endpoint to print the label.',
+                    'order_status': order.order_status,
+                    'royal_mail_order_identifier': order.royal_mail_order_identifier,
+                    'tracking_number': order.tracking_number,
+                    'carrier': order.carrier,
+                    'label_url': _shipping_label_api_url(request, order),
                 },
                 status=status.HTTP_409_CONFLICT,
             )
@@ -577,24 +620,48 @@ class OrderViewSet(viewsets.ModelViewSet):
                 service_code=shipping_options['service_code'],
             )
             tracking_number = extract_tracking_number(response_data)
+            royal_mail_order_identifier = extract_royal_mail_order_identifier(response_data)
             royal_mail_reference = order.external_order_id or extract_royal_mail_reference(response_data)
 
             note_parts = ['Royal Mail Click & Drop shipment booked.']
             if royal_mail_reference:
                 note_parts.append(f'Reference: {royal_mail_reference}.')
+            if royal_mail_order_identifier:
+                note_parts.append(f'Royal Mail ID: {royal_mail_order_identifier}.')
             if serializer.validated_data.get('notes'):
                 note_parts.append(serializer.validated_data['notes'])
             note = ' '.join(note_parts)
             order.internal_notes = f"{order.internal_notes}\n{note}".strip() if order.internal_notes else note
             if shipping_options.get('service_code'):
                 order.shipping_method = shipping_options['service_code']
-            order.save(update_fields=['internal_notes', 'shipping_method', 'updated_at'])
+            if royal_mail_order_identifier:
+                order.royal_mail_order_identifier = royal_mail_order_identifier
+            order.save(update_fields=[
+                'internal_notes',
+                'shipping_method',
+                'royal_mail_order_identifier',
+                'updated_at',
+            ])
 
             order.mark_shipped(
                 tracking_number=tracking_number,
                 carrier='Royal Mail',
                 user=request.user,
             )
+
+            label_download_error = None
+            label_url = None
+            if royal_mail_order_identifier:
+                try:
+                    label_pdf = royal_mail_client.get_order_label_pdf(royal_mail_order_identifier)
+                    _save_shipping_label_pdf(order, label_pdf)
+                    label_url = _shipping_label_api_url(request, order)
+                except RoyalMailAPIError as exc:
+                    label_download_error = _label_error_payload(exc)
+            else:
+                label_download_error = {
+                    'error': 'Royal Mail did not return an order identifier for label download.'
+                }
         except RoyalMailConfigError as exc:
             return Response({
                 'error': str(exc),
@@ -627,13 +694,53 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({
-            'message': 'Royal Mail shipment booked and order marked as shipped',
+            'message': (
+                'Royal Mail shipment booked, order marked as shipped, and label saved'
+                if label_url else
+                'Royal Mail shipment booked and order marked as shipped, but label was not downloaded'
+            ),
             'tracking_number': tracking_number,
             'royal_mail_reference': royal_mail_reference,
+            'royal_mail_order_identifier': royal_mail_order_identifier,
             'royal_mail_booking_options': shipping_options,
+            'label_url': label_url,
+            'label_download_error': label_download_error,
             'royal_mail_response': response_data,
             'order': OrderDetailSerializer(order).data,
         })
+
+    @action(detail=True, methods=['get'], url_path='shipping-label')
+    def shipping_label(self, request, pk=None):
+        """Return this order's saved printable label PDF, fetching it from Royal Mail if needed."""
+        order = self.get_object()
+
+        if order.shipping_label_file and default_storage.exists(order.shipping_label_file):
+            return FileResponse(
+                default_storage.open(order.shipping_label_file, 'rb'),
+                content_type='application/pdf',
+                filename=f'order-{order.id}-label.pdf',
+            )
+
+        if not order.royal_mail_order_identifier:
+            return Response(
+                {'error': 'No Royal Mail order identifier is saved for this order.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            royal_mail_client = RoyalMailClickDropClient()
+            label_pdf = royal_mail_client.get_order_label_pdf(order.royal_mail_order_identifier)
+            _save_shipping_label_pdf(order, label_pdf)
+        except RoyalMailConfigError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except RoyalMailAPIError as exc:
+            return Response(_label_error_payload(exc), status=status.HTTP_502_BAD_GATEWAY)
+
+        return FileResponse(
+            default_storage.open(order.shipping_label_file, 'rb'),
+            content_type='application/pdf',
+            filename=f'order-{order.id}-label.pdf',
+        )
     
     @action(detail=True, methods=['post'], url_path='deliver')
     def deliver(self, request, pk=None):
