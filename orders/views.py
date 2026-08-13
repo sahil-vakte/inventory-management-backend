@@ -28,6 +28,7 @@ from .services.royal_mail import (
     RoyalMailConfigError,
     RoyalMailOAuthClient,
     RoyalMailOAuthError,
+    extract_royal_mail_label_pdf,
     extract_royal_mail_order_identifier,
     extract_royal_mail_reference,
     extract_tracking_number,
@@ -67,11 +68,39 @@ def _save_shipping_label_pdf(order, pdf_content):
 
 
 def _label_error_payload(exc):
-    return {
+    payload = {
         'error': str(exc),
         'royal_mail_status_code': getattr(exc, 'status_code', None),
         'royal_mail_response': getattr(exc, 'response_data', None),
     }
+    if _is_postage_not_applied_error(exc):
+        payload.update({
+            'code': 'ROYAL_MAIL_POSTAGE_NOT_APPLIED',
+            'message': (
+                'Royal Mail has the order, but postage has not been applied yet. '
+                'Apply/generate postage in Click & Drop, then call this label endpoint again.'
+            ),
+        })
+    return payload
+
+
+def _is_postage_not_applied_error(exc):
+    return _response_contains_text(
+        getattr(exc, 'response_data', None),
+        'postage applied',
+    )
+
+
+def _response_contains_text(data, needle):
+    if data is None:
+        return False
+    if isinstance(data, str):
+        return needle.lower() in data.lower()
+    if isinstance(data, dict):
+        return any(_response_contains_text(value, needle) for value in data.values())
+    if isinstance(data, list):
+        return any(_response_contains_text(item, needle) for item in data)
+    return needle.lower() in str(data).lower()
 
 
 @api_view(['GET'])
@@ -622,6 +651,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             tracking_number = extract_tracking_number(response_data)
             royal_mail_order_identifier = extract_royal_mail_order_identifier(response_data)
             royal_mail_reference = order.external_order_id or extract_royal_mail_reference(response_data)
+            label_pdf_from_create = extract_royal_mail_label_pdf(response_data)
 
             note_parts = ['Royal Mail Click & Drop shipment booked.']
             if royal_mail_reference:
@@ -643,15 +673,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'updated_at',
             ])
 
-            order.mark_shipped(
-                tracking_number=tracking_number,
-                carrier='Royal Mail',
-                user=request.user,
-            )
-
             label_download_error = None
             label_url = None
-            if royal_mail_order_identifier:
+            if label_pdf_from_create:
+                _save_shipping_label_pdf(order, label_pdf_from_create)
+                label_url = _shipping_label_api_url(request, order)
+            elif royal_mail_order_identifier:
                 try:
                     label_pdf = royal_mail_client.get_order_label_pdf(royal_mail_order_identifier)
                     _save_shipping_label_pdf(order, label_pdf)
@@ -662,6 +689,13 @@ class OrderViewSet(viewsets.ModelViewSet):
                 label_download_error = {
                     'error': 'Royal Mail did not return an order identifier for label download.'
                 }
+
+            if label_url:
+                order.mark_shipped(
+                    tracking_number=tracking_number,
+                    carrier='Royal Mail',
+                    user=request.user,
+                )
         except RoyalMailConfigError as exc:
             return Response({
                 'error': str(exc),
@@ -693,11 +727,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         except ValueError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+        response_status = status.HTTP_200_OK if label_url else status.HTTP_202_ACCEPTED
         return Response({
             'message': (
                 'Royal Mail shipment booked, order marked as shipped, and label saved'
                 if label_url else
-                'Royal Mail shipment booked and order marked as shipped, but label was not downloaded'
+                'Royal Mail order created, but printable label is not available yet. WIMS order was not marked as shipped.'
             ),
             'tracking_number': tracking_number,
             'royal_mail_reference': royal_mail_reference,
@@ -707,7 +742,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             'label_download_error': label_download_error,
             'royal_mail_response': response_data,
             'order': OrderDetailSerializer(order).data,
-        })
+        }, status=response_status)
 
     @action(detail=True, methods=['get'], url_path='shipping-label')
     def shipping_label(self, request, pk=None):
@@ -734,7 +769,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         except RoyalMailConfigError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except RoyalMailAPIError as exc:
-            return Response(_label_error_payload(exc), status=status.HTTP_502_BAD_GATEWAY)
+            response_status = (
+                status.HTTP_409_CONFLICT
+                if _is_postage_not_applied_error(exc) else
+                status.HTTP_502_BAD_GATEWAY
+            )
+            return Response(_label_error_payload(exc), status=response_status)
 
         return FileResponse(
             default_storage.open(order.shipping_label_file, 'rb'),

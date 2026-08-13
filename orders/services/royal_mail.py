@@ -1,3 +1,4 @@
+import base64
 import logging
 from decimal import Decimal
 from urllib.parse import urlencode
@@ -309,6 +310,12 @@ class RoyalMailClickDropClient:
         }
         if service_code:
             royal_mail_order['postageDetails'] = {'serviceCode': service_code}
+        if settings.ROYAL_MAIL_CREATE_LABEL_IN_RESPONSE:
+            royal_mail_order['label'] = {
+                'includeLabelInResponse': True,
+                'includeReturnsLabel': settings.ROYAL_MAIL_LABEL_INCLUDE_RETURNS_LABEL,
+                'includeCN': settings.ROYAL_MAIL_LABEL_INCLUDE_CN,
+            }
 
         return {'items': [royal_mail_order]}
 
@@ -529,6 +536,17 @@ def extract_royal_mail_order_identifier(response_data):
         response_data,
         {'orderIdentifier', 'order_identifier', 'royalMailOrderId', 'royal_mail_order_id'},
     )
+
+
+def extract_royal_mail_label_pdf(response_data):
+    label_value = _find_first_value(response_data, {'label'})
+    if not label_value:
+        return None
+
+    try:
+        return base64.b64decode(label_value, validate=True)
+    except (ValueError, TypeError):
+        return None
 
 
 def extract_tracking_number(response_data):
