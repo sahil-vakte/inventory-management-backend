@@ -620,11 +620,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
-        if order.royal_mail_order_identifier:
+        if order.royal_mail_order_identifier and order.shipping_label_file:
             return Response(
                 {
-                    'error': 'Royal Mail shipment already exists for this order.',
-                    'message': 'Royal Mail booking was not called again. Use the shipping-label endpoint to print the label.',
+                    'error': 'Royal Mail label already exists for this order.',
+                    'message': 'Royal Mail booking was not called again. Use the shipping-label endpoint to print the saved label.',
                     'order_status': order.order_status,
                     'royal_mail_order_identifier': order.royal_mail_order_identifier,
                     'tracking_number': order.tracking_number,
@@ -633,9 +633,33 @@ class OrderViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+        if order.royal_mail_order_identifier and not settings.ROYAL_MAIL_REPLACE_UNPOSTAGED_ORDERS:
+            return Response(
+                {
+                    'error': 'Royal Mail shipment already exists for this order.',
+                    'message': (
+                        'Royal Mail booking was not called again because replacing unpostaged '
+                        'Royal Mail drafts is disabled.'
+                    ),
+                    'order_status': order.order_status,
+                    'royal_mail_order_identifier': order.royal_mail_order_identifier,
+                    'tracking_number': order.tracking_number,
+                    'carrier': order.carrier,
+                    'label_url': _shipping_label_api_url(request, order) if order.shipping_label_file else None,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
 
         try:
             royal_mail_client = RoyalMailClickDropClient()
+            replaced_royal_mail_order_identifier = None
+            replace_response = None
+            if order.royal_mail_order_identifier and settings.ROYAL_MAIL_REPLACE_UNPOSTAGED_ORDERS:
+                replaced_royal_mail_order_identifier = order.royal_mail_order_identifier
+                replace_response = royal_mail_client.delete_order(replaced_royal_mail_order_identifier)
+                order.royal_mail_order_identifier = None
+                order.save(update_fields=['royal_mail_order_identifier', 'updated_at'])
+
             shipping_options = royal_mail_client.resolve_shipping_options(
                 order,
                 weight_in_grams=serializer.validated_data.get('weight_in_grams'),
@@ -740,6 +764,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             'royal_mail_booking_options': shipping_options,
             'label_url': label_url,
             'label_download_error': label_download_error,
+            'replaced_royal_mail_order_identifier': replaced_royal_mail_order_identifier,
+            'royal_mail_replace_response': replace_response,
             'royal_mail_response': response_data,
             'order': OrderDetailSerializer(order).data,
         }, status=response_status)

@@ -1474,6 +1474,116 @@ class OrderWithItemsAPITest(TestCase):
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
     )
+    @patch('orders.services.royal_mail.requests.delete')
+    @patch('orders.services.royal_mail.requests.get')
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_replaces_unpostaged_draft_order(self, mock_post, mock_get, mock_delete):
+        delete_response = Mock(status_code=200)
+        delete_response.json.return_value = {'deletedOrders': [{'orderIdentifier': '157272'}]}
+        mock_delete.return_value = delete_response
+        self._mock_royal_mail_label_response(mock_get)
+
+        create_response = Mock(status_code=200)
+        create_response.json.return_value = {
+            'items': [{'orderIdentifier': '157300', 'trackingNumber': 'RMREBOOKED'}],
+        }
+        mock_post.return_value = create_response
+
+        order = Order.objects.create(
+            customer_name='Draft Replacement Customer',
+            external_order_id='WEB238404',
+            customer_email='draft@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            royal_mail_order_identifier='157272',
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-DRAFT',
+            product_name='Draft Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 100, 'service_code': 'STD'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['replaced_royal_mail_order_identifier'], '157272')
+        self.assertEqual(mock_delete.call_args.args[0], 'https://api.parcel.royalmail.com/api/v1/orders/157272')
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, Order.STATUS_SHIPPED)
+        self.assertEqual(order.royal_mail_order_identifier, '157300')
+        self.assertEqual(order.tracking_number, 'RMREBOOKED')
+        self.assertTrue(order.shipping_label_file)
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+        ROYAL_MAIL_REPLACE_UNPOSTAGED_ORDERS=False,
+    )
+    @patch('orders.services.royal_mail.requests.delete')
+    @patch('orders.services.royal_mail.requests.get')
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_blocks_existing_draft_when_replacement_disabled(
+        self,
+        mock_post,
+        mock_get,
+        mock_delete,
+    ):
+        order = Order.objects.create(
+            customer_name='No Replacement Customer',
+            external_order_id='WEB238405',
+            customer_email='no-replace@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            royal_mail_order_identifier='157272',
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-NO-REPLACE',
+            product_name='No Replace Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 100, 'service_code': 'STD'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('replacing unpostaged', response.data['message'])
+        mock_post.assert_not_called()
+        mock_get.assert_not_called()
+        mock_delete.assert_not_called()
+        order.refresh_from_db()
+        self.assertEqual(order.royal_mail_order_identifier, '157272')
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
     @patch('orders.services.royal_mail.requests.get')
     @patch('orders.services.royal_mail.requests.post')
     def test_book_royal_mail_shipping_auto_selects_letter_stl2_for_std_up_to_100g(self, mock_post, mock_get):
