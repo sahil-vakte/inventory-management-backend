@@ -119,19 +119,34 @@ class OrderViewSet(viewsets.ModelViewSet):
         item_queryset = OrderItem.objects.select_related(
             'assigned_to', 'stock_item', 'stock_item__product', 'stock_item__color',
         ).prefetch_related('stock_item__product__extended_data')
+        active_batch_link_queryset = OrderBatchOrder.objects.filter(
+            batch__is_deleted=False
+        ).select_related('batch')
         
         if include_deleted == 'true':
             queryset = Order.all_objects.select_related(
                 'created_by', 'updated_by', 'assigned_to'
-            ).prefetch_related(Prefetch('items', queryset=item_queryset), 'status_history')
+            ).prefetch_related(
+                Prefetch('items', queryset=item_queryset),
+                Prefetch('batch_links', queryset=active_batch_link_queryset),
+                'status_history',
+            )
         elif self.request.query_params.get('only_deleted', 'false').lower() == 'true':
             queryset = Order.all_objects.filter(is_deleted=True).select_related(
                 'created_by', 'updated_by', 'assigned_to'
-            ).prefetch_related(Prefetch('items', queryset=item_queryset), 'status_history')
+            ).prefetch_related(
+                Prefetch('items', queryset=item_queryset),
+                Prefetch('batch_links', queryset=active_batch_link_queryset),
+                'status_history',
+            )
         else:
             queryset = Order.objects.select_related(
                 'created_by', 'updated_by', 'assigned_to'
-            ).prefetch_related(Prefetch('items', queryset=item_queryset), 'status_history')
+            ).prefetch_related(
+                Prefetch('items', queryset=item_queryset),
+                Prefetch('batch_links', queryset=active_batch_link_queryset),
+                'status_history',
+            )
         
         # Filter by date range
         date_from = self.request.query_params.get('date_from')

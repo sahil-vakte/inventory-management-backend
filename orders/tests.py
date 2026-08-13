@@ -440,6 +440,25 @@ class OrderWithItemsAPITest(TestCase):
         self.assertIn('labels', detail_response.data)
         self.assertIn('details', detail_response.data)
 
+        orders_response = self.client.get('/api/v1/orders/')
+        with_items_response = self.client.get('/api/v1/orders/with-items/?page=1')
+        order_detail_response = self.client.get(f'/api/v1/orders/{first_order.id}/')
+
+        self.assertEqual(orders_response.status_code, 200)
+        self.assertEqual(with_items_response.status_code, 200)
+        self.assertEqual(order_detail_response.status_code, 200)
+        order_row = next(row for row in orders_response.data['results'] if row['id'] == first_order.id)
+        with_items_row = next(row for row in with_items_response.data['results'] if row['id'] == first_order.id)
+        self.assertTrue(order_row['batch_assigned'])
+        self.assertEqual(order_row['batch_id'], batch_id)
+        self.assertEqual(order_row['batch_name'], '11082026-B1')
+        self.assertTrue(with_items_row['batch_assigned'])
+        self.assertEqual(with_items_row['batch_id'], batch_id)
+        self.assertEqual(with_items_row['batch_name'], '11082026-B1')
+        self.assertTrue(order_detail_response.data['batch_assigned'])
+        self.assertEqual(order_detail_response.data['batch_id'], batch_id)
+        self.assertEqual(order_detail_response.data['batch_name'], '11082026-B1')
+
         printed_response = self.client.patch(
             f'/api/v1/order-batches/{batch_id}/labels/printed/',
             {'lable_printed': True, 'order_item_ids': [first_item.id, second_item.id]},

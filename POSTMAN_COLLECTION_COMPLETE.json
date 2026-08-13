@@ -2730,7 +2730,7 @@
                     }
                   ]
                 },
-                "description": "List orders with optional filters/search/ordering."
+                "description": "Lists orders. Response includes batch_assigned, batch_id, and batch_name when the order is assigned to an active order batch."
               },
               "response": []
             },
@@ -2977,7 +2977,7 @@
                     }
                   ]
                 },
-                "description": "List orders with nested order items. Default response returns orders from the last 3 Tiaknight/UK calendar days plus older orders that still have at least one item with lable_printed=false. Use include_all=true to return all matching orders. Use is_sample=true to return orders with at least one sample item. Items include Tiaknight summary/personalization fields plus sample_name and is_sample."
+                "description": "Lists orders with nested items. Response includes batch_assigned, batch_id, and batch_name when the order is assigned to an active order batch."
               },
               "response": []
             },

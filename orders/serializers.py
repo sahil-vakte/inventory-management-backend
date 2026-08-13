@@ -146,6 +146,9 @@ class OrderListSerializer(serializers.ModelSerializer):
     items_assigned = serializers.SerializerMethodField()
     items_pending = serializers.SerializerMethodField()
     order_type = serializers.CharField(read_only=True)
+    batch_assigned = serializers.SerializerMethodField()
+    batch_id = serializers.SerializerMethodField()
+    batch_name = serializers.SerializerMethodField()
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -167,6 +170,17 @@ class OrderListSerializer(serializers.ModelSerializer):
 
     def get_items_pending(self, obj):
         return obj.items.filter(processing_status=OrderItem.ITEM_STATUS_PENDING).count()
+
+    def get_batch_assigned(self, obj):
+        return get_active_order_batch(obj) is not None
+
+    def get_batch_id(self, obj):
+        batch = get_active_order_batch(obj)
+        return batch.id if batch else None
+
+    def get_batch_name(self, obj):
+        batch = get_active_order_batch(obj)
+        return batch.batch_name if batch else None
     
     class Meta:
         model = Order
@@ -179,7 +193,7 @@ class OrderListSerializer(serializers.ModelSerializer):
             'total_weight_gm',
             'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code',
             'created_by_username', 'assigned_to', 'assigned_to_username',
-            'order_source', 'order_type', 'created_at',
+            'order_source', 'order_type', 'batch_assigned', 'batch_id', 'batch_name', 'created_at',
             'completion_percentage', 'items_total', 'items_completed',
             'items_assigned', 'items_pending',
         ]
@@ -219,6 +233,9 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     items_completed = serializers.SerializerMethodField()
     items_assigned = serializers.SerializerMethodField()
     items_pending = serializers.SerializerMethodField()
+    batch_assigned = serializers.SerializerMethodField()
+    batch_id = serializers.SerializerMethodField()
+    batch_name = serializers.SerializerMethodField()
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -240,6 +257,17 @@ class OrderDetailSerializer(serializers.ModelSerializer):
 
     def get_items_pending(self, obj):
         return obj.items.filter(processing_status=OrderItem.ITEM_STATUS_PENDING).count()
+
+    def get_batch_assigned(self, obj):
+        return get_active_order_batch(obj) is not None
+
+    def get_batch_id(self, obj):
+        batch = get_active_order_batch(obj)
+        return batch.id if batch else None
+
+    def get_batch_name(self, obj):
+        batch = get_active_order_batch(obj)
+        return batch.batch_name if batch else None
     
     class Meta:
         model = Order
@@ -550,3 +578,15 @@ def order_total_weight_gm(order):
         unit_weight = get_product_weight_kg(getattr(stock_item, 'product', None))
         total += unit_weight * Decimal(item.quantity or 0)
     return weight_kg_to_gm(total)
+
+
+def get_active_order_batch(order):
+    prefetched = getattr(order, '_prefetched_objects_cache', {})
+    if 'batch_links' in prefetched:
+        for link in prefetched['batch_links']:
+            batch = getattr(link, 'batch', None)
+            if batch and not batch.is_deleted:
+                return batch
+        return None
+    link = order.batch_links.filter(batch__is_deleted=False).select_related('batch').first()
+    return link.batch if link else None
