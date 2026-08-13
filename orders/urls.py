@@ -1,6 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import OrderViewSet, OrderItemViewSet, OrderBatchViewSet, OrderStatusHistoryViewSet
+from .views import (
+    OrderViewSet,
+    OrderItemViewSet,
+    OrderBatchViewSet,
+    OrderStatusHistoryViewSet,
+    public_shipping_label,
+)
 
 # Create router
 router = DefaultRouter()
@@ -14,6 +20,11 @@ urlpatterns = [
         'orders/items/lable-printed',
         OrderViewSet.as_view({'patch': 'bulk_update_any_items_lable_printed'}),
         name='orders-items-lable-printed',
+    ),
+    path(
+        'orders/<int:order_id>/shipping-label/public/<path:token>/',
+        public_shipping_label,
+        name='public-shipping-label',
     ),
     path('', include(router.urls)),
 ]

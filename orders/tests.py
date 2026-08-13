@@ -1,4 +1,5 @@
 # Tests for Order Management with Employee Assignment
+import base64
 import io
 import os
 import tempfile
@@ -1275,7 +1276,12 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(order.shipping_method, 'TPLN')
         self.assertEqual(order.royal_mail_order_identifier, 'RM-ORDER-1')
         self.assertTrue(order.shipping_label_file)
+        self.assertTrue(response.data['label_url'].startswith('http://testserver/'))
         self.assertTrue(response.data['label_url'].endswith(f'/api/v1/orders/{order.id}/shipping-label/'))
+        self.assertTrue(response.data['public_label_url'].startswith('http://testserver/'))
+        self.assertIn(f'/api/v1/orders/{order.id}/shipping-label/public/', response.data['public_label_url'])
+        self.assertTrue(response.data['order']['shipping_label_url'].startswith('http://testserver/'))
+        self.assertTrue(response.data['order']['public_shipping_label_url'].startswith('http://testserver/'))
         self.assertIn('WEB-RM-001', order.internal_notes)
         self.assertIn('Booked from API test', order.internal_notes)
 
@@ -1296,6 +1302,75 @@ class OrderWithItemsAPITest(TestCase):
         )
         self.assertEqual(mock_get.call_args.kwargs['params']['documentType'], 'postageLabel')
         self.assertEqual(mock_get.call_args.kwargs['params']['includeReturnsLabel'], 'false')
+
+        public_label_url_path = response.data['public_label_url'].replace('http://testserver', '')
+        public_client = APIClient()
+        public_response = public_client.get(public_label_url_path)
+
+        self.assertEqual(public_response.status_code, 200)
+        self.assertEqual(public_response['Content-Type'], 'application/pdf')
+        self.assertEqual(b''.join(public_response.streaming_content), b'%PDF-1.4 test label pdf')
+
+        invalid_response = public_client.get(
+            f'/api/v1/orders/{order.id}/shipping-label/public/bad-token/'
+        )
+        self.assertEqual(invalid_response.status_code, 404)
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    @patch('orders.services.royal_mail.requests.get')
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_omits_base64_label_from_json_response(self, mock_post, mock_get):
+        encoded_label = base64.b64encode(b'%PDF-1.4 inline royal mail label').decode('ascii')
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'createdOrders': [
+                {
+                    'orderIdentifier': 'RM-ORDER-INLINE-LABEL',
+                    'trackingNumber': 'RMINLINE',
+                    'label': encoded_label,
+                }
+            ]
+        }
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='Inline Label Customer',
+            external_order_id='WEB-RM-INLINE',
+            customer_email='inline@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-INLINE',
+            product_name='Inline Label Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 100, 'service_code': 'STD'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertTrue(order.shipping_label_file)
+        self.assertNotIn('label', response.data['royal_mail_response']['createdOrders'][0])
+        self.assertTrue(response.data['public_label_url'])
+        mock_get.assert_not_called()
 
     @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',

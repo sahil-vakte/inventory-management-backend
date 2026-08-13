@@ -3528,6 +3528,21 @@
               "response": []
             },
             {
+              "name": "Download Royal Mail Shipping Label - Public Signed URL",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{public_label_url}}",
+                  "host": [
+                    "{{public_label_url}}"
+                  ]
+                },
+                "description": "Returns the saved printable shipping label PDF without Authorization header. Use the public_label_url returned by Book Royal Mail Shipping. The URL is signed and hard to guess; it only works for the saved label file and does not create another Royal Mail order."
+              },
+              "response": []
+            },
+            {
               "name": "Deliver Order",
               "request": {
                 "method": "POST",

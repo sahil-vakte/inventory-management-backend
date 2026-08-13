@@ -8,6 +8,7 @@ from .models import Order, OrderItem, OrderBatch, OrderBatchOrder, OrderStatusHi
 from stock.serializers import StockItemListSerializer
 from stock.sku_utils import normalize_sku_reference
 from products.serializers import get_product_child_product_url, get_product_weight_kg
+from .services.label_links import make_public_label_token
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -151,6 +152,7 @@ class OrderListSerializer(serializers.ModelSerializer):
     batch_name = serializers.SerializerMethodField()
     source_display = serializers.SerializerMethodField()
     shipping_label_url = serializers.SerializerMethodField()
+    public_shipping_label_url = serializers.SerializerMethodField()
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -193,6 +195,14 @@ class OrderListSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         path = f'/api/v1/orders/{obj.id}/shipping-label/'
         return request.build_absolute_uri(path) if request else path
+
+    def get_public_shipping_label_url(self, obj):
+        if not obj.shipping_label_file:
+            return None
+        request = self.context.get('request')
+        token = make_public_label_token(obj)
+        path = f'/api/v1/orders/{obj.id}/shipping-label/public/{token}/'
+        return request.build_absolute_uri(path) if request else path
     
     class Meta:
         model = Order
@@ -206,6 +216,7 @@ class OrderListSerializer(serializers.ModelSerializer):
             'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code',
             'royal_mail_order_identifier', 'shipping_label_file',
             'shipping_label_downloaded_at', 'shipping_label_url',
+            'public_shipping_label_url',
             'created_by_username', 'assigned_to', 'assigned_to_username',
             'order_source', 'source_display', 'order_type',
             'batch_assigned', 'batch_id', 'batch_name', 'created_at',
@@ -253,6 +264,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     batch_name = serializers.SerializerMethodField()
     source_display = serializers.SerializerMethodField()
     shipping_label_url = serializers.SerializerMethodField()
+    public_shipping_label_url = serializers.SerializerMethodField()
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -294,6 +306,14 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             return None
         request = self.context.get('request')
         path = f'/api/v1/orders/{obj.id}/shipping-label/'
+        return request.build_absolute_uri(path) if request else path
+
+    def get_public_shipping_label_url(self, obj):
+        if not obj.shipping_label_file:
+            return None
+        request = self.context.get('request')
+        token = make_public_label_token(obj)
+        path = f'/api/v1/orders/{obj.id}/shipping-label/public/{token}/'
         return request.build_absolute_uri(path) if request else path
     
     class Meta:

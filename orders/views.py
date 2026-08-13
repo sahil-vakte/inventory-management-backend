@@ -7,6 +7,7 @@ from rest_framework import filters
 from django.db.models import Sum, Count, Avg, Q, Prefetch
 from django.utils import timezone
 from django.conf import settings
+from django.core import signing
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.http import FileResponse, HttpResponse
@@ -33,6 +34,7 @@ from .services.royal_mail import (
     extract_royal_mail_reference,
     extract_tracking_number,
 )
+from .services.label_links import make_public_label_token, load_public_label_token
 
 
 def _serialize_royal_mail_oauth_token(token):
@@ -53,6 +55,26 @@ def _shipping_label_api_url(request, order):
     return request.build_absolute_uri(f'/api/v1/orders/{order.id}/shipping-label/')
 
 
+def _public_shipping_label_api_url(request, order):
+    if not order.shipping_label_file:
+        return None
+    token = make_public_label_token(order)
+    return request.build_absolute_uri(f'/api/v1/orders/{order.id}/shipping-label/public/{token}/')
+
+
+def _sanitize_royal_mail_response(data):
+    """Remove embedded label PDFs before returning Royal Mail payloads through the API."""
+    if isinstance(data, dict):
+        return {
+            key: _sanitize_royal_mail_response(value)
+            for key, value in data.items()
+            if key != 'label'
+        }
+    if isinstance(data, list):
+        return [_sanitize_royal_mail_response(item) for item in data]
+    return data
+
+
 def _save_shipping_label_pdf(order, pdf_content):
     if not pdf_content:
         return None
@@ -71,7 +93,7 @@ def _label_error_payload(exc):
     payload = {
         'error': str(exc),
         'royal_mail_status_code': getattr(exc, 'status_code', None),
-        'royal_mail_response': getattr(exc, 'response_data', None),
+        'royal_mail_response': _sanitize_royal_mail_response(getattr(exc, 'response_data', None)),
     }
     if _is_postage_not_applied_error(exc):
         payload.update({
@@ -101,6 +123,35 @@ def _response_contains_text(data, needle):
     if isinstance(data, list):
         return any(_response_contains_text(item, needle) for item in data)
     return needle.lower() in str(data).lower()
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_shipping_label(request, order_id, token):
+    """Return a saved label PDF using a signed URL, without API authentication."""
+    try:
+        token_data = load_public_label_token(token)
+    except signing.BadSignature:
+        return Response({'error': 'Invalid shipping label link'}, status=status.HTTP_404_NOT_FOUND)
+
+    if token_data.get('order_id') != order_id:
+        return Response({'error': 'Invalid shipping label link'}, status=status.HTTP_404_NOT_FOUND)
+
+    order = Order.objects.filter(id=order_id).first()
+    if not order or not order.shipping_label_file:
+        return Response({'error': 'Shipping label is not available'}, status=status.HTTP_404_NOT_FOUND)
+
+    if token_data.get('shipping_label_file') != order.shipping_label_file:
+        return Response({'error': 'Shipping label link is no longer valid'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not default_storage.exists(order.shipping_label_file):
+        return Response({'error': 'Shipping label file is missing'}, status=status.HTTP_404_NOT_FOUND)
+
+    return FileResponse(
+        default_storage.open(order.shipping_label_file, 'rb'),
+        content_type='application/pdf',
+        filename=f'order-{order.id}-label.pdf',
+    )
 
 
 @api_view(['GET'])
@@ -135,7 +186,7 @@ def royal_mail_oauth_callback(request):
                 'connected': False,
                 'error': str(exc),
                 'royal_mail_status_code': exc.status_code,
-                'royal_mail_response': exc.response_data,
+                'royal_mail_response': _sanitize_royal_mail_response(exc.response_data),
             },
             status=status.HTTP_502_BAD_GATEWAY,
         )
@@ -736,7 +787,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {
                     'error': str(exc),
                     'royal_mail_status_code': exc.status_code,
-                    'royal_mail_response': exc.response_data,
+                    'royal_mail_response': _sanitize_royal_mail_response(exc.response_data),
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
@@ -745,7 +796,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {
                     'error': str(exc),
                     'royal_mail_status_code': exc.status_code,
-                    'royal_mail_response': exc.response_data,
+                    'royal_mail_response': _sanitize_royal_mail_response(exc.response_data),
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
@@ -771,10 +822,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             'royal_mail_order_identifier': royal_mail_order_identifier,
             'royal_mail_booking_options': shipping_options,
             'label_url': label_url,
+            'public_label_url': _public_shipping_label_api_url(request, order) if label_url else None,
             'label_download_error': label_download_error,
             'replaced_royal_mail_order_identifier': replaced_royal_mail_order_identifier,
             'royal_mail_replace_response': replace_response,
-            'royal_mail_response': response_data,
+            'royal_mail_response': _sanitize_royal_mail_response(response_data),
             'order': OrderDetailSerializer(order, context={'request': request}).data,
         }, status=response_status)
 
