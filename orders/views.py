@@ -168,7 +168,8 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         source = self.request.query_params.get('source') or self.request.query_params.get('platform')
         if source:
-            queryset = queryset.filter(order_source__iexact=self._normalize_order_source(source))
+            normalized_sources = self._normalize_order_sources(source)
+            queryset = queryset.filter(order_source__in=normalized_sources)
 
         order_type = str(self.request.query_params.get('order_type', '')).strip().lower()
         if order_type == 'wholesale':
@@ -184,19 +185,20 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         return queryset
 
-    def _normalize_order_source(self, source):
+    def _normalize_order_sources(self, source):
         source_map = {
-            'web': Order.SOURCE_WEBSITE,
-            'website': Order.SOURCE_WEBSITE,
-            'tiaknight': Order.SOURCE_WEBSITE,
-            'manual': Order.SOURCE_MANUAL,
-            'xml': Order.SOURCE_XML,
-            'ebay': Order.SOURCE_EBAY,
-            'api': Order.SOURCE_API,
-            'amazon': 'AMAZON',
-            'etsy': 'ETSY',
+            'web': [Order.SOURCE_WEBSITE, Order.SOURCE_XML],
+            'website': [Order.SOURCE_WEBSITE, Order.SOURCE_XML],
+            'tiaknight': [Order.SOURCE_WEBSITE, Order.SOURCE_XML],
+            'manual': [Order.SOURCE_MANUAL],
+            'xml': [Order.SOURCE_XML],
+            'ebay': [Order.SOURCE_EBAY],
+            'api': [Order.SOURCE_API],
+            'amazon': ['AMAZON'],
+            'etsy': ['ETSY'],
         }
-        return source_map.get(str(source).strip().lower(), str(source).strip())
+        normalized = str(source).strip()
+        return source_map.get(normalized.lower(), [normalized])
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""

@@ -376,6 +376,36 @@ class OrderWithItemsAPITest(TestCase):
         self.assertNotIn(retail_order.id, wholesale_ids)
         self.assertEqual(retail_response.data['results'][0]['order_type'], 'retail')
 
+    def test_web_platform_filter_includes_existing_xml_source_orders(self):
+        xml_order = Order.objects.create(
+            customer_name='XML Customer',
+            total_amount=Decimal('10.00'),
+            order_source=Order.SOURCE_XML,
+            created_by=self.user,
+        )
+        website_order = Order.objects.create(
+            customer_name='Website Customer',
+            total_amount=Decimal('10.00'),
+            order_source=Order.SOURCE_WEBSITE,
+            created_by=self.user,
+        )
+        manual_order = Order.objects.create(
+            customer_name='Manual Customer',
+            total_amount=Decimal('10.00'),
+            order_source=Order.SOURCE_MANUAL,
+            created_by=self.user,
+        )
+
+        response = self.client.get('/api/v1/orders/?platform=web')
+
+        self.assertEqual(response.status_code, 200)
+        order_rows = {row['id']: row for row in response.data['results']}
+        self.assertIn(xml_order.id, order_rows)
+        self.assertIn(website_order.id, order_rows)
+        self.assertNotIn(manual_order.id, order_rows)
+        self.assertEqual(order_rows[xml_order.id]['source_display'], 'WEB')
+        self.assertEqual(order_rows[website_order.id]['source_display'], 'WEB')
+
     def test_order_batch_create_detail_and_label_printed_flow(self):
         first_order = Order.objects.create(
             customer_name='Batch Customer 1',
@@ -685,6 +715,7 @@ class OrderWithItemsAPITest(TestCase):
 
         self.assertEqual(result['created_count'], 1)
         order = Order.objects.get(external_order_id='WEB-C001')
+        self.assertEqual(order.order_source, Order.SOURCE_WEBSITE)
         self.assertEqual(order.courier_service_name, 'Next Day By 12pm (next working day if ordered before 1pm)')
         self.assertEqual(order.courier_service_code, 'NEXT DAY 12')
         self.assertEqual(order.shipping_method, order.courier_service_name)

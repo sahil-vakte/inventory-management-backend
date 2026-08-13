@@ -149,6 +149,7 @@ class OrderListSerializer(serializers.ModelSerializer):
     batch_assigned = serializers.SerializerMethodField()
     batch_id = serializers.SerializerMethodField()
     batch_name = serializers.SerializerMethodField()
+    source_display = serializers.SerializerMethodField()
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -181,6 +182,9 @@ class OrderListSerializer(serializers.ModelSerializer):
     def get_batch_name(self, obj):
         batch = get_active_order_batch(obj)
         return batch.batch_name if batch else None
+
+    def get_source_display(self, obj):
+        return get_order_source_display_value(obj)
     
     class Meta:
         model = Order
@@ -193,7 +197,8 @@ class OrderListSerializer(serializers.ModelSerializer):
             'total_weight_gm',
             'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code',
             'created_by_username', 'assigned_to', 'assigned_to_username',
-            'order_source', 'order_type', 'batch_assigned', 'batch_id', 'batch_name', 'created_at',
+            'order_source', 'source_display', 'order_type',
+            'batch_assigned', 'batch_id', 'batch_name', 'created_at',
             'completion_percentage', 'items_total', 'items_completed',
             'items_assigned', 'items_pending',
         ]
@@ -236,6 +241,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     batch_assigned = serializers.SerializerMethodField()
     batch_id = serializers.SerializerMethodField()
     batch_name = serializers.SerializerMethodField()
+    source_display = serializers.SerializerMethodField()
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -268,6 +274,9 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     def get_batch_name(self, obj):
         batch = get_active_order_batch(obj)
         return batch.batch_name if batch else None
+
+    def get_source_display(self, obj):
+        return get_order_source_display_value(obj)
     
     class Meta:
         model = Order
@@ -590,3 +599,9 @@ def get_active_order_batch(order):
         return None
     link = order.batch_links.filter(batch__is_deleted=False).select_related('batch').first()
     return link.batch if link else None
+
+
+def get_order_source_display_value(order):
+    if order.order_source in {Order.SOURCE_XML, Order.SOURCE_WEBSITE}:
+        return 'WEB'
+    return order.order_source
