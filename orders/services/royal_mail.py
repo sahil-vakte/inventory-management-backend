@@ -7,6 +7,8 @@ from django.conf import settings
 from django.utils import timezone
 
 from orders.models import RoyalMailOAuthToken
+from orders.services.courier import courier_service_code
+from products.serializers import get_product_weight_kg
 
 
 logger = logging.getLogger(__name__)
@@ -210,8 +212,15 @@ class RoyalMailClickDropClient:
         }
 
     def build_create_order_payload(self, order, *, weight_in_grams=None, package_format_identifier=None, service_code=None):
-        weight_in_grams = weight_in_grams or settings.ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS
-        package_format_identifier = package_format_identifier or settings.ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT
+        shipping_options = self.resolve_shipping_options(
+            order,
+            weight_in_grams=weight_in_grams,
+            package_format_identifier=package_format_identifier,
+            service_code=service_code,
+        )
+        weight_in_grams = shipping_options['weight_in_grams']
+        package_format_identifier = shipping_options['package_format_identifier']
+        service_code = shipping_options['service_code']
 
         package = {
             'weightInGrams': int(weight_in_grams),
@@ -247,6 +256,84 @@ class RoyalMailClickDropClient:
             royal_mail_order['postageDetails'] = {'serviceCode': service_code}
 
         return {'items': [royal_mail_order]}
+
+    def resolve_shipping_options(self, order, *, weight_in_grams=None, package_format_identifier=None, service_code=None):
+        """Resolve Royal Mail package/service using WIMS booking rules.
+
+        Explicit API payload values still win. Missing values are derived from
+        order weight, delivery method, source/day, and fleece handling.
+        """
+        resolved_weight = int(weight_in_grams or self._order_weight_in_grams(order) or settings.ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS)
+        derived_package, derived_service = self._derive_package_and_service(order, resolved_weight)
+
+        return {
+            'weight_in_grams': resolved_weight,
+            'package_format_identifier': package_format_identifier or derived_package or settings.ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT,
+            'service_code': service_code or derived_service,
+        }
+
+    def _derive_package_and_service(self, order, weight_in_grams):
+        delivery_code = self._delivery_code(order)
+
+        if delivery_code == 'STD' and self._has_fleece_up_to_5_mtr(order):
+            return 'Parcel', 'TPS48'
+
+        if delivery_code == 'STD':
+            if weight_in_grams <= 100:
+                return 'Letter', 'STL2'
+            if 101 <= weight_in_grams <= 500:
+                return 'Large Letter', 'TRS48'
+            if 501 <= weight_in_grams <= 2500:
+                return 'Parcel', 'TPS48'
+
+        if delivery_code == 'NEXTDAY' and self._is_amazon_friday_order(order):
+            if 101 <= weight_in_grams <= 500:
+                return 'Large Letter', 'TRN24'
+            if 501 <= weight_in_grams <= 2500:
+                return 'Parcel', 'TPN24'
+
+        return None, None
+
+    def _delivery_code(self, order):
+        raw_code = (
+            order.courier_service_code
+            or courier_service_code(order.courier_service_name)
+            or courier_service_code(order.shipping_method)
+            or order.shipping_method
+            or ''
+        )
+        return ''.join(str(raw_code).upper().split())
+
+    def _order_weight_in_grams(self, order):
+        total = Decimal('0.000')
+        for item in order.items.select_related('stock_item__product').prefetch_related('stock_item__product__extended_data'):
+            product = getattr(getattr(item, 'stock_item', None), 'product', None)
+            total += get_product_weight_kg(product) * Decimal(item.quantity or 0)
+        return int((total * Decimal('1000')).quantize(Decimal('1'))) if total > 0 else 0
+
+    def _is_amazon_friday_order(self, order):
+        source = str(order.order_source or '').strip().upper()
+        if source != 'AMAZON':
+            return False
+        if not order.order_date:
+            return False
+        return timezone.localtime(order.order_date).weekday() == 4
+
+    def _has_fleece_up_to_5_mtr(self, order):
+        fleece_quantity = Decimal('0')
+        has_fleece = False
+        for item in order.items.all():
+            searchable = ' '.join(filter(None, [
+                item.product_name,
+                item.product_type,
+                item.sku,
+                getattr(getattr(getattr(item, 'stock_item', None), 'product', None), 'child_product_title', None),
+                getattr(getattr(getattr(item, 'stock_item', None), 'product', None), 'parent_product_title', None),
+            ])).lower()
+            if 'fleece' in searchable:
+                has_fleece = True
+                fleece_quantity += Decimal(item.quantity or 0)
+        return has_fleece and fleece_quantity <= Decimal('5')
 
     def _order_reference(self, order):
         return (order.external_order_id or order.order_number or '').strip()

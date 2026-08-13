@@ -1280,6 +1280,201 @@ class OrderWithItemsAPITest(TestCase):
     @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',
         ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_auto_selects_letter_stl2_for_std_up_to_100g(self, mock_post):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'items': [{'orderIdentifier': 'RM-ORDER-STD-100', 'trackingNumber': 'RMSTD100'}]
+        }
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='Royal Mail Rule Customer',
+            external_order_id='WEB-RM-RULE-001',
+            customer_email='rule@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            courier_service_code='STD',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-STD-100',
+            product_name='Small Standard Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 100},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.shipping_method, 'STL2')
+        request_payload = mock_post.call_args.kwargs['json']
+        self.assertEqual(request_payload['items'][0]['packages'][0]['weightInGrams'], 100)
+        self.assertEqual(request_payload['items'][0]['packages'][0]['packageFormatIdentifier'], 'Letter')
+        self.assertEqual(request_payload['items'][0]['postageDetails']['serviceCode'], 'STL2')
+        self.assertEqual(response.data['royal_mail_booking_options']['package_format_identifier'], 'Letter')
+        self.assertEqual(response.data['royal_mail_booking_options']['service_code'], 'STL2')
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_auto_selects_large_letter_for_std_101_to_500g(self, mock_post):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'items': [{'orderIdentifier': 'RM-ORDER-STD-500', 'trackingNumber': 'RMSTD500'}]
+        }
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='Royal Mail Rule Customer',
+            external_order_id='WEB-RM-RULE-002',
+            customer_email='rule2@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            courier_service_code='STD',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-STD-500',
+            product_name='Medium Standard Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 250},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        request_payload = mock_post.call_args.kwargs['json']
+        self.assertEqual(request_payload['items'][0]['packages'][0]['packageFormatIdentifier'], 'Large Letter')
+        self.assertEqual(request_payload['items'][0]['postageDetails']['serviceCode'], 'TRS48')
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_auto_selects_amazon_friday_next_day_service(self, mock_post):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'items': [{'orderIdentifier': 'RM-ORDER-AMZ', 'trackingNumber': 'RMAMZ'}]
+        }
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='Amazon Friday Customer',
+            external_order_id='AMZ-RM-RULE-001',
+            customer_email='amazon@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            order_source='AMAZON',
+            courier_service_code='NEXT DAY',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            order_date=timezone.make_aware(timezone.datetime(2026, 8, 14, 10, 0, 0)),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-AMZ',
+            product_name='Amazon Next Day Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 250},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        request_payload = mock_post.call_args.kwargs['json']
+        self.assertEqual(request_payload['items'][0]['packages'][0]['packageFormatIdentifier'], 'Large Letter')
+        self.assertEqual(request_payload['items'][0]['postageDetails']['serviceCode'], 'TRN24')
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Letter',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=50,
+    )
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_auto_selects_fleece_parcel_for_std_up_to_5m(self, mock_post):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'items': [{'orderIdentifier': 'RM-ORDER-FLEECE', 'trackingNumber': 'RMFLEECE'}]
+        }
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='Fleece Customer',
+            external_order_id='WEB-RM-FLEECE-001',
+            customer_email='fleece@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            courier_service_code='STD',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='FLEECE-001',
+            product_name='Polar Fleece Fabric',
+            quantity=5,
+            quantity_ordered=5,
+            unit_price=Decimal('2.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 250},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        request_payload = mock_post.call_args.kwargs['json']
+        self.assertEqual(request_payload['items'][0]['packages'][0]['packageFormatIdentifier'], 'Parcel')
+        self.assertEqual(request_payload['items'][0]['postageDetails']['serviceCode'], 'TPS48')
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Letter',
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=50,
     )
