@@ -260,20 +260,26 @@ class RoyalMailClickDropClient:
     def resolve_shipping_options(self, order, *, weight_in_grams=None, package_format_identifier=None, service_code=None):
         """Resolve Royal Mail package/service using WIMS booking rules.
 
-        Explicit API payload values still win. Missing values are derived from
-        order weight, delivery method, source/day, and fleece handling.
+        Explicit Royal Mail API payload values still win. WIMS internal courier
+        codes such as STD are treated as delivery-method inputs, not Royal Mail
+        service codes, then converted through the criteria table.
         """
         resolved_weight = int(weight_in_grams or self._order_weight_in_grams(order) or settings.ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS)
-        derived_package, derived_service = self._derive_package_and_service(order, resolved_weight)
+        explicit_service_code, delivery_code_override = self._split_requested_service_code(service_code)
+        derived_package, derived_service = self._derive_package_and_service(
+            order,
+            resolved_weight,
+            delivery_code_override=delivery_code_override,
+        )
 
         return {
             'weight_in_grams': resolved_weight,
             'package_format_identifier': package_format_identifier or derived_package or settings.ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT,
-            'service_code': service_code or derived_service,
+            'service_code': explicit_service_code or derived_service,
         }
 
-    def _derive_package_and_service(self, order, weight_in_grams):
-        delivery_code = self._delivery_code(order)
+    def _derive_package_and_service(self, order, weight_in_grams, delivery_code_override=None):
+        delivery_code = delivery_code_override or self._delivery_code(order)
 
         if delivery_code == 'STD' and self._has_fleece_up_to_5_mtr(order):
             return 'Parcel', 'TPS48'
@@ -293,6 +299,31 @@ class RoyalMailClickDropClient:
                 return 'Parcel', 'TPN24'
 
         return None, None
+
+    def _split_requested_service_code(self, service_code):
+        if not service_code:
+            return None, None
+
+        normalized = ' '.join(str(service_code).strip().upper().split())
+        compact = ''.join(normalized.split())
+        internal_delivery_codes = {
+            'STD': 'STD',
+            'STANDARD': 'STD',
+            'STANDARDDELIVERY': 'STD',
+            'NEXTDAY': 'NEXTDAY',
+            'NEXT DAY': 'NEXTDAY',
+            'NEXTDAY12': 'NEXTDAY12',
+            'NEXT DAY 12': 'NEXTDAY12',
+            'INT': 'INT',
+            'INTERNATIONAL': 'INT',
+            'SATURDAY': 'SATURDAY',
+            'COLLECTINSTORE': 'COLLECTINSTORE',
+            'COLLECT IN STORE': 'COLLECTINSTORE',
+        }
+        delivery_code = internal_delivery_codes.get(normalized) or internal_delivery_codes.get(compact)
+        if delivery_code:
+            return None, delivery_code
+        return str(service_code).strip(), None
 
     def _delivery_code(self, order):
         raw_code = (
