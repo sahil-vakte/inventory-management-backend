@@ -1280,6 +1280,38 @@ class OrderWithItemsAPITest(TestCase):
     @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',
         ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
+    )
+    @patch('orders.services.royal_mail.requests.post')
+    def test_book_royal_mail_shipping_blocks_duplicate_booking_for_shipped_order(self, mock_post):
+        order = Order.objects.create(
+            customer_name='Already Shipped Customer',
+            external_order_id='WEB-RM-SHIPPED',
+            customer_email='shipped@example.com',
+            shipping_address_line1='1 Test Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_SHIPPED,
+            tracking_number='RMTRACK-EXISTING',
+            carrier='Royal Mail',
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+            {'weight_in_grams': 100},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['order_status'], Order.STATUS_SHIPPED)
+        self.assertEqual(response.data['tracking_number'], 'RMTRACK-EXISTING')
+        mock_post.assert_not_called()
+
+    @override_settings(
+        ROYAL_MAIL_API_KEY='test-api-key',
+        ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
         ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
     )
