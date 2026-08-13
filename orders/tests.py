@@ -1366,7 +1366,11 @@ class OrderWithItemsAPITest(TestCase):
 
         response = self.client.post(
             f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
-            {'weight_in_grams': 100, 'service_code': 'STD'},
+            {
+                'weight_in_grams': 100,
+                'package_format_identifier': 'Parcel',
+                'service_code': 'STD',
+            },
             format='json',
         )
 
@@ -1375,6 +1379,7 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(request_payload['items'][0]['packages'][0]['packageFormatIdentifier'], 'Letter')
         self.assertEqual(request_payload['items'][0]['postageDetails']['serviceCode'], 'STL2')
         self.assertNotEqual(request_payload['items'][0]['postageDetails']['serviceCode'], 'STD')
+        self.assertEqual(response.data['royal_mail_booking_options']['package_format_identifier'], 'Letter')
         self.assertEqual(response.data['royal_mail_booking_options']['service_code'], 'STL2')
 
     @override_settings(

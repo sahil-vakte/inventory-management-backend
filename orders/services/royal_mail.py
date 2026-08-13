@@ -271,10 +271,11 @@ class RoyalMailClickDropClient:
             resolved_weight,
             delivery_code_override=delivery_code_override,
         )
+        explicit_package = None if delivery_code_override else package_format_identifier
 
         return {
             'weight_in_grams': resolved_weight,
-            'package_format_identifier': package_format_identifier or derived_package or settings.ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT,
+            'package_format_identifier': explicit_package or derived_package or settings.ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT,
             'service_code': explicit_service_code or derived_service,
         }
 
