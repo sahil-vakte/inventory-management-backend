@@ -205,11 +205,56 @@ class RoyalMailClickDropClient:
 
         return response_data
 
-    def _headers(self):
-        return {
+    def get_order_label_pdf(
+        self,
+        order_identifier,
+        *,
+        document_type=None,
+        include_returns_label=False,
+        include_cn=False,
+    ):
+        """Fetch the printable PDF label/document for a Royal Mail order."""
+        self.ensure_configured()
+        if not order_identifier:
+            raise RoyalMailAPIError('Royal Mail order identifier is required for label download')
+
+        url = f"{self.base_url}/orders/{order_identifier}/label"
+        params = {}
+        if document_type:
+            params['documentType'] = document_type
+        if include_returns_label:
+            params['includeReturnsLabel'] = 'true'
+        if include_cn:
+            params['includeCN'] = 'true'
+
+        try:
+            response = requests.get(
+                url,
+                params=params or None,
+                headers=self._headers(accept='application/pdf'),
+                timeout=self.timeout,
+            )
+        except requests.RequestException as exc:
+            raise RoyalMailAPIError(f'Royal Mail label request failed: {exc}') from exc
+
+        content_type = response.headers.get('Content-Type', '')
+        if response.status_code >= 400 or 'application/pdf' not in content_type.lower():
+            raise RoyalMailAPIError(
+                'Royal Mail did not return a PDF label',
+                status_code=response.status_code,
+                response_data=self._parse_response(response),
+            )
+
+        return response.content
+
+    def _headers(self, accept=None):
+        headers = {
             'Authorization': self.api_key.strip(),
             'Content-Type': 'application/json',
         }
+        if accept:
+            headers['Accept'] = accept
+        return headers
 
     def build_create_order_payload(self, order, *, weight_in_grams=None, package_format_identifier=None, service_code=None):
         shipping_options = self.resolve_shipping_options(
@@ -466,6 +511,13 @@ def extract_royal_mail_reference(response_data):
     return _find_first_value(
         response_data,
         {'orderIdentifier', 'orderId', 'identifier', 'royalMailOrderId', 'orderReference'},
+    )
+
+
+def extract_royal_mail_order_identifier(response_data):
+    return _find_first_value(
+        response_data,
+        {'orderIdentifier', 'order_identifier', 'royalMailOrderId', 'royal_mail_order_id'},
     )
 
 

@@ -3505,6 +3505,29 @@
               "response": []
             },
             {
+              "name": "Download Royal Mail Shipping Label",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/shipping-label/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "{{order_id}}",
+                    "shipping-label",
+                    ""
+                  ]
+                },
+                "description": "Returns the saved printable shipping label PDF. If the label file is missing but royal_mail_order_identifier is saved, WIMS fetches the PDF from Royal Mail using GET /orders/{orderIdentifier}/label and saves it for reprint. This does not create another Royal Mail order."
+              },
+              "response": []
+            },
+            {
               "name": "Deliver Order",
               "request": {
                 "method": "POST",
