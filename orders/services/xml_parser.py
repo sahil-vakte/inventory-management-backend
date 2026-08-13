@@ -128,7 +128,7 @@ class XMLOrderParser:
         # Extract order data
         order_data = {
             'external_order_id': self._get_text(order_node, 'order_reference') or self._get_text(order_node, 'order_id') or self._get_text(order_elem, 'OrderNumber'),
-            'order_source': 'XML',
+            'order_source': Order.SOURCE_WEBSITE,
             'created_by': user,
         }
         

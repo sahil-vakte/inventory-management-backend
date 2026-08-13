@@ -2730,7 +2730,7 @@
                     }
                   ]
                 },
-                "description": "Lists orders. Response includes batch_assigned, batch_id, and batch_name when the order is assigned to an active order batch."
+                "description": "Lists orders. Response includes batch_assigned, batch_id, and batch_name when the order is assigned to an active order batch. Tiaknight/XML website orders are exposed with source_display=WEB."
               },
               "response": []
             },
@@ -2977,7 +2977,7 @@
                     }
                   ]
                 },
-                "description": "Lists orders with nested items. Response includes batch_assigned, batch_id, and batch_name when the order is assigned to an active order batch."
+                "description": "Lists orders with nested items. Response includes batch_assigned, batch_id, and batch_name when the order is assigned to an active order batch. Tiaknight/XML website orders are exposed with source_display=WEB."
               },
               "response": []
             },
@@ -3155,7 +3155,7 @@
                     }
                   ]
                 },
-                "description": ""
+                "description": "Filters orders by platform/source and courier. platform=web includes Tiaknight website orders, including older records stored with order_source=XML. Order responses include source_display=WEB."
               },
               "response": []
             }
