@@ -321,6 +321,18 @@ class OrderWithItemsAPITest(TestCase):
         order = Order.objects.create(
             customer_name='Test Customer',
             customer_email='test@example.com',
+            customer_phone='07123456789',
+            customer_company='Test Company',
+            shipping_address_line1='1 Test Street',
+            shipping_address_line2='Unit 2',
+            shipping_city='London',
+            shipping_state='Greater London',
+            shipping_postal_code='SW1A 1AA',
+            shipping_country='UK',
+            billing_address_line1='2 Billing Road',
+            billing_city='Manchester',
+            billing_postal_code='M1 1AA',
+            billing_country='UK',
             total_amount=Decimal('25.00'),
             created_by=self.user,
         )
@@ -338,6 +350,25 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['results'][0]['id'], order.id)
+        self.assertEqual(response.data['results'][0]['customer_phone'], '07123456789')
+        self.assertEqual(response.data['results'][0]['customer_company'], 'Test Company')
+        self.assertEqual(response.data['results'][0]['shipping_address_line1'], '1 Test Street')
+        self.assertEqual(response.data['results'][0]['shipping_address_line2'], 'Unit 2')
+        self.assertEqual(response.data['results'][0]['shipping_city'], 'London')
+        self.assertEqual(response.data['results'][0]['shipping_state'], 'Greater London')
+        self.assertEqual(response.data['results'][0]['shipping_postal_code'], 'SW1A 1AA')
+        self.assertEqual(response.data['results'][0]['shipping_country'], 'UK')
+        self.assertEqual(
+            response.data['results'][0]['shipping_address'],
+            '1 Test Street, Unit 2, London, Greater London, SW1A 1AA, UK',
+        )
+        self.assertEqual(response.data['results'][0]['billing_address_line1'], '2 Billing Road')
+        self.assertEqual(response.data['results'][0]['billing_city'], 'Manchester')
+        self.assertEqual(response.data['results'][0]['billing_postal_code'], 'M1 1AA')
+        self.assertEqual(
+            response.data['results'][0]['billing_address'],
+            '2 Billing Road, Manchester, M1 1AA, UK',
+        )
         self.assertEqual(len(response.data['results'][0]['items']), 1)
         self.assertEqual(response.data['results'][0]['items'][0]['sku'], 'SKU-001')
         self.assertFalse(response.data['results'][0]['items'][0]['lable_printed'])
@@ -416,6 +447,19 @@ class OrderWithItemsAPITest(TestCase):
     def test_order_batch_create_detail_and_label_printed_flow(self):
         first_order = Order.objects.create(
             customer_name='Batch Customer 1',
+            customer_email='batch1@example.com',
+            customer_phone='07111111111',
+            customer_company='Batch Company',
+            shipping_address_line1='11 Batch Street',
+            shipping_address_line2='Suite 1',
+            shipping_city='London',
+            shipping_state='Greater London',
+            shipping_postal_code='B1 1AA',
+            shipping_country='UK',
+            billing_address_line1='11 Billing Street',
+            billing_city='Leeds',
+            billing_postal_code='LS1 1AA',
+            billing_country='UK',
             total_amount=Decimal('10.00'),
             order_source=Order.SOURCE_WEBSITE,
             courier_service_code='STD',
@@ -476,6 +520,31 @@ class OrderWithItemsAPITest(TestCase):
         self.assertIn('orders', detail_response.data)
         self.assertIn('labels', detail_response.data)
         self.assertIn('details', detail_response.data)
+        batch_order_row = next(row for row in detail_response.data['orders'] if row['id'] == first_order.id)
+        self.assertEqual(batch_order_row['customer_phone'], '07111111111')
+        self.assertEqual(batch_order_row['customer_company'], 'Batch Company')
+        self.assertEqual(batch_order_row['shipping_address_line1'], '11 Batch Street')
+        self.assertEqual(batch_order_row['shipping_address_line2'], 'Suite 1')
+        self.assertEqual(batch_order_row['shipping_city'], 'London')
+        self.assertEqual(batch_order_row['shipping_state'], 'Greater London')
+        self.assertEqual(batch_order_row['shipping_postal_code'], 'B1 1AA')
+        self.assertEqual(batch_order_row['shipping_country'], 'UK')
+        self.assertEqual(
+            batch_order_row['shipping_address'],
+            '11 Batch Street, Suite 1, London, Greater London, B1 1AA, UK',
+        )
+        self.assertEqual(batch_order_row['billing_address_line1'], '11 Billing Street')
+        self.assertEqual(batch_order_row['billing_city'], 'Leeds')
+        self.assertEqual(batch_order_row['billing_postal_code'], 'LS1 1AA')
+        self.assertEqual(batch_order_row['billing_address'], '11 Billing Street, Leeds, LS1 1AA, UK')
+        batch_label_row = next(row for row in detail_response.data['labels'] if row['order_id'] == first_order.id)
+        self.assertEqual(batch_label_row['customer_phone'], '07111111111')
+        self.assertEqual(batch_label_row['shipping_address_line1'], '11 Batch Street')
+        self.assertEqual(batch_label_row['shipping_postal_code'], 'B1 1AA')
+        self.assertEqual(
+            batch_label_row['shipping_address'],
+            '11 Batch Street, Suite 1, London, Greater London, B1 1AA, UK',
+        )
 
         orders_response = self.client.get('/api/v1/orders/')
         with_items_response = self.client.get('/api/v1/orders/with-items/?page=1')

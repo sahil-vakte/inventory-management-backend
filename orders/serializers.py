@@ -153,6 +153,8 @@ class OrderListSerializer(serializers.ModelSerializer):
     source_display = serializers.SerializerMethodField()
     shipping_label_url = serializers.SerializerMethodField()
     public_shipping_label_url = serializers.SerializerMethodField()
+    shipping_address = serializers.CharField(read_only=True)
+    billing_address = serializers.CharField(read_only=True)
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -208,7 +210,12 @@ class OrderListSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'order_number', 'external_order_id', 'customer_name', 
-            'customer_email', 'order_status', 'order_status_display',
+            'customer_email', 'customer_phone', 'customer_company',
+            'shipping_address', 'shipping_address_line1', 'shipping_address_line2',
+            'shipping_city', 'shipping_state', 'shipping_postal_code', 'shipping_country',
+            'billing_address', 'billing_address_line1', 'billing_address_line2',
+            'billing_city', 'billing_state', 'billing_postal_code', 'billing_country',
+            'order_status', 'order_status_display',
             'payment_status', 'payment_status_display', 'order_date',
             'tiaknight_order_date_raw', 'tiaknight_fetched_at',
             'total_amount', 'item_count', 'total_quantity',
@@ -573,6 +580,23 @@ class OrderBatchDetailSerializer(OrderBatchListSerializer):
                 'order_number': item.order.order_number,
                 'external_order_id': item.order.external_order_id,
                 'customer_name': item.order.customer_name,
+                'customer_email': item.order.customer_email,
+                'customer_phone': item.order.customer_phone,
+                'customer_company': item.order.customer_company,
+                'shipping_address': item.order.shipping_address,
+                'shipping_address_line1': item.order.shipping_address_line1,
+                'shipping_address_line2': item.order.shipping_address_line2,
+                'shipping_city': item.order.shipping_city,
+                'shipping_state': item.order.shipping_state,
+                'shipping_postal_code': item.order.shipping_postal_code,
+                'shipping_country': item.order.shipping_country,
+                'billing_address': item.order.billing_address,
+                'billing_address_line1': item.order.billing_address_line1,
+                'billing_address_line2': item.order.billing_address_line2,
+                'billing_city': item.order.billing_city,
+                'billing_state': item.order.billing_state,
+                'billing_postal_code': item.order.billing_postal_code,
+                'billing_country': item.order.billing_country,
                 'courier_service_name': item.order.courier_service_name,
                 'courier_service_code': item.order.courier_service_code,
                 'shipping_method': item.order.shipping_method,
