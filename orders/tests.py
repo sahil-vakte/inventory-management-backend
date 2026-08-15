@@ -153,6 +153,18 @@ class StockManagementTest(TestCase):
 
 
 class RemoteTiaknightImportAuditTest(TestCase):
+    def test_tiaknight_service_url_defaults_to_version_6(self):
+        from scripts.soap_client import normalize_service_url
+
+        self.assertEqual(
+            normalize_service_url('https://www.tiaknightfabrics.co.uk/api/soap/service'),
+            'https://www.tiaknightfabrics.co.uk/api/soap/service/6',
+        )
+        self.assertEqual(
+            normalize_service_url('https://www.tiaknightfabrics.co.uk/api/soap/service/6'),
+            'https://www.tiaknightfabrics.co.uk/api/soap/service/6',
+        )
+
     @patch('orders.services.remote_tiaknight_import.XMLOrderParser.parse_and_create_orders')
     @patch('scripts.soap_client.fetch_soap_response')
     def test_import_reads_auto_update_and_writes_received_refs_audit(self, mock_fetch, mock_parse):
@@ -191,6 +203,7 @@ class RemoteTiaknightImportAuditTest(TestCase):
                 'TIA_AUDIT_LOG_PATH': audit_path,
                 'TIA_SAVE_RAW_PAYLOAD': 'false',
                 'TIA_GAP_RECOVERY_ATTEMPTS': '0',
+                'TIA_FETCH_ORDER_DETAILS': 'false',
             }, clear=False):
                 result = import_remote_tiaknight_orders(user=None)
 
@@ -249,7 +262,7 @@ class RemoteTiaknightImportAuditTest(TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             audit_path = os.path.join(tmpdir, 'tiaknight_refs.log')
             with patch.dict(os.environ, {
-                'TIA_URL': 'https://www.tiaknightfabrics.co.uk/api/soap/service',
+                'TIA_URL': 'https://www.tiaknightfabrics.co.uk/api/soap/service/6',
                 'TIA_CLIENTID': 'Tiaknightfabrics',
                 'TIA_USERNAME': 'UserTiaknightfabrics341',
                 'TIA_PASSWORD': 'secret',
@@ -259,6 +272,7 @@ class RemoteTiaknightImportAuditTest(TestCase):
                 'TIA_SAVE_RAW_PAYLOAD': 'false',
                 'TIA_GAP_RECOVERY_ATTEMPTS': '2',
                 'TIA_GAP_RECOVERY_DELAY_SECONDS': '0',
+                'TIA_FETCH_ORDER_DETAILS': 'false',
             }, clear=False):
                 result = import_remote_tiaknight_orders(user=None)
 
@@ -277,6 +291,80 @@ class RemoteTiaknightImportAuditTest(TestCase):
             self.assertIn('orders_received=3', audit_line)
             self.assertIn('missing_sequence_refs=-', audit_line)
             self.assertIn('recovery_attempts=1', audit_line)
+
+    @patch('orders.services.remote_tiaknight_import.XMLOrderParser.parse_and_create_orders')
+    @patch('scripts.soap_client.fetch_order_response')
+    @patch('scripts.soap_client.fetch_soap_response')
+    def test_import_enriches_get_new_orders_with_v6_get_order_details(self, mock_fetch, mock_fetch_order, mock_parse):
+        from orders.services.remote_tiaknight_import import import_remote_tiaknight_orders
+
+        new_orders_xml = (
+            '<web_orders>'
+            '<web_order>'
+            '<order><order_reference>WEB238336</order_reference><order_id>238336</order_id></order>'
+            '<products><product><product_reference>SQ1011 GLD</product_reference><title>Basic title</title></product></products>'
+            '</web_order>'
+            '</web_orders>'
+        )
+        detail_order_xml = (
+            '<web_order>'
+            '<order><order_reference>WEB238336</order_reference><order_id>238336</order_id></order>'
+            '<products><product>'
+            '<product_reference>SQ1011 GLD</product_reference>'
+            '<title>Detailed title</title>'
+            '<PERSONALISATIONS><PERSONALISATION><TITLE>Custom Cutting</TITLE>'
+            '<DETAILS><DETAIL><FIELD>Enter your custom cutting requirements</FIELD><VALUE>3mx2</VALUE></DETAIL></DETAILS>'
+            '</PERSONALISATION></PERSONALISATIONS>'
+            '</product></products>'
+            '</web_order>'
+        )
+        new_orders_response = (
+            '<Envelope><Body>'
+            '<item><key>RequestID</key><value>REQ-NEW</value></item>'
+            f'<item><key>Result</key><value>{escape(new_orders_xml)}</value></item>'
+            '</Body></Envelope>'
+        ).encode('utf-8')
+        detail_response = (
+            '<Envelope><Body>'
+            f'<item><key>Result</key><value>{escape(detail_order_xml)}</value></item>'
+            '</Body></Envelope>'
+        ).encode('utf-8')
+        mock_fetch.return_value = (new_orders_response, 200)
+        mock_fetch_order.return_value = (detail_response, 200)
+        mock_parse.return_value = {
+            'created_count': 1,
+            'failed_count': 0,
+            'orders': [],
+            'errors': [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audit_path = os.path.join(tmpdir, 'tiaknight_refs.log')
+            with patch.dict(os.environ, {
+                'TIA_URL': 'https://www.tiaknightfabrics.co.uk/api/soap/service/6',
+                'TIA_CLIENTID': 'Tiaknightfabrics',
+                'TIA_USERNAME': 'UserTiaknightfabrics341',
+                'TIA_PASSWORD': 'secret',
+                'TIA_AUTO_UPDATE': 'false',
+                'TIA_FILE_TYPE': 'xml',
+                'TIA_AUDIT_LOG_PATH': audit_path,
+                'TIA_SAVE_RAW_PAYLOAD': 'false',
+                'TIA_GAP_RECOVERY_ATTEMPTS': '0',
+                'TIA_FETCH_ORDER_DETAILS': 'true',
+            }, clear=False):
+                result = import_remote_tiaknight_orders(user=None)
+
+        self.assertEqual(mock_fetch_order.call_count, 1)
+        self.assertEqual(mock_fetch.call_args.kwargs['url'], 'https://www.tiaknightfabrics.co.uk/api/soap/service/6')
+        self.assertEqual(mock_fetch_order.call_args.kwargs['order_ref'], 'WEB238336')
+        self.assertEqual(mock_fetch_order.call_args.kwargs['order_id'], '238336')
+        self.assertTrue(result['tiaknight_fetch_order_details'])
+        self.assertEqual(result['tiaknight_detail_fetches'][0]['replaced'], True)
+
+        imported_xml = mock_parse.call_args.args[0].getvalue().decode('utf-8')
+        self.assertIn('Detailed title', imported_xml)
+        self.assertIn('PERSONALISATIONS', imported_xml)
+        self.assertNotIn('Basic title', imported_xml)
 
     def test_missing_sequence_detection_uses_previous_audit_max(self):
         from orders.services.remote_tiaknight_import import detect_missing_sequence_refs
@@ -923,6 +1011,56 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(item.sample_name, 'Gold Animal Sample Request')
         self.assertEqual(item.summary, 'Tiaknight Summary Text')
         self.assertEqual(item.personalization, 'Tiaknight Personalisation Text')
+
+    def test_xml_import_saves_tiaknight_v6_nested_personalisations(self):
+        xml_data = b'''
+        <web_orders>
+          <web_order>
+            <order>
+              <order_reference>WEB-V6-PERSONAL-001</order_reference>
+              <order_state>Payment Received</order_state>
+              <order_date>2026-08-14 12:03:00</order_date>
+              <grand_total_inc>9.99</grand_total_inc>
+            </order>
+            <customer>
+              <billing_firstname>V6</billing_firstname>
+              <billing_lastname>Customer</billing_lastname>
+              <billing_email>v6-personal@example.com</billing_email>
+            </customer>
+            <payment>
+              <payment_type>Card</payment_type>
+            </payment>
+            <PRODUCTS>
+              <PRODUCT>
+                <PRODUCT_REFERENCE>SQ1011 GLD</PRODUCT_REFERENCE>
+                <TITLE>Custom Cut Fabric SQ1011 GLD</TITLE>
+                <PERSONALISATIONS>
+                  <PERSONALISATION>
+                    <TITLE>Custom Cutting</TITLE>
+                    <DETAILS>
+                      <DETAIL>
+                        <FIELD>Enter your custom cutting requirements</FIELD>
+                        <VALUE>3mx2</VALUE>
+                      </DETAIL>
+                    </DETAILS>
+                  </PERSONALISATION>
+                </PERSONALISATIONS>
+                <QUANTITY>1</QUANTITY>
+                <PRICE_INC>9.99</PRICE_INC>
+              </PRODUCT>
+            </PRODUCTS>
+          </web_order>
+        </web_orders>
+        '''
+
+        XMLOrderParser().parse_and_create_orders(io.BytesIO(xml_data), user=self.user)
+
+        item = OrderItem.objects.get(order__external_order_id='WEB-V6-PERSONAL-001')
+        self.assertEqual(item.summary, 'Custom Cutting')
+        self.assertEqual(
+            item.personalization,
+            'Custom Cutting: Enter your custom cutting requirements = 3mx2',
+        )
 
     def test_xml_reimport_updates_existing_item_summary_and_personalization_without_duplicates(self):
         order = Order.objects.create(

@@ -32,7 +32,7 @@ except Exception:
 SOAP_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope 
  xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
- xmlns:ser="http://www.tiaknightfabrics.co.uk/api/soap/service">
+ xmlns:ser="{namespace}">
 
 <soapenv:Header>
  <ser:VSAuth>
@@ -139,6 +139,7 @@ def parse_soap_response(content):
 
 def run(args):
     envelope = SOAP_TEMPLATE.format(
+        namespace=args.url.rstrip('/'),
         clientid=args.clientid,
         username=args.username,
         password=args.password,
@@ -232,7 +233,7 @@ def run(args):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--url', default=os.environ.get('TIA_URL', 'https://www.tiaknightfabrics.co.uk/api/soap/service'))
+    p.add_argument('--url', default=os.environ.get('TIA_URL', 'https://www.tiaknightfabrics.co.uk/api/soap/service/6'))
     p.add_argument('--clientid', default=os.environ.get('TIA_CLIENTID', 'Tiaknightfabrics'))
     p.add_argument('--username', default=os.environ.get('TIA_USERNAME', 'UserTiaknightfabrics341'))
     p.add_argument('--password', default=os.environ.get('TIA_PASSWORD', 'QdtsC3rm'))

@@ -52,6 +52,14 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
+            f"tiaknight_fetch_order_details: {result.get('tiaknight_fetch_order_details', False)}"
+        )
+        self.stdout.write(
+            f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
+            f"tiaknight_detail_fetches: {len(result.get('tiaknight_detail_fetches', []))}"
+        )
+        self.stdout.write(
+            f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
             f"tiaknight_request_id: {result.get('tiaknight_request_id') or '-'}"
         )
         self.stdout.write(

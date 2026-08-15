@@ -18,7 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.soap_client import DEFAULT_UA, SOAP_TEMPLATE
+from scripts.soap_client import DEFAULT_TIA_URL, DEFAULT_UA, build_get_new_orders_envelope, normalize_service_url
 
 
 def mask_secret(value):
@@ -41,7 +41,7 @@ def main():
 
     load_dotenv(dotenv_path=args.env_file)
 
-    url = os.environ.get('TIA_URL', '')
+    url = normalize_service_url(os.environ.get('TIA_URL', DEFAULT_TIA_URL))
     clientid = os.environ.get('TIA_CLIENTID', '')
     username = os.environ.get('TIA_USERNAME', '')
     password = os.environ.get('TIA_PASSWORD', '')
@@ -50,7 +50,8 @@ def main():
 
     display_password = password if args.show_password else mask_secret(password)
 
-    payload = SOAP_TEMPLATE.format(
+    payload = build_get_new_orders_envelope(
+        url=url,
         clientid=clientid,
         username=username,
         password=display_password,

@@ -37,6 +37,7 @@ def import_remote_tiaknight_orders(user=None):
     raw_payload_dir = os.environ.get('TIA_RAW_PAYLOAD_DIR', 'logs/tiaknight_payloads')
     gap_recovery_attempts = _env_int(os.environ.get('TIA_GAP_RECOVERY_ATTEMPTS'), 2)
     gap_recovery_delay_seconds = _env_float(os.environ.get('TIA_GAP_RECOVERY_DELAY_SECONDS'), 0)
+    fetch_order_details = _env_bool(os.environ.get('TIA_FETCH_ORDER_DETAILS', 'true'))
 
     if not all([url, clientid, username, password]):
         raise RemoteTiaknightConfigError(
@@ -45,7 +46,7 @@ def import_remote_tiaknight_orders(user=None):
         )
 
     try:
-        from scripts.soap_client import fetch_soap_response, extract_result_xml
+        from scripts.soap_client import fetch_soap_response, fetch_order_response, extract_result_xml
     except Exception as exc:
         raise RemoteTiaknightFetchError(f'Could not import SOAP client: {exc}') from exc
 
@@ -84,6 +85,17 @@ def import_remote_tiaknight_orders(user=None):
             auto_update=auto_update,
             file_type=file_type,
         )
+    detail_fetches = []
+    if fetch_order_details and order_refs:
+        orders_xml_str, detail_fetches = enrich_orders_with_get_order_details(
+            fetch_order_response,
+            extract_result_xml,
+            orders_xml_str,
+            url=url,
+            clientid=clientid,
+            username=username,
+            password=password,
+        )
     raw_payload_path = None
     if save_raw_payload:
         raw_payload_path = write_raw_payload(
@@ -102,6 +114,7 @@ def import_remote_tiaknight_orders(user=None):
         missing_sequence_refs=missing_sequence_refs,
         raw_payload_path=raw_payload_path,
         recovery_fetches=recovery_fetches,
+        detail_fetches=detail_fetches,
     )
 
     parser = XMLOrderParser()
@@ -117,6 +130,8 @@ def import_remote_tiaknight_orders(user=None):
     result['missing_sequence_order_refs'] = missing_sequence_refs
     result['tiaknight_gap_recovery_attempts'] = len(recovery_fetches)
     result['tiaknight_gap_recovery_fetches'] = recovery_fetches
+    result['tiaknight_fetch_order_details'] = fetch_order_details
+    result['tiaknight_detail_fetches'] = detail_fetches
     return result
 
 
@@ -165,6 +180,84 @@ def recover_missing_sequence_orders(
     return current_xml, current_refs, missing_sequence_refs, recovery_fetches
 
 
+def enrich_orders_with_get_order_details(
+    fetch_order_response,
+    extract_result_xml,
+    orders_xml_str,
+    *,
+    url,
+    clientid,
+    username,
+    password,
+):
+    """Replace GetNewOrders rows with full GetOrder detail rows when available."""
+    try:
+        root = ET.fromstring(orders_xml_str)
+    except ET.ParseError:
+        return orders_xml_str, []
+
+    order_elements = _order_elements_from_root(root)
+    detail_fetches = []
+    replacements = {}
+
+    for order_elem in order_elements:
+        ref = _order_ref_from_element(order_elem)
+        if not ref:
+            continue
+        order_id = _order_id_from_ref_or_element(ref, order_elem)
+        try:
+            soap_bytes, http_status = fetch_order_response(
+                url=url,
+                clientid=clientid,
+                username=username,
+                password=password,
+                order_ref=ref,
+                order_id=order_id,
+            )
+            detail_xml = extract_result_xml(soap_bytes)
+            detail_order_elem = _first_order_element_from_xml(detail_xml)
+            detail_ref = _order_ref_from_element(detail_order_elem) if detail_order_elem is not None else None
+            if detail_order_elem is not None and (not detail_ref or detail_ref == ref):
+                replacements[ref] = detail_order_elem
+            detail_fetches.append({
+                'order_ref': ref,
+                'order_id': order_id,
+                'http_status': http_status,
+                'detail_found': detail_order_elem is not None,
+                'replaced': ref in replacements,
+            })
+        except RuntimeError as exc:
+            detail_fetches.append({
+                'order_ref': ref,
+                'order_id': order_id,
+                'error': str(exc),
+                'detail_found': False,
+                'replaced': False,
+            })
+
+    if not replacements:
+        return orders_xml_str, detail_fetches
+
+    target_root = ET.Element('web_orders')
+    for order_elem in order_elements:
+        ref = _order_ref_from_element(order_elem)
+        target_root.append(replacements.get(ref, order_elem))
+
+    return ET.tostring(target_root, encoding='unicode'), detail_fetches
+
+
+def _first_order_element_from_xml(order_xml_str):
+    if not order_xml_str:
+        return None
+    try:
+        root = ET.fromstring(order_xml_str)
+    except ET.ParseError:
+        return None
+
+    order_elements = _order_elements_from_root(root)
+    return order_elements[0] if order_elements else None
+
+
 def extract_soap_value(soap_bytes, key):
     """Return a top-level SOAP response value by key."""
     try:
@@ -172,9 +265,11 @@ def extract_soap_value(soap_bytes, key):
     except ET.ParseError:
         return None
 
-    for item in root.iter('item'):
-        key_el = item.find('key')
-        val_el = item.find('value')
+    for item in root.iter():
+        if _local_name(item.tag).lower() != 'item':
+            continue
+        key_el = _first_direct_child(item, 'key')
+        val_el = _first_direct_child(item, 'value')
         if key_el is not None and (key_el.text or '').strip() == key:
             return (val_el.text or '').strip() if val_el is not None and val_el.text else None
     return None
@@ -244,6 +339,8 @@ def _order_elements_from_root(root):
 
 
 def _order_ref_from_element(order_elem):
+    if order_elem is None:
+        return None
     order_node = order_elem.find('order')
     if order_node is None:
         order_node = order_elem
@@ -252,6 +349,18 @@ def _order_ref_from_element(order_elem):
         or _find_text(order_node, 'order_id')
         or _find_text(order_elem, 'OrderNumber')
     )
+
+
+def _order_id_from_ref_or_element(ref, order_elem):
+    order_node = order_elem.find('order')
+    if order_node is None:
+        order_node = order_elem
+    order_id = _find_text(order_node, 'order_id') or _find_text(order_elem, 'order_id')
+    if order_id:
+        return order_id
+
+    prefix, number = _split_order_ref(ref)
+    return str(number) if number is not None else ''
 
 
 def write_import_audit(
@@ -266,6 +375,7 @@ def write_import_audit(
     missing_sequence_refs=None,
     raw_payload_path=None,
     recovery_fetches=None,
+    detail_fetches=None,
 ):
     """Append received Tiaknight order refs to a dedicated audit log."""
     path = Path(audit_log_path)
@@ -275,6 +385,7 @@ def write_import_audit(
     missing_refs = ','.join(missing_sequence_refs or []) if missing_sequence_refs else '-'
     raw_payload_note = f" raw_payload={raw_payload_path}" if raw_payload_path else ''
     recovery_note = f" recovery_attempts={len(recovery_fetches or [])}"
+    detail_note = f" detail_fetches={len(detail_fetches or [])}"
     line = (
         f"[{now:%Y-%m-%d %H:%M:%S %Z}] "
         f"http_status={http_status} request_id={request_id or '-'} "
@@ -282,6 +393,7 @@ def write_import_audit(
         f"file_type={file_type} orders_received={len(order_refs)} refs={refs}"
         f" missing_sequence_refs={missing_refs}"
         f"{recovery_note}"
+        f"{detail_note}"
         f"{raw_payload_note}\n"
     )
     with path.open('a', encoding='utf-8') as audit_log:
@@ -377,7 +489,23 @@ def _find_text(element, tag):
     child = element.find(tag)
     if child is not None and child.text:
         return child.text.strip()
+    target = tag.lower()
+    for child in list(element):
+        if _local_name(child.tag).lower() == target and child.text:
+            return child.text.strip()
     return None
+
+
+def _first_direct_child(element, local_name):
+    target = local_name.lower()
+    for child in list(element):
+        if _local_name(child.tag).lower() == target:
+            return child
+    return None
+
+
+def _local_name(tag):
+    return str(tag).rsplit('}', 1)[-1]
 
 
 def _env_bool(value):
