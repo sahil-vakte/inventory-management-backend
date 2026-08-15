@@ -1278,6 +1278,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             'missing_sequence_order_refs': result.get('missing_sequence_order_refs', []),
             'tiaknight_gap_recovery_attempts': result.get('tiaknight_gap_recovery_attempts', 0),
             'tiaknight_gap_recovery_fetches': result.get('tiaknight_gap_recovery_fetches', []),
+            'tiaknight_fetch_order_details': result.get('tiaknight_fetch_order_details', False),
+            'tiaknight_detail_fetches': result.get('tiaknight_detail_fetches', []),
         }, status=resp_status)
 
 

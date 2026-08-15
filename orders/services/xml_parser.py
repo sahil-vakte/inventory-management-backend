@@ -51,7 +51,7 @@ class XMLOrderParser:
             
             # Flexible root element detection
             # Accept various root element names (case-insensitive)
-            root_tag_lower = root.tag.lower()
+            root_tag_lower = self._local_name(root.tag).lower()
             
             # Multiple orders container (Orders, web_orders, OrdersList, etc.)
             if root_tag_lower in ['orders', 'web_orders', 'orderslist', 'orderlist']:
@@ -117,9 +117,9 @@ class XMLOrderParser:
         """Parse a single Order XML element and create Order object - supports WIMS format"""
         
         # WIMS XML has nested structure: <web_order><order>, <customer>, <payment>, <products>
-        order_node = order_elem.find('order')
-        customer_node = order_elem.find('customer')
-        payment_node = order_elem.find('payment')
+        order_node = self._direct_child_by_local_name(order_elem, 'order')
+        customer_node = self._direct_child_by_local_name(order_elem, 'customer')
+        payment_node = self._direct_child_by_local_name(order_elem, 'payment')
         
         # If no nested structure, treat order_elem as the order node (fallback)
         if order_node is None:
@@ -291,7 +291,7 @@ class XMLOrderParser:
         return (order, True)
 
     def _order_reference_from_element(self, order_elem):
-        order_node = order_elem.find('order')
+        order_node = self._direct_child_by_local_name(order_elem, 'order')
         if order_node is None:
             order_node = order_elem
         return (
@@ -302,16 +302,18 @@ class XMLOrderParser:
         )
 
     def _iter_order_item_elements(self, order_elem):
-        products_elem = order_elem.find('products')
+        products_elem = self._direct_child_by_local_name(order_elem, 'products')
         if products_elem is not None:
-            for item_elem in products_elem.findall('product'):
-                yield item_elem, True
+            for item_elem in list(products_elem):
+                if self._local_name(item_elem.tag).lower() == 'product':
+                    yield item_elem, True
             return
 
-        items_elem = order_elem.find('Items')
+        items_elem = self._direct_child_by_local_name(order_elem, 'Items')
         if items_elem is not None:
-            for item_elem in items_elem.findall('Item'):
-                yield item_elem, False
+            for item_elem in list(items_elem):
+                if self._local_name(item_elem.tag).lower() == 'item':
+                    yield item_elem, False
     
     def _parse_order_item(self, item_elem, order, is_wims_format=False):
         """Parse a single Item XML element and create OrderItem, assigning location from related product if available"""
@@ -496,6 +498,9 @@ class XMLOrderParser:
         sample_name = self._get_first_text(item_elem, [
             'sample_name', 'sample', 'SampleName', 'Sample',
         ])
+        nested_summary, nested_personalization = self._get_nested_personalisation_metadata(item_elem)
+        summary = nested_summary or summary
+        personalization = nested_personalization or personalization
 
         source_text = ' '.join(filter(None, [sku, product_name, summary, personalization, sample_name]))
         match = SAMPLE_TEXT_PATTERN.search(source_text)
@@ -523,10 +528,42 @@ class XMLOrderParser:
             'sample_name': sample_name,
             'is_sample': is_sample,
         }
+
+    def _get_nested_personalisation_metadata(self, item_elem):
+        """Extract Tiaknight v6 nested PERSONALISATIONS blocks."""
+        personalisation_nodes = [
+            child for child in item_elem.iter()
+            if self._local_name(child.tag).lower() == 'personalisation'
+        ]
+        if not personalisation_nodes:
+            return None, None
+
+        summaries = []
+        detail_lines = []
+        for personalisation_node in personalisation_nodes:
+            title = self._direct_child_text_by_local_name(personalisation_node, 'TITLE')
+            if title:
+                summaries.append(title)
+
+            for detail_node in personalisation_node.iter():
+                if self._local_name(detail_node.tag).lower() != 'detail':
+                    continue
+                field = self._direct_child_text_by_local_name(detail_node, 'FIELD')
+                value = self._direct_child_text_by_local_name(detail_node, 'VALUE')
+                if field and value:
+                    detail_lines.append(f"{title}: {field} = {value}" if title else f"{field} = {value}")
+                elif value:
+                    detail_lines.append(f"{title}: {value}" if title else value)
+
+        summary = '; '.join(dict.fromkeys(summaries)) or None
+        personalization = '; '.join(dict.fromkeys(detail_lines)) or None
+        return summary, personalization
     
     def _get_text(self, element, tag, default=None, required=False):
         """Safely extract text from XML element"""
         child = element.find(tag)
+        if child is None:
+            child = self._direct_child_by_local_name(element, tag)
         if child is not None and child.text:
             return child.text.strip()
         
@@ -547,6 +584,22 @@ class XMLOrderParser:
             if local_name in tag_lookup and child.text and child.text.strip():
                 return child.text.strip()
         return None
+
+    def _direct_child_text_by_local_name(self, element, tag):
+        child = self._direct_child_by_local_name(element, tag)
+        if child is not None and child.text and child.text.strip():
+            return child.text.strip()
+        return None
+
+    def _direct_child_by_local_name(self, element, tag):
+        target = tag.lower()
+        for child in list(element):
+            if self._local_name(child.tag).lower() == target:
+                return child
+        return None
+
+    def _local_name(self, tag):
+        return str(tag).rsplit('}', 1)[-1]
     
     def _get_decimal(self, element, tag, default=Decimal('0.00')):
         """Safely extract decimal value from XML element"""

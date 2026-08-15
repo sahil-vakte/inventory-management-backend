@@ -21,7 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.soap_client import fetch_soap_response, extract_result_xml
+from scripts.soap_client import DEFAULT_TIA_URL, fetch_soap_response, fetch_order_response, extract_result_xml
 
 
 def extract_order_refs(orders_xml):
@@ -61,11 +61,13 @@ def main():
     parser.add_argument('--out-dir', default='logs/tiaknight_debug', help='Directory for output XML files.')
     parser.add_argument('--auto-update', default=None, help='Override TIA_AUTO_UPDATE. Defaults to false.')
     parser.add_argument('--file-type', default=None, help='Override TIA_FILE_TYPE. Defaults to xml.')
+    parser.add_argument('--order-ref', default=None, help='Optional order reference for GetOrder, e.g. WEB238336.')
+    parser.add_argument('--order-id', default=None, help='Optional numeric order id for GetOrder. Derived from order-ref if omitted.')
     args = parser.parse_args()
 
     load_dotenv(dotenv_path=args.env_file)
 
-    url = os.environ.get('TIA_URL')
+    url = os.environ.get('TIA_URL') or DEFAULT_TIA_URL
     clientid = os.environ.get('TIA_CLIENTID')
     username = os.environ.get('TIA_USERNAME')
     password = os.environ.get('TIA_PASSWORD')
@@ -88,32 +90,59 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
 
-    soap_bytes, http_status = fetch_soap_response(
-        url=url,
-        clientid=clientid,
-        username=username,
-        password=password,
-        auto_update=auto_update,
-        file_type=file_type,
-    )
+    if args.order_ref:
+        soap_bytes, http_status = fetch_order_response(
+            url=url,
+            clientid=clientid,
+            username=username,
+            password=password,
+            order_ref=args.order_ref,
+            order_id=args.order_id or _numeric_order_id(args.order_ref),
+        )
+    else:
+        soap_bytes, http_status = fetch_soap_response(
+            url=url,
+            clientid=clientid,
+            username=username,
+            password=password,
+            auto_update=auto_update,
+            file_type=file_type,
+        )
     orders_xml = extract_result_xml(soap_bytes)
     order_refs = extract_order_refs(orders_xml)
 
-    raw_path = out_dir / f'tiaknight_raw_soap_{timestamp}.xml'
+    operation = f'get_order_{args.order_ref}' if args.order_ref else 'get_new_orders'
+    safe_operation = ''.join(ch for ch in operation if ch.isalnum() or ch in '-_')
+    raw_path = out_dir / f'tiaknight_raw_soap_{safe_operation}_{timestamp}.xml'
     raw_path.write_bytes(soap_bytes)
 
     orders_path = None
     if orders_xml is not None:
-        orders_path = out_dir / f'tiaknight_orders_result_{timestamp}.xml'
+        orders_path = out_dir / f'tiaknight_orders_result_{safe_operation}_{timestamp}.xml'
         orders_path.write_text(orders_xml, encoding='utf-8')
 
     print(f"HTTP status: {http_status}")
+    print(f"operation: {'GetOrder' if args.order_ref else 'GetNewOrders'}")
+    if args.order_ref:
+        print(f"order_ref: {args.order_ref}")
+        print(f"order_id: {args.order_id or _numeric_order_id(args.order_ref) or '-'}")
     print(f"auto_update: {auto_update}")
     print(f"file_type: {file_type}")
     print(f"orders_received: {len(order_refs)}")
     print(f"order_refs: {', '.join(order_refs) or '-'}")
     print(f"raw_soap_file: {raw_path}")
     print(f"orders_xml_file: {orders_path or '-'}")
+
+
+def _numeric_order_id(order_ref):
+    value = str(order_ref or '').strip()
+    digits = []
+    for char in reversed(value):
+        if char.isdigit():
+            digits.append(char)
+        else:
+            break
+    return ''.join(reversed(digits))
 
 
 if __name__ == '__main__':

@@ -16,11 +16,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SOAP_TEMPLATE = """\
+DEFAULT_TIA_URL = 'https://www.tiaknightfabrics.co.uk/api/soap/service/6'
+
+
+def normalize_service_url(url):
+    value = str(url or DEFAULT_TIA_URL).rstrip('/')
+    if value.endswith('/api/soap/service'):
+        return f'{value}/6'
+    return value
+
+
+def _service_namespace(url):
+    return normalize_service_url(url)
+
+
+GET_NEW_ORDERS_TEMPLATE = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope
  xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
- xmlns:ser="http://www.tiaknightfabrics.co.uk/api/soap/service">
+ xmlns:ser="{namespace}">
 <soapenv:Header>
  <ser:VSAuth>
   <ClientID>{clientid}</ClientID>
@@ -33,6 +47,26 @@ SOAP_TEMPLATE = """\
   <auto_update>{auto_update}</auto_update>
   <file_type>{file_type}</file_type>
  </ser:GetNewOrders>
+</soapenv:Body>
+</soapenv:Envelope>"""
+
+GET_ORDER_TEMPLATE = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope
+ xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+ xmlns:ser="{namespace}">
+<soapenv:Header>
+ <ser:VSAuth>
+  <ClientID>{clientid}</ClientID>
+  <Username>{username}</Username>
+  <Password>{password}</Password>
+ </ser:VSAuth>
+</soapenv:Header>
+<soapenv:Body>
+ <ser:GetOrder>
+  <order_ref>{order_ref}</order_ref>
+  <order_id>{order_id}</order_id>
+ </ser:GetOrder>
 </soapenv:Body>
 </soapenv:Envelope>"""
 
@@ -104,19 +138,21 @@ def _bypass_interstitial(session, url, html_text):
 
 def fetch_soap_response(url, clientid, username, password,
                         auto_update='false', file_type='xml',
-                        verify_ssl=True):
+                        verify_ssl=True, envelope=None):
     """Fetch the raw SOAP response bytes from Tiaknight.
 
     Returns (bytes, status_code) — the raw XML bytes of the HTTP response body.
     Raises RuntimeError on unrecoverable failure.
     """
+    url = normalize_service_url(url)
     session = requests.Session()
     session.headers.update({
         'User-Agent': DEFAULT_UA,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     })
 
-    envelope = SOAP_TEMPLATE.format(
+    envelope = envelope or build_get_new_orders_envelope(
+        url=url,
         clientid=clientid,
         username=username,
         password=password,
@@ -191,6 +227,48 @@ def fetch_soap_response(url, clientid, username, password,
     return resp2.content, resp2.status_code
 
 
+def build_get_new_orders_envelope(url, clientid, username, password, auto_update='false', file_type='xml'):
+    return GET_NEW_ORDERS_TEMPLATE.format(
+        namespace=_service_namespace(url),
+        clientid=clientid,
+        username=username,
+        password=password,
+        auto_update=auto_update,
+        file_type=file_type,
+    )
+
+
+def build_get_order_envelope(url, clientid, username, password, order_ref, order_id=None):
+    return GET_ORDER_TEMPLATE.format(
+        namespace=_service_namespace(url),
+        clientid=clientid,
+        username=username,
+        password=password,
+        order_ref=order_ref or '',
+        order_id=order_id or '',
+    )
+
+
+def fetch_order_response(url, clientid, username, password, order_ref, order_id=None, verify_ssl=True):
+    """Fetch a single full Tiaknight order using the v6 GetOrder operation."""
+    envelope = build_get_order_envelope(
+        url=url,
+        clientid=clientid,
+        username=username,
+        password=password,
+        order_ref=order_ref,
+        order_id=order_id,
+    )
+    return fetch_soap_response(
+        url=url,
+        clientid=clientid,
+        username=username,
+        password=password,
+        verify_ssl=verify_ssl,
+        envelope=envelope,
+    )
+
+
 def extract_result_xml(soap_bytes):
     """Parse raw SOAP bytes and return the text content of <Result><value>,
     which contains the embedded orders XML string. Returns None if not found."""
@@ -199,17 +277,31 @@ def extract_result_xml(soap_bytes):
     except ET.ParseError:
         return None
 
-    for item in root.iter('item'):
-        key_el = item.find('key')
-        val_el = item.find('value')
+    for item in root.iter():
+        if _local_name(item.tag).lower() != 'item':
+            continue
+        key_el = _first_direct_child(item, 'key')
+        val_el = _first_direct_child(item, 'value')
         if key_el is not None and (key_el.text or '').strip() == 'Result':
             return (val_el.text or '').strip() if val_el is not None else None
     return None
 
 
+def _first_direct_child(element, local_name):
+    target = local_name.lower()
+    for child in list(element):
+        if _local_name(child.tag).lower() == target:
+            return child
+    return None
+
+
+def _local_name(tag):
+    return str(tag).rsplit('}', 1)[-1]
+
+
 # ── Standalone usage ──────────────────────────────────────────────────────
 if __name__ == '__main__':
-    url = os.environ.get('TIA_URL', 'https://www.tiaknightfabrics.co.uk/api/soap/service')
+    url = os.environ.get('TIA_URL', DEFAULT_TIA_URL)
     cid = os.environ.get('TIA_CLIENTID', 'Tiaknightfabrics')
     usr = os.environ.get('TIA_USERNAME', 'UserTiaknightfabrics341')
     pwd = os.environ.get('TIA_PASSWORD', 'QdtsC3rm')
