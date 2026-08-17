@@ -270,12 +270,20 @@ def fetch_order_response(url, clientid, username, password, order_ref, order_id=
 
 
 def extract_result_xml(soap_bytes):
-    """Parse raw SOAP bytes and return the text content of <Result><value>,
-    which contains the embedded orders XML string. Returns None if not found."""
+    """Return the embedded Tiaknight order XML from a SOAP response.
+
+    Tiaknight can return the Result in two shapes:
+      - older SOAP map shape: <item><key>Result</key><value>...</value></item>
+      - v6 direct shape: <Result><WEB_ORDERS>...</WEB_ORDERS></Result>
+    """
     try:
         root = ET.fromstring(soap_bytes)
     except ET.ParseError:
         return None
+
+    for element in root.iter():
+        if _local_name(element.tag).lower() == 'result':
+            return _element_text_or_inner_xml(element)
 
     for item in root.iter():
         if _local_name(item.tag).lower() != 'item':
@@ -283,7 +291,22 @@ def extract_result_xml(soap_bytes):
         key_el = _first_direct_child(item, 'key')
         val_el = _first_direct_child(item, 'value')
         if key_el is not None and (key_el.text or '').strip() == 'Result':
-            return (val_el.text or '').strip() if val_el is not None else None
+            return _element_text_or_inner_xml(val_el) if val_el is not None else None
+    return None
+
+
+def _element_text_or_inner_xml(element):
+    if element is None:
+        return None
+
+    text = (element.text or '').strip()
+    if text:
+        return text
+
+    children = list(element)
+    if children:
+        return ''.join(ET.tostring(child, encoding='unicode') for child in children).strip()
+
     return None
 
 
