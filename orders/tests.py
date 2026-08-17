@@ -722,6 +722,43 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(second_response.status_code, 400)
         self.assertEqual(OrderBatch.objects.count(), 1)
 
+    def test_order_batch_replaces_order_membership(self):
+        first_order = Order.objects.create(customer_name='First batch order', total_amount=Decimal('10.00'))
+        second_order = Order.objects.create(customer_name='Second batch order', total_amount=Decimal('20.00'))
+        third_order = Order.objects.create(customer_name='Third batch order', total_amount=Decimal('30.00'))
+        batch = OrderBatch.objects.create(batch_number=1, batch_date='2026-08-11', created_by=self.user)
+        batch.order_links.create(order=first_order)
+        batch.order_links.create(order=second_order)
+
+        response = self.client.patch(
+            f'/api/v1/order-batches/{batch.id}/orders/',
+            {'order_ids': [second_order.id, third_order.id]},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['batch']['orders_count'], 2)
+        self.assertEqual(
+            set(batch.order_links.values_list('order_id', flat=True)),
+            {second_order.id, third_order.id},
+        )
+
+    def test_order_batch_update_rejects_orders_in_another_active_batch(self):
+        order = Order.objects.create(customer_name='Already batched order', total_amount=Decimal('10.00'))
+        first_batch = OrderBatch.objects.create(batch_number=1, batch_date='2026-08-11', created_by=self.user)
+        second_batch = OrderBatch.objects.create(batch_number=2, batch_date='2026-08-11', created_by=self.user)
+        first_batch.order_links.create(order=order)
+
+        response = self.client.patch(
+            f'/api/v1/order-batches/{second_batch.id}/orders/',
+            {'order_ids': [order.id]},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Some orders already belong to an active batch', response.data['error'])
+        self.assertEqual(second_batch.order_links.count(), 0)
+
     def test_order_detail_returns_item_lable_printed(self):
         order = Order.objects.create(
             customer_name='Detail Customer',
@@ -2872,4 +2909,3 @@ class DashboardStatsAPITest(TestCase):
         self.assertEqual(range_response.status_code, 200)
         self.assertEqual(range_response.data['orders']['total'], 1)
         self.assertEqual(range_response.data['filters']['date_from'], yesterday.isoformat())
-
