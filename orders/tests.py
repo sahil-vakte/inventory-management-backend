@@ -165,6 +165,24 @@ class RemoteTiaknightImportAuditTest(TestCase):
             'https://www.tiaknightfabrics.co.uk/api/soap/service/6',
         )
 
+    def test_extract_result_xml_supports_v6_direct_result_blocks(self):
+        from scripts.soap_client import extract_result_xml
+
+        soap_response = (
+            '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">'
+            '<SOAP-ENV:Body><GetOrderResponse><return>'
+            '<ServiceVersion>6</ServiceVersion>'
+            '<Result><WEB_ORDERS><WEB_ORDER><ORDER>'
+            '<ORDER_REFERENCE>WEB238336</ORDER_REFERENCE>'
+            '</ORDER></WEB_ORDER></WEB_ORDERS></Result>'
+            '</return></GetOrderResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>'
+        ).encode('utf-8')
+
+        result_xml = extract_result_xml(soap_response)
+
+        self.assertIn('<WEB_ORDERS>', result_xml)
+        self.assertIn('<ORDER_REFERENCE>WEB238336</ORDER_REFERENCE>', result_xml)
+
     @patch('orders.services.remote_tiaknight_import.XMLOrderParser.parse_and_create_orders')
     @patch('scripts.soap_client.fetch_soap_response')
     def test_import_reads_auto_update_and_writes_received_refs_audit(self, mock_fetch, mock_parse):
