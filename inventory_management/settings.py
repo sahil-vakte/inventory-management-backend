@@ -259,3 +259,38 @@ ROYAL_MAIL_LABEL_INCLUDE_CN = os.environ.get(
     'ROYAL_MAIL_LABEL_INCLUDE_CN',
     'false',
 ).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+# DPD Shipping API
+DPD_INTEGRATION_ENABLED = os.environ.get(
+    'DPD_INTEGRATION_ENABLED',
+    'false',
+).strip().lower() in {'1', 'true', 'yes', 'on'}
+DPD_API_BASE_URL = os.environ.get(
+    'DPD_API_BASE_URL',
+    'https://nst-preprod.dpsin.dpdgroup.com/api/v1.1',
+).rstrip('/')
+DPD_TOKEN_URL = os.environ.get('DPD_TOKEN_URL', '')
+DPD_API_KEY = os.environ.get('DPD_API_KEY', '')
+DPD_API_SECRET = os.environ.get('DPD_API_SECRET', '')
+DPD_API_TOKEN = os.environ.get('DPD_API_TOKEN', '')
+DPD_CUSTOMER_ID = os.environ.get('DPD_CUSTOMER_ID', '')
+DPD_BU_CODE = os.environ.get('DPD_BU_CODE', '')
+DPD_DEFAULT_SERVICE_CODE = os.environ.get('DPD_DEFAULT_SERVICE_CODE', '')
+DPD_DEFAULT_SERVICE_ELEMENT_CODES = [
+    value.strip()
+    for value in os.environ.get('DPD_DEFAULT_SERVICE_ELEMENT_CODES', '').split(',')
+    if value.strip()
+]
+DPD_DEFAULT_WEIGHT_GRAMS = int(os.environ.get('DPD_DEFAULT_WEIGHT_GRAMS', '100'))
+DPD_LABEL_FORMAT = os.environ.get('DPD_LABEL_FORMAT', 'PDF')
+DPD_LABEL_SIZE = os.environ.get('DPD_LABEL_SIZE', 'A6')
+DPD_SENDER_NAME = os.environ.get('DPD_SENDER_NAME', '')
+DPD_SENDER_COMPANY = os.environ.get('DPD_SENDER_COMPANY', '')
+DPD_SENDER_COUNTRY_CODE = os.environ.get('DPD_SENDER_COUNTRY_CODE', 'GB')
+DPD_SENDER_POSTCODE = os.environ.get('DPD_SENDER_POSTCODE', '')
+DPD_SENDER_CITY = os.environ.get('DPD_SENDER_CITY', '')
+DPD_SENDER_STREET = os.environ.get('DPD_SENDER_STREET', '')
+DPD_SENDER_ADDRESS2 = os.environ.get('DPD_SENDER_ADDRESS2', '')
+DPD_SENDER_CONTACT_NAME = os.environ.get('DPD_SENDER_CONTACT_NAME', '')
+DPD_SENDER_PHONE = os.environ.get('DPD_SENDER_PHONE', '')
+DPD_SENDER_EMAIL = os.environ.get('DPD_SENDER_EMAIL', '')

@@ -433,6 +433,14 @@ class RoyalMailShipmentSerializer(serializers.Serializer):
     return_label_pdf = serializers.BooleanField(required=False, default=False)
 
 
+class DPDShipmentSerializer(serializers.Serializer):
+    """Serializer for booking shipment through DPD Shipping API."""
+    weight_in_grams = serializers.IntegerField(required=False, min_value=1)
+    service_code = serializers.CharField(required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    return_label_pdf = serializers.BooleanField(required=False, default=False)
+
+
 class OrderCancelSerializer(serializers.Serializer):
     """Serializer for cancelling an order"""
     reason = serializers.CharField(required=True)
