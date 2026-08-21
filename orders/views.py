@@ -20,8 +20,16 @@ from .serializers import (
     OrderListWithItemsSerializer,
     OrderItemSerializer, OrderItemCreateSerializer, OrderStatusHistorySerializer,
     OrderConfirmSerializer, OrderShipSerializer, OrderCancelSerializer,
-    OrderStatsSerializer, RoyalMailShipmentSerializer,
+    OrderStatsSerializer, RoyalMailShipmentSerializer, DPDShipmentSerializer,
     OrderBatchListSerializer, OrderBatchCreateSerializer, OrderBatchDetailSerializer
+)
+from .services.dpd import (
+    DPDAPIError,
+    DPDConfigError,
+    DPDShippingClient,
+    extract_dpd_label_pdf,
+    extract_dpd_shipment_identifier,
+    extract_dpd_tracking_number,
 )
 from .services.royal_mail import (
     RoyalMailAPIError,
@@ -75,11 +83,24 @@ def _sanitize_royal_mail_response(data):
     return data
 
 
-def _save_shipping_label_pdf(order, pdf_content):
+def _sanitize_dpd_response(data):
+    """Remove embedded label PDFs before returning DPD payloads through the API."""
+    if isinstance(data, dict):
+        return {
+            key: _sanitize_dpd_response(value)
+            for key, value in data.items()
+            if key not in {'labelFile', 'label_file', 'label'}
+        }
+    if isinstance(data, list):
+        return [_sanitize_dpd_response(item) for item in data]
+    return data
+
+
+def _save_shipping_label_pdf(order, pdf_content, provider='royal_mail'):
     if not pdf_content:
         return None
 
-    path = f'shipping_labels/royal_mail/order-{order.id}-label.pdf'
+    path = f'shipping_labels/{provider}/order-{order.id}-label.pdf'
     if default_storage.exists(path):
         default_storage.delete(path)
     saved_path = default_storage.save(path, ContentFile(pdf_content))
@@ -601,6 +622,53 @@ class OrderViewSet(viewsets.ModelViewSet):
             'message': message,
         })
 
+    @action(detail=False, methods=['get'], url_path='dpd/config')
+    def dpd_config(self, request):
+        """Return DPD Shipping API configuration status without exposing secrets."""
+        token_present = bool(settings.DPD_API_TOKEN)
+        key_secret_present = bool(settings.DPD_API_KEY and settings.DPD_API_SECRET)
+        token_exchange_configured = bool(key_secret_present and settings.DPD_TOKEN_URL)
+        sender_configured = all([
+            settings.DPD_SENDER_NAME,
+            settings.DPD_SENDER_COUNTRY_CODE,
+            settings.DPD_SENDER_POSTCODE,
+            settings.DPD_SENDER_CITY,
+            settings.DPD_SENDER_STREET,
+        ])
+        booking_enabled = all([
+            settings.DPD_INTEGRATION_ENABLED,
+            settings.DPD_API_BASE_URL,
+            token_present or token_exchange_configured,
+            settings.DPD_CUSTOMER_ID,
+            settings.DPD_BU_CODE,
+            settings.DPD_DEFAULT_SERVICE_CODE,
+            sender_configured,
+        ])
+        return Response({
+            'configured': booking_enabled,
+            'booking_enabled': booking_enabled,
+            'sandbox_mode': 'preprod' in settings.DPD_API_BASE_URL.lower(),
+            'api_base_url': settings.DPD_API_BASE_URL,
+            'token_url_present': bool(settings.DPD_TOKEN_URL),
+            'api_key_present': bool(settings.DPD_API_KEY),
+            'api_secret_present': bool(settings.DPD_API_SECRET),
+            'api_token_present': token_present,
+            'customer_id_present': bool(settings.DPD_CUSTOMER_ID),
+            'bu_code': settings.DPD_BU_CODE,
+            'default_service_code': settings.DPD_DEFAULT_SERVICE_CODE,
+            'default_service_element_codes': settings.DPD_DEFAULT_SERVICE_ELEMENT_CODES,
+            'default_weight_grams': settings.DPD_DEFAULT_WEIGHT_GRAMS,
+            'label_format': settings.DPD_LABEL_FORMAT,
+            'label_size': settings.DPD_LABEL_SIZE,
+            'sender_configured': sender_configured,
+            'sender_country_code': settings.DPD_SENDER_COUNTRY_CODE,
+            'message': (
+                'DPD Shipping API is configured.'
+                if booking_enabled else
+                'Set DPD_INTEGRATION_ENABLED=true, DPD auth, customer/BU, service, and sender settings before booking.'
+            ),
+        })
+
     @action(detail=False, methods=['get'], url_path='royal-mail/oauth/start')
     def royal_mail_oauth_start(self, request):
         """Return the Royal Mail authorization URL for connecting the account."""
@@ -829,6 +897,111 @@ class OrderViewSet(viewsets.ModelViewSet):
             'royal_mail_response': _sanitize_royal_mail_response(response_data),
             'order': OrderDetailSerializer(order, context={'request': request}).data,
         }, status=response_status)
+
+    @action(detail=True, methods=['post'], url_path='book-dpd-shipping')
+    def book_dpd_shipping(self, request, pk=None):
+        """Create this order in DPD Shipping API and mark it shipped after a label is saved."""
+        order = self.get_object()
+        serializer = DPDShipmentSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        if order.order_status == Order.STATUS_SHIPPED:
+            return Response(
+                {
+                    'error': 'Shipment already booked for this order.',
+                    'message': 'Order is already shipped, so DPD booking was not called again.',
+                    'order_status': order.order_status,
+                    'tracking_number': order.tracking_number,
+                    'carrier': order.carrier,
+                    'label_url': _shipping_label_api_url(request, order) if order.shipping_label_file else None,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if order.shipping_label_file:
+            return Response(
+                {
+                    'error': 'Shipping label already exists for this order.',
+                    'message': 'DPD booking was not called again. Use the shipping-label endpoint to print the saved label.',
+                    'order_status': order.order_status,
+                    'tracking_number': order.tracking_number,
+                    'carrier': order.carrier,
+                    'label_url': _shipping_label_api_url(request, order),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        try:
+            dpd_client = DPDShippingClient()
+            dpd_client.ensure_configured()
+            response_data = dpd_client.create_shipment(
+                order,
+                weight_in_grams=serializer.validated_data.get('weight_in_grams'),
+                service_code=serializer.validated_data.get('service_code') or None,
+            )
+            label_pdf = extract_dpd_label_pdf(response_data)
+            if not label_pdf:
+                return Response(
+                    {
+                        'error': 'DPD did not return a printable PDF label.',
+                        'message': 'WIMS order was not marked as shipped because no label was saved.',
+                        'dpd_response': _sanitize_dpd_response(response_data),
+                    },
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            _save_shipping_label_pdf(order, label_pdf, provider='dpd')
+            tracking_number = extract_dpd_tracking_number(response_data)
+            dpd_shipment_identifier = extract_dpd_shipment_identifier(response_data)
+            service_code = serializer.validated_data.get('service_code') or settings.DPD_DEFAULT_SERVICE_CODE
+
+            note_parts = ['DPD shipment booked.']
+            if dpd_shipment_identifier:
+                note_parts.append(f'DPD shipment ID: {dpd_shipment_identifier}.')
+            if serializer.validated_data.get('notes'):
+                note_parts.append(serializer.validated_data['notes'])
+            note = ' '.join(note_parts)
+            order.internal_notes = f"{order.internal_notes}\n{note}".strip() if order.internal_notes else note
+            order.shipping_method = service_code
+            order.save(update_fields=['internal_notes', 'shipping_method', 'updated_at'])
+            order.mark_shipped(
+                tracking_number=tracking_number,
+                carrier='DPD',
+                user=request.user,
+            )
+        except DPDConfigError as exc:
+            return Response({
+                'error': str(exc),
+                'message': 'Complete the DPD .env settings before booking shipments.',
+                'config_url': '/api/v1/orders/dpd/config/',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except DPDAPIError as exc:
+            return Response(
+                {
+                    'error': str(exc),
+                    'dpd_status_code': exc.status_code,
+                    'dpd_response': _sanitize_dpd_response(exc.response_data),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if serializer.validated_data.get('return_label_pdf'):
+            return FileResponse(
+                default_storage.open(order.shipping_label_file, 'rb'),
+                content_type='application/pdf',
+                filename=f'order-{order.id}-label.pdf',
+            )
+
+        return Response({
+            'message': 'DPD shipment booked, order marked as shipped, and label saved',
+            'tracking_number': tracking_number,
+            'dpd_shipment_identifier': dpd_shipment_identifier,
+            'service_code': service_code,
+            'label_url': _shipping_label_api_url(request, order),
+            'public_label_url': _public_shipping_label_api_url(request, order),
+            'dpd_response': _sanitize_dpd_response(response_data),
+            'order': OrderDetailSerializer(order, context={'request': request}).data,
+        }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='shipping-label')
     def shipping_label(self, request, pk=None):

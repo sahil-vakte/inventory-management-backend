@@ -1542,6 +1542,192 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(invalid_response.status_code, 404)
 
     @override_settings(
+        DPD_INTEGRATION_ENABLED=True,
+        DPD_API_BASE_URL='https://nst-preprod.dpsin.dpdgroup.com/api/v1.1',
+        DPD_API_TOKEN='test-dpd-token',
+        DPD_API_KEY='',
+        DPD_API_SECRET='',
+        DPD_TOKEN_URL='',
+        DPD_CUSTOMER_ID='DPD-CUSTOMER-1',
+        DPD_BU_CODE='021',
+        DPD_DEFAULT_SERVICE_CODE='101',
+        DPD_DEFAULT_SERVICE_ELEMENT_CODES=[],
+        DPD_DEFAULT_WEIGHT_GRAMS=100,
+        DPD_LABEL_FORMAT='PDF',
+        DPD_LABEL_SIZE='A6',
+        DPD_SENDER_NAME='Civani',
+        DPD_SENDER_COMPANY='Civani Ltd',
+        DPD_SENDER_COUNTRY_CODE='GB',
+        DPD_SENDER_POSTCODE='SW1A 1AA',
+        DPD_SENDER_CITY='London',
+        DPD_SENDER_STREET='1 Sender Street',
+        DPD_SENDER_ADDRESS2='',
+        DPD_SENDER_CONTACT_NAME='Warehouse',
+        DPD_SENDER_PHONE='07123456789',
+        DPD_SENDER_EMAIL='warehouse@example.com',
+    )
+    @patch('orders.services.dpd.requests.post')
+    def test_book_dpd_shipping_creates_remote_shipment_and_marks_shipped(self, mock_post):
+        encoded_label = base64.b64encode(b'%PDF-1.4 dpd label').decode('ascii')
+        dpd_response = {
+            'transactionId': 4383,
+            'shipmentResults': [
+                {
+                    'labelFile': f'data:application/pdf;base64,{encoded_label}',
+                    'shipment': {
+                        'shipmentId': 'DPD-SHIP-1',
+                        'parcels': [{'parcelNumber': 'DPDTRACK123'}],
+                    },
+                }
+            ],
+        }
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = dpd_response
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='DPD Customer',
+            external_order_id='WEB-DPD-001',
+            customer_email='dpd@example.com',
+            customer_phone='07123456789',
+            shipping_address_line1='10 Delivery Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 2AA',
+            shipping_country='UK',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-DPD-001',
+            product_name='DPD Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-dpd-shipping/',
+            {
+                'weight_in_grams': 500,
+                'service_code': '101',
+                'notes': 'Booked from DPD API test',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, Order.STATUS_SHIPPED)
+        self.assertEqual(order.tracking_number, 'DPDTRACK123')
+        self.assertEqual(order.carrier, 'DPD')
+        self.assertEqual(order.shipping_method, '101')
+        self.assertTrue(order.shipping_label_file)
+        self.assertTrue(order.shipping_label_file.startswith('shipping_labels/dpd/'))
+        self.assertEqual(response.data['dpd_shipment_identifier'], 'DPD-SHIP-1')
+        self.assertTrue(response.data['label_url'].endswith(f'/api/v1/orders/{order.id}/shipping-label/'))
+        self.assertTrue(response.data['public_label_url'].startswith('http://testserver/'))
+        self.assertNotIn('labelFile', response.data['dpd_response']['shipmentResults'][0])
+        self.assertIn('DPD-SHIP-1', order.internal_notes)
+
+        request_payload = mock_post.call_args.kwargs['json']
+        request_headers = mock_post.call_args.kwargs['headers']
+        self.assertEqual(mock_post.call_args.args[0], 'https://nst-preprod.dpsin.dpdgroup.com/api/v1.1/shipments')
+        self.assertEqual(request_headers['Authorization'], 'Bearer test-dpd-token')
+        self.assertEqual(request_payload['buCode'], '021')
+        self.assertEqual(request_payload['customerId'], 'DPD-CUSTOMER-1')
+        shipment = request_payload['shipments'][0]
+        self.assertEqual(shipment['reference1'], 'WEB-DPD-001')
+        self.assertEqual(shipment['receiver']['zipCode'], 'SW1A 2AA')
+        self.assertEqual(shipment['parcels'][0]['weight'], 0.5)
+        self.assertEqual(shipment['service']['mainServiceCode'], '101')
+
+        label_response = self.client.get(f'/api/v1/orders/{order.id}/shipping-label/')
+        self.assertEqual(label_response.status_code, 200)
+        self.assertEqual(label_response['Content-Type'], 'application/pdf')
+        self.assertEqual(b''.join(label_response.streaming_content), b'%PDF-1.4 dpd label')
+
+    @override_settings(
+        DPD_INTEGRATION_ENABLED=False,
+        DPD_API_BASE_URL='https://nst-preprod.dpsin.dpdgroup.com/api/v1.1',
+        DPD_API_TOKEN='',
+        DPD_API_KEY='test-key',
+        DPD_API_SECRET='test-secret',
+        DPD_TOKEN_URL='',
+        DPD_CUSTOMER_ID='',
+        DPD_BU_CODE='',
+        DPD_DEFAULT_SERVICE_CODE='',
+        DPD_DEFAULT_SERVICE_ELEMENT_CODES=[],
+        DPD_DEFAULT_WEIGHT_GRAMS=100,
+        DPD_LABEL_FORMAT='PDF',
+        DPD_LABEL_SIZE='A6',
+        DPD_SENDER_NAME='',
+        DPD_SENDER_COMPANY='',
+        DPD_SENDER_COUNTRY_CODE='GB',
+        DPD_SENDER_POSTCODE='',
+        DPD_SENDER_CITY='',
+        DPD_SENDER_STREET='',
+        DPD_SENDER_ADDRESS2='',
+        DPD_SENDER_CONTACT_NAME='',
+        DPD_SENDER_PHONE='',
+        DPD_SENDER_EMAIL='',
+    )
+    def test_dpd_config_reports_missing_settings_without_exposing_secrets(self):
+        response = self.client.get('/api/v1/orders/dpd/config/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['configured'])
+        self.assertTrue(response.data['api_key_present'])
+        self.assertTrue(response.data['api_secret_present'])
+        self.assertNotIn('test-secret', str(response.data))
+
+    @override_settings(
+        DPD_INTEGRATION_ENABLED=True,
+        DPD_API_BASE_URL='https://nst-preprod.dpsin.dpdgroup.com/api/v1.1',
+        DPD_API_TOKEN='test-dpd-token',
+        DPD_API_KEY='',
+        DPD_API_SECRET='',
+        DPD_TOKEN_URL='',
+        DPD_CUSTOMER_ID='DPD-CUSTOMER-1',
+        DPD_BU_CODE='021',
+        DPD_DEFAULT_SERVICE_CODE='101',
+        DPD_DEFAULT_SERVICE_ELEMENT_CODES=[],
+        DPD_DEFAULT_WEIGHT_GRAMS=100,
+        DPD_LABEL_FORMAT='PDF',
+        DPD_LABEL_SIZE='A6',
+        DPD_SENDER_NAME='Civani',
+        DPD_SENDER_COMPANY='Civani Ltd',
+        DPD_SENDER_COUNTRY_CODE='GB',
+        DPD_SENDER_POSTCODE='SW1A 1AA',
+        DPD_SENDER_CITY='London',
+        DPD_SENDER_STREET='1 Sender Street',
+        DPD_SENDER_ADDRESS2='',
+        DPD_SENDER_CONTACT_NAME='Warehouse',
+        DPD_SENDER_PHONE='07123456789',
+        DPD_SENDER_EMAIL='warehouse@example.com',
+    )
+    @patch('orders.services.dpd.requests.post')
+    def test_book_dpd_shipping_blocks_duplicate_shipped_order(self, mock_post):
+        order = Order.objects.create(
+            customer_name='Already Shipped',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_SHIPPED,
+            tracking_number='OLDTRACK',
+            carrier='DPD',
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-dpd-shipping/',
+            {'weight_in_grams': 500},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 409)
+        mock_post.assert_not_called()
+
+    @override_settings(
         ROYAL_MAIL_API_KEY='test-api-key',
         ROYAL_MAIL_API_BASE_URL='https://api.parcel.royalmail.com/api/v1',
         ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
