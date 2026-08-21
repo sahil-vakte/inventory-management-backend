@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
+from django.db import transaction
 from django.db.models import Sum, Count, Avg, Q, Prefetch
 from django.utils import timezone
 from django.conf import settings
@@ -1625,6 +1626,82 @@ class OrderBatchViewSet(viewsets.ModelViewSet):
         batch = serializer.save()
         output = OrderBatchDetailSerializer(batch, context={'request': request})
         return Response(output.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['patch'], url_path='orders')
+    def update_orders(self, request, pk=None):
+        """Replace a batch's order membership with the supplied order IDs."""
+        if 'order_ids' not in request.data:
+            return Response(
+                {'error': 'order_ids is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        raw_order_ids = request.data['order_ids']
+        if not isinstance(raw_order_ids, list):
+            return Response(
+                {'error': 'order_ids must be a list of integers'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            order_ids = list(dict.fromkeys(int(order_id) for order_id in raw_order_ids))
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'order_ids must be a list of integers'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            batch = OrderBatch.objects.select_for_update().get(pk=pk, is_deleted=False)
+            orders = list(Order.objects.filter(id__in=order_ids))
+            found_order_ids = {order.id for order in orders}
+            missing_order_ids = [order_id for order_id in order_ids if order_id not in found_order_ids]
+            if missing_order_ids:
+                return Response(
+                    {'error': f'Orders not found: {missing_order_ids}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            conflicting_links = OrderBatchOrder.objects.filter(
+                order_id__in=order_ids,
+                batch__is_deleted=False,
+            ).exclude(batch=batch).select_related('batch', 'order')
+            if conflicting_links.exists():
+                conflicts = [
+                    {
+                        'order_id': link.order_id,
+                        'order_number': link.order.order_number,
+                        'batch_id': link.batch_id,
+                        'batch_name': link.batch.batch_name,
+                    }
+                    for link in conflicting_links
+                ]
+                return Response(
+                    {'error': 'Some orders already belong to an active batch', 'order_ids': conflicts},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            existing_order_ids = set(
+                OrderBatchOrder.objects.select_for_update()
+                .filter(batch=batch)
+                .values_list('order_id', flat=True)
+            )
+            target_order_ids = set(order_ids)
+            OrderBatchOrder.objects.filter(
+                batch=batch,
+                order_id__in=existing_order_ids - target_order_ids,
+            ).delete()
+            OrderBatchOrder.objects.bulk_create([
+                OrderBatchOrder(batch=batch, order_id=order_id)
+                for order_id in order_ids
+                if order_id not in existing_order_ids
+            ])
+
+        batch = self.get_queryset().get(pk=pk)
+        return Response({
+            'message': 'Batch orders updated successfully',
+            'batch': OrderBatchDetailSerializer(batch, context={'request': request}).data,
+        })
 
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()
