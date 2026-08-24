@@ -32,12 +32,11 @@ def extract_order_refs(orders_xml):
     except ET.ParseError:
         return []
 
-    orders = [root] if root.tag.lower() in {'order', 'web_order'} else list(root)
+    orders = [root] if _local_name(root.tag).lower() in {'order', 'web_order'} else list(root)
     refs = []
     for order_elem in orders:
-        order_node = order_elem.find('order')
-        if order_node is None:
-            order_node = order_elem
+        direct_order_node = _first_direct_child(order_elem, 'order')
+        order_node = direct_order_node if direct_order_node is not None else order_elem
         ref = (
             _find_text(order_node, 'order_reference')
             or _find_text(order_node, 'order_id')
@@ -52,7 +51,23 @@ def _find_text(element, tag):
     child = element.find(tag)
     if child is not None and child.text:
         return child.text.strip()
+    target = tag.lower()
+    for child in list(element):
+        if _local_name(child.tag).lower() == target and child.text:
+            return child.text.strip()
     return None
+
+
+def _first_direct_child(element, local_name):
+    target = local_name.lower()
+    for child in list(element):
+        if _local_name(child.tag).lower() == target:
+            return child
+    return None
+
+
+def _local_name(tag):
+    return str(tag).rsplit('}', 1)[-1]
 
 
 def main():
