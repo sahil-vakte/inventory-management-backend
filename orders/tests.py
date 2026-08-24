@@ -1811,6 +1811,128 @@ class OrderWithItemsAPITest(TestCase):
 
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,
+        DPD_API_BASE_URL='https://developers.api.dpd.co.uk',
+        DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
+        DPD_API_TOKEN='test-dpd-token',
+        DPD_API_KEY='test-client-id',
+        DPD_API_SECRET='',
+        DPD_TOKEN_URL='',
+        DPD_CUSTOMER_ID='260959',
+        DPD_BU_CODE='',
+        DPD_DEFAULT_SERVICE_CODE='11',
+        DPD_DEFAULT_SERVICE_ELEMENT_CODES=[],
+        DPD_DEFAULT_WEIGHT_GRAMS=100,
+        DPD_LABEL_FORMAT='PDF',
+        DPD_LABEL_SIZE='A6',
+        DPD_SENDER_NAME='Civani Ltd',
+        DPD_SENDER_COMPANY='Civani Ltd',
+        DPD_SENDER_COUNTRY_CODE='GB',
+        DPD_SENDER_POSTCODE='LE2 7SR',
+        DPD_SENDER_CITY='Leicester',
+        DPD_SENDER_STREET='85 Commercial Square',
+        DPD_SENDER_ADDRESS2='',
+        DPD_SENDER_CONTACT_NAME='Civani Ltd',
+        DPD_SENDER_PHONE='01162542366',
+        DPD_SENDER_EMAIL='info@tiaknight.co.uk',
+    )
+    def test_dpd_uk_config_does_not_require_bu_code(self):
+        response = self.client.get('/api/v1/orders/dpd/config/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['configured'])
+        self.assertEqual(response.data['api_mode'], 'dpd_uk')
+        self.assertEqual(response.data['bu_code'], '')
+
+    @override_settings(
+        DPD_INTEGRATION_ENABLED=True,
+        DPD_API_BASE_URL='https://developers.api.dpd.co.uk',
+        DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
+        DPD_API_TOKEN='test-dpd-token',
+        DPD_API_KEY='test-client-id',
+        DPD_API_SECRET='',
+        DPD_TOKEN_URL='',
+        DPD_CUSTOMER_ID='260959',
+        DPD_BU_CODE='',
+        DPD_DEFAULT_SERVICE_CODE='11',
+        DPD_DEFAULT_SERVICE_ELEMENT_CODES=[],
+        DPD_DEFAULT_WEIGHT_GRAMS=100,
+        DPD_LABEL_FORMAT='PDF',
+        DPD_LABEL_SIZE='A6',
+        DPD_SENDER_NAME='Civani Ltd',
+        DPD_SENDER_COMPANY='Civani Ltd',
+        DPD_SENDER_COUNTRY_CODE='GB',
+        DPD_SENDER_POSTCODE='LE2 7SR',
+        DPD_SENDER_CITY='Leicester',
+        DPD_SENDER_STREET='85 Commercial Square',
+        DPD_SENDER_ADDRESS2='',
+        DPD_SENDER_CONTACT_NAME='Civani Ltd',
+        DPD_SENDER_PHONE='01162542366',
+        DPD_SENDER_EMAIL='info@tiaknight.co.uk',
+    )
+    @patch('orders.services.dpd.requests.post')
+    def test_book_dpd_uk_shipping_uses_domestic_payload_without_bu_code(self, mock_post):
+        encoded_label = base64.b64encode(b'%PDF-1.4 dpd uk label').decode('ascii')
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'data': {
+                'consignmentNumber': 'DPDUKSHIP1',
+                'parcelNumbers': ['DPDUKTRACK1'],
+                'labelFile': encoded_label,
+            }
+        }
+        mock_post.return_value = mock_response
+
+        order = Order.objects.create(
+            customer_name='DPD UK Customer',
+            external_order_id='WEB-DPD-UK-001',
+            customer_email='dpduk@example.com',
+            customer_phone='07123456789',
+            shipping_address_line1='10 Delivery Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 2AA',
+            shipping_country='UK',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            sku='SKU-DPD-UK-001',
+            product_name='DPD UK Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-dpd-shipping/',
+            {'weight_in_grams': 500},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        request_payload = mock_post.call_args.kwargs['json']
+        request_headers = mock_post.call_args.kwargs['headers']
+        self.assertEqual(
+            mock_post.call_args.args[0],
+            'https://developers.api.dpd.co.uk/v1/customer/shipping/shipments/domestic',
+        )
+        self.assertEqual(request_headers['client-id'], 'test-client-id')
+        self.assertNotIn('buCode', request_payload)
+        self.assertNotIn('customerId', request_payload)
+        self.assertEqual(request_payload['outboundConsignment']['networkCode'], '11')
+        self.assertEqual(request_payload['outboundConsignment']['totalWeight'], 0.5)
+        self.assertEqual(
+            request_payload['outboundConsignment']['collectionDetails']['address']['postcode'],
+            'LE2 7SR',
+        )
+        self.assertEqual(
+            request_payload['outboundConsignment']['deliveryDetails']['address']['postcode'],
+            'SW1A 2AA',
+        )
+
+    @override_settings(
+        DPD_INTEGRATION_ENABLED=True,
         DPD_API_BASE_URL='https://nst-preprod.dpsin.dpdgroup.com/api/v1.1',
         DPD_CREATE_SHIPMENT_PATH='/shipments',
         DPD_API_TOKEN='test-dpd-token',

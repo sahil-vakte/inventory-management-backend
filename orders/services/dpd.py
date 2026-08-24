@@ -1,5 +1,6 @@
 import base64
 import logging
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import requests
@@ -47,6 +48,12 @@ class DPDShippingClient:
         self.label_size = settings.DPD_LABEL_SIZE
         self.timeout = timeout
 
+    @property
+    def api_mode(self):
+        if 'developers.api.dpd.co.uk' in self.base_url.lower():
+            return 'dpd_uk'
+        return 'shipping_api'
+
     def ensure_configured(self):
         missing = []
         if not self.enabled:
@@ -55,10 +62,11 @@ class DPDShippingClient:
             missing.append('DPD_API_BASE_URL')
         if not self.api_token and not (self.api_key and self.api_secret and self.token_url):
             missing.append('DPD_API_TOKEN or DPD_API_KEY + DPD_API_SECRET + DPD_TOKEN_URL')
-        if not self.customer_id:
-            missing.append('DPD_CUSTOMER_ID')
-        if not self.bu_code:
-            missing.append('DPD_BU_CODE')
+        if self.api_mode == 'shipping_api':
+            if not self.customer_id:
+                missing.append('DPD_CUSTOMER_ID')
+            if not self.bu_code:
+                missing.append('DPD_BU_CODE')
         if not self.default_service_code:
             missing.append('DPD_DEFAULT_SERVICE_CODE')
         missing.extend(self._missing_sender_settings())
@@ -96,6 +104,20 @@ class DPDShippingClient:
         return response_data
 
     def build_create_shipment_payload(self, order, *, weight_in_grams=None, service_code=None):
+        if self.api_mode == 'dpd_uk':
+            return self._build_dpd_uk_domestic_payload(
+                order,
+                weight_in_grams=weight_in_grams,
+                service_code=service_code,
+            )
+
+        return self._build_shipping_api_payload(
+            order,
+            weight_in_grams=weight_in_grams,
+            service_code=service_code,
+        )
+
+    def _build_shipping_api_payload(self, order, *, weight_in_grams=None, service_code=None):
         resolved_weight = int(weight_in_grams or self._order_weight_in_grams(order) or self.default_weight_grams)
         resolved_service = service_code or self.default_service_code
         parcel_weight_kg = max(Decimal(resolved_weight) / Decimal('1000'), Decimal('0.001'))
@@ -128,6 +150,46 @@ class DPDShippingClient:
             'buCode': self.bu_code,
             'customerId': self.customer_id,
             'shipments': [shipment],
+        }
+
+    def _build_dpd_uk_domestic_payload(self, order, *, weight_in_grams=None, service_code=None):
+        resolved_weight = int(weight_in_grams or self._order_weight_in_grams(order) or self.default_weight_grams)
+        resolved_service = service_code or self.default_service_code
+        collection_address = self._dpd_uk_address(self._sender_address(), fallback_name=settings.DPD_SENDER_NAME)
+        delivery_address = self._dpd_uk_address(self._receiver_address(order), fallback_name=order.customer_name)
+
+        return {
+            'shipmentDate': _utc_now_iso_seconds(),
+            'generateCustomsData': False,
+            'outboundConsignment': {
+                'collectionDetails': {
+                    'contactDetails': self._dpd_uk_contact(
+                        settings.DPD_SENDER_CONTACT_NAME or settings.DPD_SENDER_NAME,
+                        settings.DPD_SENDER_PHONE,
+                        settings.DPD_SENDER_EMAIL,
+                    ),
+                    'address': collection_address,
+                },
+                'deliveryDetails': {
+                    'contactDetails': self._dpd_uk_contact(
+                        order.customer_name or 'Customer',
+                        order.customer_phone,
+                        order.customer_email,
+                    ),
+                    'address': delivery_address,
+                    'notificationDetails': {
+                        'email': order.customer_email or '',
+                        'mobile': order.customer_phone or '',
+                    },
+                },
+                'networkCode': str(resolved_service),
+                'numberOfParcels': 1,
+                'totalWeight': max(float(Decimal(resolved_weight) / Decimal('1000')), 0.001),
+                'shippingRef1': self._order_reference(order),
+                'shippingRef2': order.order_number or '',
+                'shippingRef3': order.courier_service_code or '',
+                'parcelDescription': 'Goods',
+            },
         }
 
     def get_access_token(self):
@@ -213,6 +275,27 @@ class DPDShippingClient:
             ('DPD_SENDER_STREET', settings.DPD_SENDER_STREET),
         ]
         return [name for name, value in required_pairs if not value]
+
+    def _dpd_uk_address(self, address, *, fallback_name):
+        street = address.get('street') or ''
+        address2 = address.get('address2') or ''
+        return {
+            'organisation': address.get('companyName') or fallback_name or '',
+            'property': '',
+            'street': street,
+            'locality': address2,
+            'town': address.get('city') or '',
+            'county': '',
+            'postcode': address.get('zipCode') or '',
+            'countryCode': address.get('countryCode') or 'GB',
+        }
+
+    def _dpd_uk_contact(self, name, phone, email):
+        return {
+            'contactName': name or '',
+            'telephone': phone or '',
+            'email': email or '',
+        }
 
     def _order_reference(self, order):
         return (order.external_order_id or order.order_number or str(order.id)).strip()
@@ -305,3 +388,7 @@ def _find_first_value(data, keys):
             if found:
                 return found
     return None
+
+
+def _utc_now_iso_seconds():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
