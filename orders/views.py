@@ -629,6 +629,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         token_present = bool(settings.DPD_API_TOKEN)
         key_secret_present = bool(settings.DPD_API_KEY and settings.DPD_API_SECRET)
         token_exchange_configured = bool(key_secret_present and settings.DPD_TOKEN_URL)
+        api_mode = 'dpd_uk' if 'developers.api.dpd.co.uk' in settings.DPD_API_BASE_URL.lower() else 'shipping_api'
         sender_configured = all([
             settings.DPD_SENDER_NAME,
             settings.DPD_SENDER_COUNTRY_CODE,
@@ -636,18 +637,22 @@ class OrderViewSet(viewsets.ModelViewSet):
             settings.DPD_SENDER_CITY,
             settings.DPD_SENDER_STREET,
         ])
-        booking_enabled = all([
+        common_enabled = all([
             settings.DPD_INTEGRATION_ENABLED,
             settings.DPD_API_BASE_URL,
             token_present or token_exchange_configured,
-            settings.DPD_CUSTOMER_ID,
-            settings.DPD_BU_CODE,
             settings.DPD_DEFAULT_SERVICE_CODE,
             sender_configured,
         ])
+        account_enabled = True if api_mode == 'dpd_uk' else all([
+            settings.DPD_CUSTOMER_ID,
+            settings.DPD_BU_CODE,
+        ])
+        booking_enabled = common_enabled and account_enabled
         return Response({
             'configured': booking_enabled,
             'booking_enabled': booking_enabled,
+            'api_mode': api_mode,
             'sandbox_mode': 'preprod' in settings.DPD_API_BASE_URL.lower(),
             'api_base_url': settings.DPD_API_BASE_URL,
             'create_shipment_path': settings.DPD_CREATE_SHIPMENT_PATH,
