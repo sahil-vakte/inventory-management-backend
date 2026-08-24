@@ -365,13 +365,11 @@ def extract_order_references_from_xml(orders_xml_str):
     except ET.ParseError:
         return []
 
-    root_tag = root.tag.lower()
+    root_tag = _local_name(root.tag).lower()
     order_elements = [root] if root_tag in {'order', 'web_order'} else list(root)
     refs = []
     for order_elem in order_elements:
-        order_node = order_elem.find('order')
-        if order_node is None:
-            order_node = order_elem
+        order_node = _order_node_from_element(order_elem)
         ref = (
             _find_text(order_node, 'order_reference')
             or _find_text(order_node, 'order_id')
@@ -401,7 +399,7 @@ def merge_order_xml_payloads(primary_xml, secondary_xml):
     }
 
     target_root = primary_root
-    if primary_root.tag.lower() in {'order', 'web_order'}:
+    if _local_name(primary_root.tag).lower() in {'order', 'web_order'}:
         target_root = ET.Element('web_orders')
         target_root.append(primary_root)
 
@@ -416,7 +414,7 @@ def merge_order_xml_payloads(primary_xml, secondary_xml):
 
 
 def _order_elements_from_root(root):
-    if root.tag.lower() in {'order', 'web_order'}:
+    if _local_name(root.tag).lower() in {'order', 'web_order'}:
         return [root]
     return list(root)
 
@@ -424,9 +422,7 @@ def _order_elements_from_root(root):
 def _order_ref_from_element(order_elem):
     if order_elem is None:
         return None
-    order_node = order_elem.find('order')
-    if order_node is None:
-        order_node = order_elem
+    order_node = _order_node_from_element(order_elem)
     return (
         _find_text(order_node, 'order_reference')
         or _find_text(order_node, 'order_id')
@@ -435,14 +431,17 @@ def _order_ref_from_element(order_elem):
 
 
 def _order_id_from_ref_or_element(ref, order_elem):
-    order_node = order_elem.find('order')
-    if order_node is None:
-        order_node = order_elem
+    order_node = _order_node_from_element(order_elem)
     order_id = _find_text(order_node, 'order_id') or _find_text(order_elem, 'order_id')
     if order_id:
         return order_id
 
     return _order_id_from_ref(ref)
+
+
+def _order_node_from_element(order_elem):
+    order_node = _first_direct_child(order_elem, 'order')
+    return order_node if order_node is not None else order_elem
 
 
 def _order_id_from_ref(ref):

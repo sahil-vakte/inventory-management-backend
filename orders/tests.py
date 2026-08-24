@@ -258,13 +258,13 @@ class RemoteTiaknightImportAuditTest(TestCase):
             '</web_orders>'
         )
         missing_order_xml = (
-            '<web_order>'
-            '<order>'
-            '<order_reference>WEB100002</order_reference>'
-            '<order_id>100002</order_id>'
-            '<order_status>Processing Order</order_status>'
-            '</order>'
-            '</web_order>'
+            '<WEB_ORDER>'
+            '<ORDER>'
+            '<ORDER_REFERENCE>WEB100002</ORDER_REFERENCE>'
+            '<ORDER_ID>100002</ORDER_ID>'
+            '<ORDER_STATUS>Processing Order</ORDER_STATUS>'
+            '</ORDER>'
+            '</WEB_ORDER>'
         )
         first_response = (
             '<Envelope><Body>'
