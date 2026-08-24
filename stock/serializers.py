@@ -220,28 +220,51 @@ class StockBatchRollSerializer(serializers.ModelSerializer):
 class StockBatchListSerializer(serializers.ModelSerializer):
     rolls = StockBatchRollSerializer(many=True, read_only=True)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    product_image = serializers.SerializerMethodField()
+    parent_product_images = serializers.SerializerMethodField()
+    child_product_images = serializers.SerializerMethodField()
 
     class Meta:
         model = StockBatch
         fields = [
             'batch_id', 'sku', 'product_name', 'supplier',
             'created_by_username', 'batch_date', 'roll_count',
-            'total_meterage', 'rolls', 'is_deleted', 'created_at', 'updated_at'
+            'total_meterage', 'product_image', 'parent_product_images',
+            'child_product_images', 'rolls', 'is_deleted', 'created_at', 'updated_at'
         ]
         read_only_fields = fields
+
+    def get_product_image(self, obj):
+        product = getattr(getattr(obj, 'stock_item', None), 'product', None)
+        return (
+            getattr(product, 'parent_product_images', None)
+            or getattr(product, 'child_product_images', None)
+        )
+
+    def get_parent_product_images(self, obj):
+        product = getattr(getattr(obj, 'stock_item', None), 'product', None)
+        return getattr(product, 'parent_product_images', None)
+
+    def get_child_product_images(self, obj):
+        product = getattr(getattr(obj, 'stock_item', None), 'product', None)
+        return getattr(product, 'child_product_images', None)
 
 
 class StockBatchDetailSerializer(serializers.ModelSerializer):
     rolls = StockBatchRollSerializer(many=True, read_only=True)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
     stock_movement = serializers.SerializerMethodField()
+    product_image = serializers.SerializerMethodField()
+    parent_product_images = serializers.SerializerMethodField()
+    child_product_images = serializers.SerializerMethodField()
 
     class Meta:
         model = StockBatch
         fields = [
             'batch_id', 'stock_item', 'sku', 'product_name', 'supplier',
             'created_by', 'created_by_username', 'batch_date',
-            'total_meterage', 'roll_count', 'notes', 'rolls',
+            'total_meterage', 'roll_count', 'notes',
+            'product_image', 'parent_product_images', 'child_product_images', 'rolls',
             'stock_movement', 'is_deleted', 'deleted_at',
             'created_at', 'updated_at'
         ]
@@ -256,6 +279,21 @@ class StockBatchDetailSerializer(serializers.ModelSerializer):
         if not movement:
             return None
         return StockMovementSerializer(movement).data
+
+    def get_product_image(self, obj):
+        product = getattr(getattr(obj, 'stock_item', None), 'product', None)
+        return (
+            getattr(product, 'parent_product_images', None)
+            or getattr(product, 'child_product_images', None)
+        )
+
+    def get_parent_product_images(self, obj):
+        product = getattr(getattr(obj, 'stock_item', None), 'product', None)
+        return getattr(product, 'parent_product_images', None)
+
+    def get_child_product_images(self, obj):
+        product = getattr(getattr(obj, 'stock_item', None), 'product', None)
+        return getattr(product, 'child_product_images', None)
 
 
 class IncomingRollInputSerializer(serializers.Serializer):

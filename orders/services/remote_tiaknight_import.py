@@ -38,6 +38,9 @@ def import_remote_tiaknight_orders(user=None):
     gap_recovery_attempts = _env_int(os.environ.get('TIA_GAP_RECOVERY_ATTEMPTS'), 2)
     gap_recovery_delay_seconds = _env_float(os.environ.get('TIA_GAP_RECOVERY_DELAY_SECONDS'), 0)
     fetch_order_details = _env_bool(os.environ.get('TIA_FETCH_ORDER_DETAILS', 'true'))
+    recover_missing_with_get_order = _env_bool(
+        os.environ.get('TIA_RECOVER_MISSING_WITH_GET_ORDER', 'true')
+    )
 
     if not all([url, clientid, username, password]):
         raise RemoteTiaknightConfigError(
@@ -85,6 +88,23 @@ def import_remote_tiaknight_orders(user=None):
             auto_update=auto_update,
             file_type=file_type,
         )
+
+    missing_order_fetches = []
+    if recover_missing_with_get_order and missing_sequence_refs:
+        orders_xml_str, order_refs, missing_sequence_refs, missing_order_fetches = (
+            recover_missing_sequence_orders_by_get_order(
+                fetch_order_response,
+                extract_result_xml,
+                orders_xml_str,
+                audit_log_path=audit_log_path,
+                missing_sequence_refs=missing_sequence_refs,
+                url=url,
+                clientid=clientid,
+                username=username,
+                password=password,
+            )
+        )
+
     detail_fetches = []
     if fetch_order_details and order_refs:
         orders_xml_str, detail_fetches = enrich_orders_with_get_order_details(
@@ -114,6 +134,7 @@ def import_remote_tiaknight_orders(user=None):
         missing_sequence_refs=missing_sequence_refs,
         raw_payload_path=raw_payload_path,
         recovery_fetches=recovery_fetches,
+        missing_order_fetches=missing_order_fetches,
         detail_fetches=detail_fetches,
     )
 
@@ -130,6 +151,8 @@ def import_remote_tiaknight_orders(user=None):
     result['missing_sequence_order_refs'] = missing_sequence_refs
     result['tiaknight_gap_recovery_attempts'] = len(recovery_fetches)
     result['tiaknight_gap_recovery_fetches'] = recovery_fetches
+    result['tiaknight_recover_missing_with_get_order'] = recover_missing_with_get_order
+    result['tiaknight_missing_order_fetches'] = missing_order_fetches
     result['tiaknight_fetch_order_details'] = fetch_order_details
     result['tiaknight_detail_fetches'] = detail_fetches
     return result
@@ -178,6 +201,66 @@ def recover_missing_sequence_orders(
             break
 
     return current_xml, current_refs, missing_sequence_refs, recovery_fetches
+
+
+def recover_missing_sequence_orders_by_get_order(
+    fetch_order_response,
+    extract_result_xml,
+    orders_xml_str,
+    *,
+    audit_log_path,
+    missing_sequence_refs,
+    url,
+    clientid,
+    username,
+    password,
+):
+    """
+    Fetch missing sequence refs directly with GetOrder.
+
+    GetNewOrders can omit an order after Tiaknight users manually move it to
+    Processing Order, but GetOrder can still return that specific order by ref.
+    """
+    current_xml = orders_xml_str
+    missing_order_fetches = []
+
+    for ref in missing_sequence_refs:
+        order_id = _order_id_from_ref(ref)
+        try:
+            soap_bytes, http_status = fetch_order_response(
+                url=url,
+                clientid=clientid,
+                username=username,
+                password=password,
+                order_ref=ref,
+                order_id=order_id,
+            )
+            detail_xml = extract_result_xml(soap_bytes)
+            detail_order_elem = _first_order_element_from_xml(detail_xml)
+            detail_ref = _order_ref_from_element(detail_order_elem) if detail_order_elem is not None else None
+            recovered = detail_order_elem is not None and (not detail_ref or detail_ref == ref)
+            if recovered:
+                current_xml = merge_order_xml_payloads(current_xml, detail_xml)
+
+            missing_order_fetches.append({
+                'order_ref': ref,
+                'order_id': order_id,
+                'http_status': http_status,
+                'detail_found': detail_order_elem is not None,
+                'recovered': recovered,
+            })
+        except RuntimeError as exc:
+            missing_order_fetches.append({
+                'order_ref': ref,
+                'order_id': order_id,
+                'error': str(exc),
+                'detail_found': False,
+                'recovered': False,
+            })
+
+    current_refs = extract_order_references_from_xml(current_xml)
+    remaining_missing_refs = detect_missing_sequence_refs(current_refs, audit_log_path)
+    return current_xml, current_refs, remaining_missing_refs, missing_order_fetches
 
 
 def enrich_orders_with_get_order_details(
@@ -359,6 +442,10 @@ def _order_id_from_ref_or_element(ref, order_elem):
     if order_id:
         return order_id
 
+    return _order_id_from_ref(ref)
+
+
+def _order_id_from_ref(ref):
     prefix, number = _split_order_ref(ref)
     return str(number) if number is not None else ''
 
@@ -375,6 +462,7 @@ def write_import_audit(
     missing_sequence_refs=None,
     raw_payload_path=None,
     recovery_fetches=None,
+    missing_order_fetches=None,
     detail_fetches=None,
 ):
     """Append received Tiaknight order refs to a dedicated audit log."""
@@ -385,6 +473,7 @@ def write_import_audit(
     missing_refs = ','.join(missing_sequence_refs or []) if missing_sequence_refs else '-'
     raw_payload_note = f" raw_payload={raw_payload_path}" if raw_payload_path else ''
     recovery_note = f" recovery_attempts={len(recovery_fetches or [])}"
+    missing_order_note = f" missing_get_order_fetches={len(missing_order_fetches or [])}"
     detail_note = f" detail_fetches={len(detail_fetches or [])}"
     line = (
         f"[{now:%Y-%m-%d %H:%M:%S %Z}] "
@@ -393,6 +482,7 @@ def write_import_audit(
         f"file_type={file_type} orders_received={len(order_refs)} refs={refs}"
         f" missing_sequence_refs={missing_refs}"
         f"{recovery_note}"
+        f"{missing_order_note}"
         f"{detail_note}"
         f"{raw_payload_note}\n"
     )
