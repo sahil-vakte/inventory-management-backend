@@ -1668,8 +1668,9 @@ class OrderWithItemsAPITest(TestCase):
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,
         DPD_API_BASE_URL='https://nst-preprod.dpsin.dpdgroup.com/api/v1.1',
+        DPD_CREATE_SHIPMENT_PATH='/shipments',
         DPD_API_TOKEN='test-dpd-token',
-        DPD_API_KEY='',
+        DPD_API_KEY='test-client-id',
         DPD_API_SECRET='',
         DPD_TOKEN_URL='',
         DPD_CUSTOMER_ID='DPD-CUSTOMER-1',
@@ -1759,6 +1760,7 @@ class OrderWithItemsAPITest(TestCase):
         request_headers = mock_post.call_args.kwargs['headers']
         self.assertEqual(mock_post.call_args.args[0], 'https://nst-preprod.dpsin.dpdgroup.com/api/v1.1/shipments')
         self.assertEqual(request_headers['Authorization'], 'Bearer test-dpd-token')
+        self.assertEqual(request_headers['client-id'], 'test-client-id')
         self.assertEqual(request_payload['buCode'], '021')
         self.assertEqual(request_payload['customerId'], 'DPD-CUSTOMER-1')
         shipment = request_payload['shipments'][0]
@@ -1775,6 +1777,7 @@ class OrderWithItemsAPITest(TestCase):
     @override_settings(
         DPD_INTEGRATION_ENABLED=False,
         DPD_API_BASE_URL='https://nst-preprod.dpsin.dpdgroup.com/api/v1.1',
+        DPD_CREATE_SHIPMENT_PATH='/shipments',
         DPD_API_TOKEN='',
         DPD_API_KEY='test-key',
         DPD_API_SECRET='test-secret',
@@ -1809,8 +1812,9 @@ class OrderWithItemsAPITest(TestCase):
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,
         DPD_API_BASE_URL='https://nst-preprod.dpsin.dpdgroup.com/api/v1.1',
+        DPD_CREATE_SHIPMENT_PATH='/shipments',
         DPD_API_TOKEN='test-dpd-token',
-        DPD_API_KEY='',
+        DPD_API_KEY='test-client-id',
         DPD_API_SECRET='',
         DPD_TOKEN_URL='',
         DPD_CUSTOMER_ID='DPD-CUSTOMER-1',

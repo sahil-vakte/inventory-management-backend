@@ -33,6 +33,7 @@ class DPDShippingClient:
     def __init__(self, timeout=30):
         self.enabled = settings.DPD_INTEGRATION_ENABLED
         self.base_url = settings.DPD_API_BASE_URL.rstrip('/')
+        self.create_shipment_path = settings.DPD_CREATE_SHIPMENT_PATH
         self.token_url = settings.DPD_TOKEN_URL
         self.api_key = settings.DPD_API_KEY
         self.api_secret = settings.DPD_API_SECRET
@@ -71,7 +72,7 @@ class DPDShippingClient:
             weight_in_grams=weight_in_grams,
             service_code=service_code,
         )
-        url = f'{self.base_url}/shipments'
+        url = f"{self.base_url}{self._normalized_path(self.create_shipment_path)}"
         logger.info('Creating DPD shipment for local order %s', order.order_number)
 
         try:
@@ -162,11 +163,18 @@ class DPDShippingClient:
         return token
 
     def _headers(self):
-        return {
+        headers = {
             'Authorization': f'Bearer {self.get_access_token()}',
             'Content-Type': 'application/json',
             'Accept': 'application/json',
         }
+        if self.api_key:
+            headers['client-id'] = self.api_key
+        return headers
+
+    def _normalized_path(self, path):
+        value = (path or '/shipments').strip()
+        return value if value.startswith('/') else f'/{value}'
 
     def _sender_address(self):
         return {
