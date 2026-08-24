@@ -180,6 +180,28 @@ class StockBatchIncomingAPITest(TestCase):
         self.assertEqual(result['rolls'][1]['roll_number'], 2)
         self.assertEqual(result['rolls'][1]['meterage'], 50)
 
+    def test_stock_batch_detail_returns_product_images(self):
+        self.product.parent_product_images = 'https://example.com/images/parent-ab.jpg'
+        self.product.child_product_images = 'https://example.com/images/child-ab.jpg'
+        self.product.save(update_fields=['parent_product_images', 'child_product_images'])
+        batch = StockBatch.objects.create(
+            stock_item=self.stock_item,
+            sku='AB',
+            product_name='Product AB',
+            supplier='Supplier Ltd',
+            created_by=self.user,
+            total_meterage=100,
+            roll_count=1,
+        )
+        StockBatchRoll.objects.create(batch=batch, roll_number=1, meterage=100)
+
+        response = self.client.get(f'/api/v1/stock-batches/{batch.batch_id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['product_image'], 'https://example.com/images/parent-ab.jpg')
+        self.assertEqual(response.data['parent_product_images'], 'https://example.com/images/parent-ab.jpg')
+        self.assertEqual(response.data['child_product_images'], 'https://example.com/images/child-ab.jpg')
+
     def test_mark_labels_generated_updates_rolls(self):
         batch = StockBatch.objects.create(
             stock_item=self.stock_item,

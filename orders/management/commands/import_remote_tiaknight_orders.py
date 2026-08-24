@@ -52,6 +52,15 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
+            f"tiaknight_recover_missing_with_get_order: "
+            f"{result.get('tiaknight_recover_missing_with_get_order', False)}"
+        )
+        self.stdout.write(
+            f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
+            f"tiaknight_missing_order_fetches: {len(result.get('tiaknight_missing_order_fetches', []))}"
+        )
+        self.stdout.write(
+            f"[{completed_at:%Y-%m-%d %H:%M:%S %Z}] "
             f"tiaknight_fetch_order_details: {result.get('tiaknight_fetch_order_details', False)}"
         )
         self.stdout.write(

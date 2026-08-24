@@ -222,6 +222,7 @@ class RemoteTiaknightImportAuditTest(TestCase):
                 'TIA_SAVE_RAW_PAYLOAD': 'false',
                 'TIA_GAP_RECOVERY_ATTEMPTS': '0',
                 'TIA_FETCH_ORDER_DETAILS': 'false',
+                'TIA_RECOVER_MISSING_WITH_GET_ORDER': 'false',
             }, clear=False):
                 result = import_remote_tiaknight_orders(user=None)
 
@@ -238,6 +239,92 @@ class RemoteTiaknightImportAuditTest(TestCase):
             self.assertIn('orders_received=2', audit_line)
             self.assertIn('refs=WEB100001,WEB100003', audit_line)
             self.assertIn('missing_sequence_refs=WEB100002', audit_line)
+
+    @patch('orders.services.remote_tiaknight_import.XMLOrderParser.parse_and_create_orders')
+    @patch('scripts.soap_client.fetch_order_response')
+    @patch('scripts.soap_client.fetch_soap_response')
+    def test_import_recovers_missing_processing_order_with_get_order(
+        self,
+        mock_fetch,
+        mock_fetch_order,
+        mock_parse,
+    ):
+        from orders.services.remote_tiaknight_import import import_remote_tiaknight_orders
+
+        first_orders_xml = (
+            '<web_orders>'
+            '<web_order><order><order_reference>WEB100001</order_reference></order></web_order>'
+            '<web_order><order><order_reference>WEB100003</order_reference></order></web_order>'
+            '</web_orders>'
+        )
+        missing_order_xml = (
+            '<web_order>'
+            '<order>'
+            '<order_reference>WEB100002</order_reference>'
+            '<order_id>100002</order_id>'
+            '<order_status>Processing Order</order_status>'
+            '</order>'
+            '</web_order>'
+        )
+        first_response = (
+            '<Envelope><Body>'
+            '<item><key>RequestID</key><value>REQ-1</value></item>'
+            f'<item><key>Result</key><value>{escape(first_orders_xml)}</value></item>'
+            '</Body></Envelope>'
+        ).encode('utf-8')
+        detail_response = (
+            '<Envelope><Body>'
+            f'<item><key>Result</key><value>{escape(missing_order_xml)}</value></item>'
+            '</Body></Envelope>'
+        ).encode('utf-8')
+        mock_fetch.side_effect = [(first_response, 200), (first_response, 200)]
+        mock_fetch_order.return_value = (detail_response, 200)
+        mock_parse.return_value = {
+            'created_count': 3,
+            'failed_count': 0,
+            'orders': [],
+            'errors': [],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audit_path = os.path.join(tmpdir, 'tiaknight_refs.log')
+            with patch.dict(os.environ, {
+                'TIA_URL': 'https://www.tiaknightfabrics.co.uk/api/soap/service/6',
+                'TIA_CLIENTID': 'Tiaknightfabrics',
+                'TIA_USERNAME': 'UserTiaknightfabrics341',
+                'TIA_PASSWORD': 'secret',
+                'TIA_AUTO_UPDATE': 'false',
+                'TIA_FILE_TYPE': 'xml',
+                'TIA_AUDIT_LOG_PATH': audit_path,
+                'TIA_SAVE_RAW_PAYLOAD': 'false',
+                'TIA_GAP_RECOVERY_ATTEMPTS': '1',
+                'TIA_GAP_RECOVERY_DELAY_SECONDS': '0',
+                'TIA_FETCH_ORDER_DETAILS': 'false',
+                'TIA_RECOVER_MISSING_WITH_GET_ORDER': 'true',
+            }, clear=False):
+                result = import_remote_tiaknight_orders(user=None)
+
+            self.assertEqual(mock_fetch.call_count, 2)
+            self.assertEqual(mock_fetch_order.call_count, 1)
+            self.assertEqual(mock_fetch_order.call_args.kwargs['order_ref'], 'WEB100002')
+            self.assertEqual(mock_fetch_order.call_args.kwargs['order_id'], '100002')
+            self.assertEqual(result['missing_sequence_order_refs'], [])
+            self.assertEqual(set(result['received_order_refs']), {'WEB100001', 'WEB100002', 'WEB100003'})
+            self.assertTrue(result['tiaknight_recover_missing_with_get_order'])
+            self.assertEqual(result['tiaknight_missing_order_fetches'][0]['recovered'], True)
+
+            imported_xml = mock_parse.call_args.args[0].getvalue().decode('utf-8')
+            self.assertEqual(imported_xml.count('WEB100001'), 1)
+            self.assertEqual(imported_xml.count('WEB100002'), 1)
+            self.assertEqual(imported_xml.count('WEB100003'), 1)
+            self.assertIn('Processing Order', imported_xml)
+
+            with open(audit_path, encoding='utf-8') as audit_file:
+                audit_line = audit_file.read()
+            self.assertIn('orders_received=3', audit_line)
+            self.assertIn('missing_sequence_refs=-', audit_line)
+            self.assertIn('recovery_attempts=1', audit_line)
+            self.assertIn('missing_get_order_fetches=1', audit_line)
 
     @patch('orders.services.remote_tiaknight_import.XMLOrderParser.parse_and_create_orders')
     @patch('scripts.soap_client.fetch_soap_response')
