@@ -28,7 +28,9 @@ from .services.dpd import (
     DPDAPIError,
     DPDConfigError,
     DPDShippingClient,
+    extract_dpd_label_html,
     extract_dpd_label_pdf,
+    extract_dpd_parcel_numbers,
     extract_dpd_shipment_identifier,
     extract_dpd_tracking_number,
 )
@@ -98,17 +100,39 @@ def _sanitize_dpd_response(data):
 
 
 def _save_shipping_label_pdf(order, pdf_content, provider='royal_mail'):
-    if not pdf_content:
+    return _save_shipping_label_file(
+        order,
+        pdf_content,
+        provider=provider,
+        extension='pdf',
+    )
+
+
+def _save_shipping_label_file(order, content, provider='royal_mail', extension='pdf'):
+    if not content:
         return None
 
-    path = f'shipping_labels/{provider}/order-{order.id}-label.pdf'
+    path = f'shipping_labels/{provider}/order-{order.id}-label.{extension}'
     if default_storage.exists(path):
         default_storage.delete(path)
-    saved_path = default_storage.save(path, ContentFile(pdf_content))
+    saved_path = default_storage.save(path, ContentFile(content))
     order.shipping_label_file = saved_path
     order.shipping_label_downloaded_at = timezone.now()
     order.save(update_fields=['shipping_label_file', 'shipping_label_downloaded_at', 'updated_at'])
     return saved_path
+
+
+def _shipping_label_content_type(order):
+    path = str(order.shipping_label_file or '').lower()
+    if path.endswith('.html') or path.endswith('.htm'):
+        return 'text/html'
+    return 'application/pdf'
+
+
+def _shipping_label_filename(order):
+    path = str(order.shipping_label_file or '').lower()
+    extension = 'html' if path.endswith(('.html', '.htm')) else 'pdf'
+    return f'order-{order.id}-label.{extension}'
 
 
 def _label_error_payload(exc):
@@ -171,8 +195,8 @@ def public_shipping_label(request, order_id, token):
 
     return FileResponse(
         default_storage.open(order.shipping_label_file, 'rb'),
-        content_type='application/pdf',
-        filename=f'order-{order.id}-label.pdf',
+        content_type=_shipping_label_content_type(order),
+        filename=_shipping_label_filename(order),
     )
 
 
@@ -969,19 +993,43 @@ class OrderViewSet(viewsets.ModelViewSet):
                 service_code=shipping_options['service_code'],
             )
             label_pdf = extract_dpd_label_pdf(response_data)
-            if not label_pdf:
+            label_html = extract_dpd_label_html(response_data)
+            dpd_shipment_identifier = extract_dpd_shipment_identifier(response_data)
+            tracking_number = extract_dpd_tracking_number(response_data)
+            label_content = label_pdf
+            label_extension = 'pdf'
+            if not label_content and label_html:
+                label_content = label_html.encode('utf-8')
+                label_extension = 'html'
+            label_download_response = None
+            if not label_content and dpd_shipment_identifier:
+                label_content, label_extension, _label_content_type = dpd_client.get_shipment_label_file(
+                    dpd_shipment_identifier,
+                    parcel_numbers=extract_dpd_parcel_numbers(response_data),
+                )
+                label_download_response = {
+                    'source': 'dpd_label_endpoint',
+                    'shipment_id': dpd_shipment_identifier,
+                    'label_format': label_extension,
+                }
+
+            if not label_content:
                 return Response(
                     {
-                        'error': 'DPD did not return a printable PDF label.',
+                        'error': 'DPD did not return printable label output.',
                         'message': 'WIMS order was not marked as shipped because no label was saved.',
+                        'dpd_shipment_identifier': dpd_shipment_identifier,
                         'dpd_response': _sanitize_dpd_response(response_data),
                     },
                     status=status.HTTP_502_BAD_GATEWAY,
                 )
 
-            _save_shipping_label_pdf(order, label_pdf, provider='dpd')
-            tracking_number = extract_dpd_tracking_number(response_data)
-            dpd_shipment_identifier = extract_dpd_shipment_identifier(response_data)
+            _save_shipping_label_file(
+                order,
+                label_content,
+                provider='dpd',
+                extension=label_extension,
+            )
             service_code = shipping_options['service_code']
 
             note_parts = ['DPD shipment booked.']
@@ -1020,8 +1068,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         if serializer.validated_data.get('return_label_pdf'):
             return FileResponse(
                 default_storage.open(order.shipping_label_file, 'rb'),
-                content_type='application/pdf',
-                filename=f'order-{order.id}-label.pdf',
+                content_type=_shipping_label_content_type(order),
+                filename=_shipping_label_filename(order),
             )
 
         return Response({
@@ -1032,6 +1080,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             'dpd_booking_options': shipping_options,
             'label_url': _shipping_label_api_url(request, order),
             'public_label_url': _public_shipping_label_api_url(request, order),
+            'label_format': label_extension,
+            'dpd_label_response': label_download_response,
             'dpd_response': _sanitize_dpd_response(response_data),
             'order': OrderDetailSerializer(order, context={'request': request}).data,
         }, status=status.HTTP_200_OK)
@@ -1044,8 +1094,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         if order.shipping_label_file and default_storage.exists(order.shipping_label_file):
             return FileResponse(
                 default_storage.open(order.shipping_label_file, 'rb'),
-                content_type='application/pdf',
-                filename=f'order-{order.id}-label.pdf',
+                content_type=_shipping_label_content_type(order),
+                filename=_shipping_label_filename(order),
             )
 
         if not order.royal_mail_order_identifier:
@@ -1070,8 +1120,8 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return FileResponse(
             default_storage.open(order.shipping_label_file, 'rb'),
-            content_type='application/pdf',
-            filename=f'order-{order.id}-label.pdf',
+            content_type=_shipping_label_content_type(order),
+            filename=_shipping_label_filename(order),
         )
     
     @action(detail=True, methods=['post'], url_path='deliver')

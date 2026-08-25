@@ -2093,6 +2093,97 @@ class OrderWithItemsAPITest(TestCase):
         DPD_INTEGRATION_ENABLED=True,
         DPD_API_BASE_URL='https://developers.api.customers.dpd.co.uk',
         DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
+        DPD_API_TOKEN='test-dpd-token',
+        DPD_API_KEY='test-client-id',
+        DPD_API_SECRET='',
+        DPD_TOKEN_URL='',
+        DPD_CUSTOMER_ID='260959',
+        DPD_BU_CODE='',
+        DPD_DEFAULT_SERVICE_CODE='11',
+        DPD_DEFAULT_SERVICE_ELEMENT_CODES=[],
+        DPD_DEFAULT_WEIGHT_GRAMS=100,
+        DPD_LABEL_FORMAT='PDF',
+        DPD_LABEL_SIZE='A6',
+        DPD_SENDER_NAME='Civani Ltd',
+        DPD_SENDER_COMPANY='Civani Ltd',
+        DPD_SENDER_COUNTRY_CODE='GB',
+        DPD_SENDER_POSTCODE='LE2 7SR',
+        DPD_SENDER_CITY='Leicester',
+        DPD_SENDER_STREET='85 Commercial Square',
+        DPD_SENDER_ADDRESS2='',
+        DPD_SENDER_CONTACT_NAME='Civani Ltd',
+        DPD_SENDER_PHONE='01162542366',
+        DPD_SENDER_EMAIL='info@tiaknight.co.uk',
+    )
+    @patch('orders.services.dpd.requests.get')
+    @patch('orders.services.dpd.requests.post')
+    def test_book_dpd_uk_shipping_fetches_label_by_shipment_id(self, mock_post, mock_get):
+        mock_create_response = Mock(status_code=200)
+        mock_create_response.json.return_value = {
+            'data': {
+                'shipmentId': '69a0db79-9192-46f2-b4f2-75bb75f7a95c',
+                'consignments': [
+                    {
+                        'consignmentNumber': 'DPDUKSHIP1',
+                        'parcelNumber': ['15501234567890'],
+                    }
+                ],
+            }
+        }
+        mock_post.return_value = mock_create_response
+
+        mock_label_response = Mock(status_code=200)
+        mock_label_response.headers = {'Content-Type': 'text/html'}
+        mock_label_response.content = b'<html><body>DPD printable label</body></html>'
+        mock_label_response.text = '<html><body>DPD printable label</body></html>'
+        mock_get.return_value = mock_label_response
+
+        order = Order.objects.create(
+            customer_name='DPD UK Customer',
+            external_order_id='WEB-DPD-UK-002',
+            customer_email='dpduk2@example.com',
+            customer_phone='07123456789',
+            shipping_address_line1='10 Delivery Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 2AA',
+            shipping_country='UK',
+            total_amount=Decimal('10.00'),
+            order_status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-dpd-shipping/',
+            {'weight_in_grams': 300, 'service_code': 'NEXT DAY'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, Order.STATUS_SHIPPED)
+        self.assertEqual(order.tracking_number, '15501234567890')
+        self.assertEqual(order.shipping_label_file, f'shipping_labels/dpd/order-{order.id}-label.html')
+        self.assertEqual(response.data['dpd_shipment_identifier'], '69a0db79-9192-46f2-b4f2-75bb75f7a95c')
+        self.assertEqual(response.data['label_format'], 'html')
+        self.assertEqual(response.data['dpd_label_response']['source'], 'dpd_label_endpoint')
+
+        self.assertEqual(
+            mock_get.call_args.args[0],
+            'https://developers.api.customers.dpd.co.uk/v1/customer/shipping/shipments/69a0db79-9192-46f2-b4f2-75bb75f7a95c/labels',
+        )
+        self.assertEqual(mock_get.call_args.kwargs['params']['printerType'], 0)
+        self.assertEqual(mock_get.call_args.kwargs['params']['parcelNumbers'], ['15501234567890'])
+        self.assertEqual(mock_get.call_args.kwargs['headers']['Accept'], 'text/html')
+
+        label_response = self.client.get(f'/api/v1/orders/{order.id}/shipping-label/')
+        self.assertEqual(label_response.status_code, 200)
+        self.assertEqual(label_response['Content-Type'], 'text/html')
+        self.assertEqual(b''.join(label_response.streaming_content), b'<html><body>DPD printable label</body></html>')
+
+    @override_settings(
+        DPD_INTEGRATION_ENABLED=True,
+        DPD_API_BASE_URL='https://developers.api.customers.dpd.co.uk',
+        DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
         DPD_API_TOKEN='',
         DPD_API_KEY='test-client-id',
         DPD_API_SECRET='test-secret',
