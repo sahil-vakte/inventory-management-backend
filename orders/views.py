@@ -954,6 +954,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        shipping_options = None
         try:
             dpd_client = DPDShippingClient()
             dpd_client.ensure_configured()
@@ -1008,6 +1009,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {
                     'error': str(exc),
                     'dpd_status_code': exc.status_code,
+                    'dpd_booking_options': shipping_options,
                     'dpd_response': _sanitize_dpd_response(exc.response_data),
                 },
                 status=status.HTTP_502_BAD_GATEWAY,

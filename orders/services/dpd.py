@@ -145,6 +145,10 @@ class DPDShippingClient:
             'weight_in_grams': resolved_weight,
             'shipment_type': 'PARCEL',
             'service_code': resolved_service,
+            'network_code': (
+                self._dpd_uk_network_code(resolved_service)
+                if self.api_mode == 'dpd_uk' else resolved_service
+            ),
         }
 
     def build_create_shipment_payload(self, order, *, weight_in_grams=None, service_code=None):
@@ -199,6 +203,7 @@ class DPDShippingClient:
     def _build_dpd_uk_domestic_payload(self, order, *, weight_in_grams=None, service_code=None):
         resolved_weight = int(weight_in_grams or self._order_weight_in_grams(order) or self.default_weight_grams)
         resolved_service = service_code
+        network_code = self._dpd_uk_network_code(resolved_service)
         collection_address = self._dpd_uk_address(self._sender_address(), fallback_name=settings.DPD_SENDER_NAME)
         delivery_address = self._dpd_uk_address(self._receiver_address(order), fallback_name=order.customer_name)
 
@@ -226,7 +231,7 @@ class DPDShippingClient:
                         'mobile': order.customer_phone or '',
                     },
                 },
-                'networkCode': str(resolved_service),
+                'networkCode': network_code,
                 'numberOfParcels': 1,
                 'totalWeight': max(float(Decimal(resolved_weight) / Decimal('1000')), 0.001),
                 'shippingRef1': self._order_reference(order),
@@ -386,6 +391,15 @@ class DPDShippingClient:
         if delivery_code:
             return None, delivery_code
         return str(service_code).strip(), None
+
+    def _dpd_uk_network_code(self, service_code):
+        """DPD UK create-shipment expects a network key such as 1^12, not 12."""
+        value = str(service_code or '').strip()
+        if not value:
+            return value
+        if '^' in value:
+            return value
+        return f'1^{value}'
 
     def _delivery_code(self, order):
         raw_code = (
