@@ -630,13 +630,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         key_secret_present = bool(settings.DPD_API_KEY and settings.DPD_API_SECRET)
         token_exchange_configured = bool(key_secret_present and settings.DPD_TOKEN_URL)
         dpd_base_url = settings.DPD_API_BASE_URL.lower()
+        dpd_uk_api_base_url = (
+            'developers.api.customers.dpd.co.uk' in dpd_base_url
+            or 'api.customers.dpd.co.uk' in dpd_base_url
+        )
+        dpd_docs_base_url = 'developers.api.dpd.co.uk' in dpd_base_url and not dpd_uk_api_base_url
         api_mode = (
             'dpd_uk'
-            if (
-                'developers.api.dpd.co.uk' in dpd_base_url
-                or 'developers.api.customers.dpd.co.uk' in dpd_base_url
-                or 'api.customers.dpd.co.uk' in dpd_base_url
-            )
+            if dpd_uk_api_base_url
             else 'shipping_api'
         )
         sender_configured = all([
@@ -649,6 +650,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         common_enabled = all([
             settings.DPD_INTEGRATION_ENABLED,
             settings.DPD_API_BASE_URL,
+            not dpd_docs_base_url,
             token_present or token_exchange_configured,
             settings.DPD_DEFAULT_SERVICE_CODE,
             sender_configured,
@@ -663,6 +665,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             'booking_enabled': booking_enabled,
             'api_mode': api_mode,
             'sandbox_mode': 'preprod' in dpd_base_url or 'developers.api.customers.dpd.co.uk' in dpd_base_url,
+            'api_base_url_valid': not dpd_docs_base_url,
             'api_base_url': settings.DPD_API_BASE_URL,
             'create_shipment_path': settings.DPD_CREATE_SHIPMENT_PATH,
             'token_url_present': bool(settings.DPD_TOKEN_URL),
@@ -681,8 +684,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             'sender_country_code': settings.DPD_SENDER_COUNTRY_CODE,
             'message': (
                 'DPD Shipping API is configured.'
-                if booking_enabled else
+                if booking_enabled else (
+                'Set DPD_API_BASE_URL=https://developers.api.customers.dpd.co.uk; current value points to DPD documentation, not the customer API.'
+                if dpd_docs_base_url else
                 'Set DPD_INTEGRATION_ENABLED=true, DPD auth, customer/BU, service, and sender settings before booking.'
+                )
             ),
         })
 
