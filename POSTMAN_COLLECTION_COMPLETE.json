@@ -3554,7 +3554,7 @@
                     "book-dpd-shipping"
                   ]
                 },
-                "description": "Books shipment in DPD API. In DPD UK mode WIMS calls /v1/customer/shipping/shipments/domestic with Bearer token plus client-id header. WIMS saves the returned PDF label, marks the order SHIPPED only after the label is saved, and returns label_url/public_label_url for printing. DPD rules: 2501-30000g + STD -> PARCEL/11; 1-30000g + NEXT DAY -> PARCEL/12; 2501-30000g + NEXT DAY BY 12 -> PARCEL/13; 2501-30000g + SATURDAY -> PARCEL/16; 2501-30000g + NEXT DAY BY 10:30 -> PARCEL/14. Frontend may pass service_code as 11/12/etc or delivery text such as NEXT DAY. For DPD UK, WIMS sends networkCode as 1^11, 1^12, etc because DPD expects a network key in the create-shipment payload.",
+                "description": "Books shipment in DPD API. In DPD UK mode WIMS calls /v1/customer/shipping/shipments/domestic with Bearer token plus client-id header. If Create Shipment returns only shipmentId/consignment data, WIMS automatically calls the DPD labels endpoint, saves the printable label, marks the order SHIPPED only after the label is saved, and returns label_url/public_label_url for printing. DPD rules: 2501-30000g + STD -> PARCEL/11; 1-30000g + NEXT DAY -> PARCEL/12; 2501-30000g + NEXT DAY BY 12 -> PARCEL/13; 2501-30000g + SATURDAY -> PARCEL/16; 2501-30000g + NEXT DAY BY 10:30 -> PARCEL/14. Frontend may pass service_code as 11/12/etc or delivery text such as NEXT DAY. For DPD UK, WIMS sends networkCode as 1^11, 1^12, etc because DPD expects a network key in the create-shipment payload.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"weight_in_grams\": 3000,\n  \"service_code\": \"11\",\n  \"notes\": \"Booked through DPD UK API\",\n  \"return_label_pdf\": false\n}",
@@ -3585,7 +3585,7 @@
                     "shipping-label"
                   ]
                 },
-                "description": "Returns the saved DPD PDF label after Book DPD Shipping succeeds. This does not create another DPD shipment."
+                "description": "Returns the saved DPD printable label after Book DPD Shipping succeeds. DPD UK labels may be saved as printable HTML when DPD does not provide PDF output. This does not create another DPD shipment."
               },
               "response": []
             },
@@ -3600,7 +3600,7 @@
                     "{{public_label_url}}"
                   ]
                 },
-                "description": "Returns the saved DPD PDF label without Authorization. Use the public_label_url returned by Book DPD Shipping."
+                "description": "Returns the saved DPD printable label without Authorization. Use the public_label_url returned by Book DPD Shipping."
               },
               "response": []
             },
@@ -3623,7 +3623,7 @@
                     ""
                   ]
                 },
-                "description": "Returns the saved printable shipping label PDF for the order. For DPD this returns the label saved during Book DPD Shipping. For Royal Mail, if the label file is missing but royal_mail_order_identifier is saved, WIMS fetches the PDF from Royal Mail and saves it for reprint. This endpoint does not create another shipment."
+                "description": "Returns the saved printable shipping label for the order. For DPD this returns the label saved during Book DPD Shipping, which may be HTML in DPD UK mode. For Royal Mail, if the label file is missing but royal_mail_order_identifier is saved, WIMS fetches the PDF from Royal Mail and saves it for reprint. This endpoint does not create another shipment."
               },
               "response": []
             },
@@ -3638,7 +3638,7 @@
                     "{{public_label_url}}"
                   ]
                 },
-                "description": "Returns the saved printable shipping label PDF without Authorization header. Use public_label_url returned by Book Royal Mail Shipping or Book DPD Shipping. The URL is signed and only works for the saved label file."
+                "description": "Returns the saved printable shipping label without Authorization header. Use public_label_url returned by Book Royal Mail Shipping or Book DPD Shipping. The URL is signed and only works for the saved label file."
               },
               "response": []
             },

@@ -121,6 +121,56 @@ class DPDShippingClient:
         self._raise_for_messages(response_data, response.status_code)
         return response_data
 
+    def get_shipment_label_file(self, shipment_id, *, parcel_numbers=None):
+        """Fetch printable DPD UK label output for a created shipment."""
+        if not shipment_id:
+            raise DPDAPIError('DPD shipment id is required before label download')
+
+        if self.api_mode != 'dpd_uk':
+            raise DPDAPIError('DPD label download is only implemented for DPD UK mode')
+
+        url = f"{self.base_url}/v1/customer/shipping/shipments/{shipment_id}/labels"
+        params = {'printerType': 0}
+        if parcel_numbers:
+            params['parcelNumbers'] = parcel_numbers
+
+        headers = self._headers()
+        headers['Accept'] = 'text/html'
+
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=self.timeout,
+            )
+        except requests.RequestException as exc:
+            raise DPDAPIError(f'DPD label request failed: {exc}') from exc
+
+        if response.status_code >= 400:
+            raise DPDAPIError(
+                f'DPD label endpoint returned HTTP {response.status_code}',
+                status_code=response.status_code,
+                response_data=self._parse_response(response),
+            )
+
+        content_type = response.headers.get('Content-Type', '').split(';', 1)[0].lower()
+        if content_type == 'application/pdf' or response.content.startswith(b'%PDF'):
+            return response.content, 'pdf', 'application/pdf'
+        if content_type in {'text/html', 'application/xhtml+xml'} or response.text.lstrip().startswith('<'):
+            return response.content, 'html', 'text/html'
+
+        response_data = self._parse_response(response)
+        label_html = extract_dpd_label_html(response_data)
+        if label_html:
+            return label_html.encode('utf-8'), 'html', 'text/html'
+
+        raise DPDAPIError(
+            'DPD label endpoint did not return printable label output',
+            status_code=response.status_code,
+            response_data=response_data,
+        )
+
     def resolve_shipping_options(self, order, *, weight_in_grams=None, service_code=None):
         """Resolve DPD service code using WIMS DPD booking rules."""
         resolved_weight = int(weight_in_grams or self._order_weight_in_grams(order) or self.default_weight_grams)
@@ -516,11 +566,24 @@ def extract_dpd_label_pdf(response_data):
         return None
 
 
+def extract_dpd_label_html(response_data):
+    print_string = _find_first_value(response_data, {'printString', 'print_string'})
+    if print_string and str(print_string).lstrip().startswith('<'):
+        return str(print_string)
+    return None
+
+
 def extract_dpd_tracking_number(response_data):
     return _find_first_value(
         response_data,
         ('parcelNumber', 'parcelNo', 'trackingNumber', 'tracking_number', 'barcodeId', 'mpsidCckey'),
     )
+
+
+def extract_dpd_parcel_numbers(response_data):
+    values = []
+    _collect_values(response_data, {'parcelNumber', 'parcelNumbers', 'parcelNo', 'parcelNos'}, values)
+    return values
 
 
 def extract_dpd_shipment_identifier(response_data):
@@ -541,6 +604,11 @@ def _find_first_value(data, keys):
         for key in keys:
             value = data.get(key)
             if value:
+                if isinstance(value, list):
+                    found = _find_first_value(value, keys)
+                    if found:
+                        return found
+                    return str(value[0]) if value else None
                 return str(value)
         for value in data.values():
             found = _find_first_value(value, keys)
@@ -552,6 +620,21 @@ def _find_first_value(data, keys):
             if found:
                 return found
     return None
+
+
+def _collect_values(data, keys, values):
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key in keys and value:
+                if isinstance(value, list):
+                    values.extend(str(item) for item in value if item)
+                else:
+                    values.append(str(value))
+            else:
+                _collect_values(value, keys, values)
+    elif isinstance(data, list):
+        for item in data:
+            _collect_values(item, keys, values)
 
 
 def _response_looks_like_html(response_data):
