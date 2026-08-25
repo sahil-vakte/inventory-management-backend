@@ -3527,7 +3527,7 @@
                     "config"
                   ]
                 },
-                "description": "Checks whether DPD booking is configured without exposing API key, secret, or token. For DPD UK mode, expected response includes api_mode=dpd_uk, booking_enabled=true, client_id_header_present=true, create_shipment_path=/v1/customer/shipping/shipments/domestic, and does not require DPD_BU_CODE. Requires DPD_INTEGRATION_ENABLED=true, DPD_API_BASE_URL=https://developers.api.dpd.co.uk, DPD_TOKEN_URL, API key/secret, service code, and sender address settings."
+                "description": "Checks whether DPD booking is configured without exposing API key, secret, or token. For DPD UK mode, expected response includes api_mode=dpd_uk, booking_enabled=true, client_id_header_present=true, create_shipment_path=/v1/customer/shipping/shipments/domestic, and does not require DPD_BU_CODE. Requires DPD_INTEGRATION_ENABLED=true, DPD_API_BASE_URL=https://developers.api.customers.dpd.co.uk, DPD_TOKEN_URL=https://developers.api.customers.dpd.co.uk/v1/customer/auth/access, API key/secret, service code, and sender address settings."
               },
               "response": []
             },

@@ -51,7 +51,12 @@ class DPDShippingClient:
 
     @property
     def api_mode(self):
-        if 'developers.api.dpd.co.uk' in self.base_url.lower():
+        host = self.base_url.lower()
+        if (
+            'developers.api.dpd.co.uk' in host
+            or 'developers.api.customers.dpd.co.uk' in host
+            or 'api.customers.dpd.co.uk' in host
+        ):
             return 'dpd_uk'
         return 'shipping_api'
 
@@ -230,13 +235,20 @@ class DPDShippingClient:
             return self.api_token
 
         try:
-            response = requests.post(
-                self.token_url,
-                data={'grant_type': 'client_credentials'},
-                auth=(self.api_key, self.api_secret),
-                headers={'Accept': 'application/json'},
-                timeout=self.timeout,
-            )
+            if self.api_mode == 'dpd_uk':
+                response = requests.get(
+                    self.token_url,
+                    headers=self._basic_auth_headers(),
+                    timeout=self.timeout,
+                )
+            else:
+                response = requests.post(
+                    self.token_url,
+                    data={'grant_type': 'client_credentials'},
+                    auth=(self.api_key, self.api_secret),
+                    headers={'Accept': 'application/json'},
+                    timeout=self.timeout,
+                )
         except requests.RequestException as exc:
             raise DPDAPIError(f'DPD token request failed: {exc}') from exc
 
@@ -248,14 +260,31 @@ class DPDShippingClient:
                 response_data=response_data,
             )
 
-        token = _find_first_value(response_data, {'access_token', 'token', 'jwt', 'id_token'})
+        token = _find_first_value(response_data, {'accessToken', 'access_token', 'token', 'jwt', 'id_token'})
         if not token:
+            if _response_looks_like_html(response_data):
+                raise DPDAPIError(
+                    'DPD token endpoint returned HTML instead of JSON. '
+                    'Use the customer API token URL, not the DPD documentation URL.',
+                    status_code=response.status_code,
+                    response_data=response_data,
+                )
             raise DPDAPIError(
                 'DPD token response did not include an access token',
                 status_code=response.status_code,
                 response_data=response_data,
             )
         return token
+
+    def _basic_auth_headers(self):
+        encoded_credentials = base64.b64encode(
+            f'{self.api_key}:{self.api_secret}'.encode('utf-8')
+        ).decode('ascii')
+        return {
+            'Authorization': f'Basic {encoded_credentials}',
+            'Accept': 'application/json',
+            'client-id': self.api_key,
+        }
 
     def _headers(self):
         headers = {
@@ -486,6 +515,13 @@ def _find_first_value(data, keys):
             if found:
                 return found
     return None
+
+
+def _response_looks_like_html(response_data):
+    if not isinstance(response_data, dict):
+        return False
+    raw = str(response_data.get('raw') or '').lstrip().lower()
+    return raw.startswith('<!doctype html') or raw.startswith('<html')
 
 
 def _utc_now_iso_seconds():

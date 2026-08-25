@@ -1811,7 +1811,7 @@ class OrderWithItemsAPITest(TestCase):
 
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,
-        DPD_API_BASE_URL='https://developers.api.dpd.co.uk',
+        DPD_API_BASE_URL='https://developers.api.customers.dpd.co.uk',
         DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
         DPD_API_TOKEN='test-dpd-token',
         DPD_API_KEY='test-client-id',
@@ -1845,7 +1845,7 @@ class OrderWithItemsAPITest(TestCase):
 
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,
-        DPD_API_BASE_URL='https://developers.api.dpd.co.uk',
+        DPD_API_BASE_URL='https://developers.api.customers.dpd.co.uk',
         DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
         DPD_API_TOKEN='test-dpd-token',
         DPD_API_KEY='test-client-id',
@@ -1908,7 +1908,7 @@ class OrderWithItemsAPITest(TestCase):
 
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,
-        DPD_API_BASE_URL='https://developers.api.dpd.co.uk',
+        DPD_API_BASE_URL='https://developers.api.customers.dpd.co.uk',
         DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
         DPD_API_TOKEN='test-dpd-token',
         DPD_API_KEY='test-client-id',
@@ -1947,7 +1947,7 @@ class OrderWithItemsAPITest(TestCase):
 
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,
-        DPD_API_BASE_URL='https://developers.api.dpd.co.uk',
+        DPD_API_BASE_URL='https://developers.api.customers.dpd.co.uk',
         DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
         DPD_API_TOKEN='test-dpd-token',
         DPD_API_KEY='test-client-id',
@@ -2017,7 +2017,7 @@ class OrderWithItemsAPITest(TestCase):
         request_headers = mock_post.call_args.kwargs['headers']
         self.assertEqual(
             mock_post.call_args.args[0],
-            'https://developers.api.dpd.co.uk/v1/customer/shipping/shipments/domestic',
+            'https://developers.api.customers.dpd.co.uk/v1/customer/shipping/shipments/domestic',
         )
         self.assertEqual(request_headers['client-id'], 'test-client-id')
         self.assertNotIn('buCode', request_payload)
@@ -2032,6 +2032,52 @@ class OrderWithItemsAPITest(TestCase):
             request_payload['outboundConsignment']['deliveryDetails']['address']['postcode'],
             'SW1A 2AA',
         )
+
+    @override_settings(
+        DPD_INTEGRATION_ENABLED=True,
+        DPD_API_BASE_URL='https://developers.api.customers.dpd.co.uk',
+        DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
+        DPD_API_TOKEN='',
+        DPD_API_KEY='test-client-id',
+        DPD_API_SECRET='test-secret',
+        DPD_TOKEN_URL='https://developers.api.customers.dpd.co.uk/v1/customer/auth/access',
+        DPD_CUSTOMER_ID='260959',
+        DPD_BU_CODE='',
+        DPD_DEFAULT_SERVICE_CODE='11',
+        DPD_DEFAULT_SERVICE_ELEMENT_CODES=[],
+        DPD_DEFAULT_WEIGHT_GRAMS=100,
+        DPD_LABEL_FORMAT='PDF',
+        DPD_LABEL_SIZE='A6',
+        DPD_SENDER_NAME='Civani Ltd',
+        DPD_SENDER_COMPANY='Civani Ltd',
+        DPD_SENDER_COUNTRY_CODE='GB',
+        DPD_SENDER_POSTCODE='LE2 7SR',
+        DPD_SENDER_CITY='Leicester',
+        DPD_SENDER_STREET='85 Commercial Square',
+        DPD_SENDER_ADDRESS2='',
+        DPD_SENDER_CONTACT_NAME='Civani Ltd',
+        DPD_SENDER_PHONE='01162542366',
+        DPD_SENDER_EMAIL='info@tiaknight.co.uk',
+    )
+    @patch('orders.services.dpd.requests.get')
+    def test_dpd_uk_access_token_uses_get_basic_auth_and_access_token_field(self, mock_get):
+        from orders.services.dpd import DPDShippingClient
+
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {'data': {'accessToken': 'jwt-token'}}
+        mock_get.return_value = mock_response
+
+        token = DPDShippingClient().get_access_token()
+
+        self.assertEqual(token, 'jwt-token')
+        self.assertEqual(
+            mock_get.call_args.args[0],
+            'https://developers.api.customers.dpd.co.uk/v1/customer/auth/access',
+        )
+        request_headers = mock_get.call_args.kwargs['headers']
+        self.assertEqual(request_headers['Accept'], 'application/json')
+        self.assertEqual(request_headers['client-id'], 'test-client-id')
+        self.assertTrue(request_headers['Authorization'].startswith('Basic '))
 
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,
