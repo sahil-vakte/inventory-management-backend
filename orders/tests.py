@@ -1928,6 +1928,7 @@ class OrderWithItemsAPITest(TestCase):
 
                 self.assertEqual(options['shipment_type'], 'PARCEL')
                 self.assertEqual(options['service_code'], expected_service_code)
+                self.assertEqual(options['network_code'], f'1^{expected_service_code}')
                 self.assertEqual(options['weight_in_grams'], 3000)
 
         next_day_order = Order.objects.create(
@@ -1938,7 +1939,14 @@ class OrderWithItemsAPITest(TestCase):
         )
         next_day_options = client.resolve_shipping_options(next_day_order, weight_in_grams=1)
         self.assertEqual(next_day_options['service_code'], '12')
+        self.assertEqual(next_day_options['network_code'], '1^12')
         self.assertEqual(next_day_options['shipment_type'], 'PARCEL')
+        next_day_payload = client.build_create_shipment_payload(
+            next_day_order,
+            weight_in_grams=300,
+            service_code=next_day_options['service_code'],
+        )
+        self.assertEqual(next_day_payload['outboundConsignment']['networkCode'], '1^12')
 
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,
@@ -2056,8 +2064,10 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(request_headers['client-id'], 'test-client-id')
         self.assertNotIn('buCode', request_payload)
         self.assertNotIn('customerId', request_payload)
-        self.assertEqual(request_payload['outboundConsignment']['networkCode'], '11')
+        self.assertEqual(request_payload['outboundConsignment']['networkCode'], '1^11')
         self.assertEqual(request_payload['outboundConsignment']['totalWeight'], 0.5)
+        self.assertEqual(response.data['dpd_booking_options']['service_code'], '11')
+        self.assertEqual(response.data['dpd_booking_options']['network_code'], '1^11')
         self.assertEqual(
             request_payload['outboundConsignment']['collectionDetails']['address']['postcode'],
             'LE2 7SR',
