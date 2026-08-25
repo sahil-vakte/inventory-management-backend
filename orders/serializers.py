@@ -8,7 +8,10 @@ from .models import Order, OrderItem, OrderBatch, OrderBatchOrder, OrderStatusHi
 from stock.serializers import StockItemListSerializer
 from stock.sku_utils import normalize_sku_reference
 from products.serializers import get_product_child_product_url, get_product_weight_kg
+from .services.courier import courier_service_code
+from .services.dpd import DPDShippingClient
 from .services.label_links import make_public_label_token
+from .services.royal_mail import RoyalMailClickDropClient
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -151,6 +154,7 @@ class OrderListSerializer(serializers.ModelSerializer):
     batch_id = serializers.SerializerMethodField()
     batch_name = serializers.SerializerMethodField()
     source_display = serializers.SerializerMethodField()
+    shipping_service = serializers.SerializerMethodField()
     shipping_label_url = serializers.SerializerMethodField()
     public_shipping_label_url = serializers.SerializerMethodField()
     shipping_address = serializers.CharField(read_only=True)
@@ -191,6 +195,9 @@ class OrderListSerializer(serializers.ModelSerializer):
     def get_source_display(self, obj):
         return get_order_source_display_value(obj)
 
+    def get_shipping_service(self, obj):
+        return get_order_shipping_service(obj)
+
     def get_shipping_label_url(self, obj):
         if not obj.shipping_label_file and not obj.royal_mail_order_identifier:
             return None
@@ -221,6 +228,7 @@ class OrderListSerializer(serializers.ModelSerializer):
             'total_amount', 'item_count', 'total_quantity',
             'total_weight_gm',
             'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code',
+            'shipping_service',
             'royal_mail_order_identifier', 'shipping_label_file',
             'shipping_label_downloaded_at', 'shipping_label_url',
             'public_shipping_label_url',
@@ -270,6 +278,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     batch_id = serializers.SerializerMethodField()
     batch_name = serializers.SerializerMethodField()
     source_display = serializers.SerializerMethodField()
+    shipping_service = serializers.SerializerMethodField()
     shipping_label_url = serializers.SerializerMethodField()
     public_shipping_label_url = serializers.SerializerMethodField()
 
@@ -307,6 +316,9 @@ class OrderDetailSerializer(serializers.ModelSerializer):
 
     def get_source_display(self, obj):
         return get_order_source_display_value(obj)
+
+    def get_shipping_service(self, obj):
+        return get_order_shipping_service(obj)
 
     def get_shipping_label_url(self, obj):
         if not obj.shipping_label_file and not obj.royal_mail_order_identifier:
@@ -658,6 +670,80 @@ def order_total_weight_gm(order):
         unit_weight = get_product_weight_kg(getattr(stock_item, 'product', None))
         total += unit_weight * Decimal(item.quantity or 0)
     return weight_kg_to_gm(total)
+
+
+def get_order_shipping_service(order):
+    weight_in_grams = order_total_weight_gm(order)
+    delivery_method = get_order_delivery_method(order)
+    if not delivery_method:
+        return {
+            'provider': None,
+            'delivery_method': '',
+            'weight_in_grams': weight_in_grams,
+            'message': 'No courier/delivery method is available for this order.',
+        }
+
+    for resolver in (get_dpd_shipping_service, get_royal_mail_shipping_service):
+        service = resolver(order, weight_in_grams)
+        if service:
+            return service
+
+    return {
+        'provider': None,
+        'delivery_method': delivery_method,
+        'weight_in_grams': weight_in_grams,
+        'message': 'No shipping rule matched this order.',
+    }
+
+
+def get_dpd_shipping_service(order, weight_in_grams):
+    try:
+        options = DPDShippingClient().resolve_shipping_options(
+            order,
+            weight_in_grams=weight_in_grams or None,
+        )
+    except (TypeError, ValueError):
+        return None
+
+    return {
+        'provider': 'DPD',
+        'delivery_method': get_order_delivery_method(order),
+        'weight_in_grams': options['weight_in_grams'],
+        'shipment_type': options.get('shipment_type'),
+        'service_code': options.get('service_code'),
+        'network_code': options.get('network_code'),
+        'booking_url': f'/api/v1/orders/{order.id}/book-dpd-shipping/',
+    }
+
+
+def get_royal_mail_shipping_service(order, weight_in_grams):
+    try:
+        options = RoyalMailClickDropClient().resolve_shipping_options(
+            order,
+            weight_in_grams=weight_in_grams or None,
+        )
+    except (TypeError, ValueError):
+        return None
+
+    return {
+        'provider': 'Royal Mail',
+        'delivery_method': get_order_delivery_method(order),
+        'weight_in_grams': options['weight_in_grams'],
+        'shipment_type': options.get('package_format_identifier'),
+        'package_format_identifier': options.get('package_format_identifier'),
+        'service_code': options.get('service_code'),
+        'booking_url': f'/api/v1/orders/{order.id}/book-royal-mail-shipping/',
+    }
+
+
+def get_order_delivery_method(order):
+    return (
+        order.courier_service_code
+        or courier_service_code(order.courier_service_name)
+        or courier_service_code(order.shipping_method)
+        or order.shipping_method
+        or ''
+    )
 
 
 def get_active_order_batch(order):

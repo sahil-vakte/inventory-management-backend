@@ -923,6 +923,91 @@ class OrderWithItemsAPITest(TestCase):
         order_row = next(row for row in list_response.data['results'] if row['id'] == order.id)
         self.assertEqual(order_row['total_weight_gm'], 750)
 
+    @override_settings(
+        DPD_API_BASE_URL='https://developers.api.customers.dpd.co.uk',
+        DPD_DEFAULT_SERVICE_CODE='11',
+        ROYAL_MAIL_DEFAULT_PACKAGE_FORMAT='Parcel',
+        ROYAL_MAIL_DEFAULT_WEIGHT_GRAMS=100,
+    )
+    def test_order_responses_include_planned_shipping_service(self):
+        color = Color.objects.create(
+            color_code='SHP',
+            color_name='Shipping Color',
+        )
+        product = Product.objects.create(
+            vs_parent_id=10501,
+            vs_child_id=10501,
+            parent_reference='SHIP SKU',
+            child_reference='SHIP SKU',
+            parent_product_title='Shipping Product',
+            child_product_title='Shipping Product',
+            weight_kg=Decimal('0.075'),
+        )
+        stock_item = StockItem.objects.create(
+            sku='SHIP SKU',
+            product_type='SHIP',
+            product=product,
+            color=color,
+            available_stock_in_mtr=10,
+        )
+        standard_order = Order.objects.create(
+            customer_name='Standard Customer',
+            customer_email='standard@example.com',
+            courier_service_code='STD',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=standard_order,
+            stock_item=stock_item,
+            sku='SHIP SKU',
+            product_name='Shipping Product',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('10.00'),
+        )
+        next_day_order = Order.objects.create(
+            customer_name='Next Day Customer',
+            customer_email='nextday@example.com',
+            courier_service_code='NEXT DAY',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=next_day_order,
+            stock_item=stock_item,
+            sku='SHIP SKU',
+            product_name='Shipping Product',
+            quantity=4,
+            quantity_ordered=4,
+            unit_price=Decimal('10.00'),
+        )
+
+        detail_response = self.client.get(f'/api/v1/orders/{standard_order.id}/')
+        list_response = self.client.get('/api/v1/orders/')
+        with_items_response = self.client.get('/api/v1/orders/with-items/')
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data['shipping_service']['provider'], 'Royal Mail')
+        self.assertEqual(detail_response.data['shipping_service']['service_code'], 'STL2')
+        self.assertEqual(detail_response.data['shipping_service']['shipment_type'], 'Letter')
+        self.assertEqual(
+            detail_response.data['shipping_service']['booking_url'],
+            f'/api/v1/orders/{standard_order.id}/book-royal-mail-shipping/',
+        )
+
+        next_day_row = next(row for row in list_response.data['results'] if row['id'] == next_day_order.id)
+        self.assertEqual(next_day_row['shipping_service']['provider'], 'DPD')
+        self.assertEqual(next_day_row['shipping_service']['service_code'], '12')
+        self.assertEqual(next_day_row['shipping_service']['network_code'], '1^12')
+        self.assertEqual(
+            next_day_row['shipping_service']['booking_url'],
+            f'/api/v1/orders/{next_day_order.id}/book-dpd-shipping/',
+        )
+
+        standard_with_items = next(row for row in with_items_response.data['results'] if row['id'] == standard_order.id)
+        self.assertEqual(standard_with_items['shipping_service']['provider'], 'Royal Mail')
+
     def test_order_detail_returns_child_product_url_from_stock_product_extended_data(self):
         color = Color.objects.create(
             color_code='URL',
