@@ -3527,7 +3527,7 @@
                     "config"
                   ]
                 },
-                "description": "Checks whether DPD Shipping API booking is configured without exposing API key, secret, or token. Requires DPD_INTEGRATION_ENABLED=true, auth token or key/secret + token URL, customer ID, BU code, service code, and sender address settings."
+                "description": "Checks whether DPD booking is configured without exposing API key, secret, or token. For DPD UK mode, expected response includes api_mode=dpd_uk, booking_enabled=true, client_id_header_present=true, create_shipment_path=/v1/customer/shipping/shipments/domestic, and does not require DPD_BU_CODE. Requires DPD_INTEGRATION_ENABLED=true, DPD_API_BASE_URL=https://developers.api.dpd.co.uk, DPD_TOKEN_URL, API key/secret, service code, and sender address settings."
               },
               "response": []
             },
@@ -3554,10 +3554,10 @@
                     "book-dpd-shipping"
                   ]
                 },
-                "description": "Books shipment in DPD Shipping API. WIMS saves the returned PDF label, marks the order SHIPPED only after the label is saved, and returns label_url/public_label_url for printing. If omitted, weight uses product total weight or DPD_DEFAULT_WEIGHT_GRAMS, and service_code uses DPD_DEFAULT_SERVICE_CODE.",
+                "description": "Books shipment in DPD API. In DPD UK mode WIMS calls /v1/customer/shipping/shipments/domestic with Bearer token plus client-id header. WIMS saves the returned PDF label, marks the order SHIPPED only after the label is saved, and returns label_url/public_label_url for printing. DPD rules: 2501-30000g + STD -> PARCEL/11; NEXT DAY -> PARCEL/12; NEXT DAY BY 12 -> PARCEL/13; SATURDAY -> PARCEL/16; NEXT DAY BY 10:30 -> PARCEL/14. Real DPD service_code values such as 11 can still be passed directly.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"weight_in_grams\": 500,\n  \"service_code\": \"101\",\n  \"notes\": \"Booked through DPD Shipping API\",\n  \"return_label_pdf\": false\n}",
+                  "raw": "{\n  \"weight_in_grams\": 3000,\n  \"service_code\": \"11\",\n  \"notes\": \"Booked through DPD UK API\",\n  \"return_label_pdf\": false\n}",
                   "options": {
                     "raw": {
                       "language": "json"
