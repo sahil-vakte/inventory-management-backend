@@ -1866,7 +1866,7 @@ class OrderWithItemsAPITest(TestCase):
         DPD_SENDER_STREET='85 Commercial Square',
         DPD_SENDER_ADDRESS2='',
         DPD_SENDER_CONTACT_NAME='Civani Ltd',
-        DPD_SENDER_PHONE='01162542366',
+        DPD_SENDER_PHONE='+44 (0116) 254 2366',
         DPD_SENDER_EMAIL='info@tiaknight.co.uk',
     )
     def test_dpd_config_rejects_documentation_base_url(self):
@@ -2010,7 +2010,7 @@ class OrderWithItemsAPITest(TestCase):
         DPD_SENDER_STREET='85 Commercial Square',
         DPD_SENDER_ADDRESS2='',
         DPD_SENDER_CONTACT_NAME='Civani Ltd',
-        DPD_SENDER_PHONE='01162542366',
+        DPD_SENDER_PHONE='+44 (0116) 254 2366',
         DPD_SENDER_EMAIL='info@tiaknight.co.uk',
     )
     @patch('orders.services.dpd.requests.post')
@@ -2030,7 +2030,7 @@ class OrderWithItemsAPITest(TestCase):
             customer_name='DPD UK Customer',
             external_order_id='WEB-DPD-UK-001',
             customer_email='dpduk@example.com',
-            customer_phone='07123456789',
+            customer_phone='+44 (07123) 456789',
             shipping_address_line1='10 Delivery Street',
             shipping_city='London',
             shipping_postal_code='SW1A 2AA',
@@ -2071,6 +2071,18 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(
             request_payload['outboundConsignment']['collectionDetails']['address']['postcode'],
             'LE2 7SR',
+        )
+        self.assertEqual(
+            request_payload['outboundConsignment']['collectionDetails']['contactDetails']['telephone'],
+            '+441162542366',
+        )
+        self.assertEqual(
+            request_payload['outboundConsignment']['deliveryDetails']['contactDetails']['telephone'],
+            '+447123456789',
+        )
+        self.assertEqual(
+            request_payload['outboundConsignment']['deliveryDetails']['notificationDetails']['mobile'],
+            '+447123456789',
         )
         self.assertEqual(
             request_payload['outboundConsignment']['deliveryDetails']['address']['postcode'],

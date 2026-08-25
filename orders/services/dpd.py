@@ -1,5 +1,6 @@
 import base64
 import logging
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -228,7 +229,7 @@ class DPDShippingClient:
                     'address': delivery_address,
                     'notificationDetails': {
                         'email': order.customer_email or '',
-                        'mobile': order.customer_phone or '',
+                        'mobile': self._dpd_phone(order.customer_phone),
                     },
                 },
                 'networkCode': network_code,
@@ -440,9 +441,25 @@ class DPDShippingClient:
     def _dpd_uk_contact(self, name, phone, email):
         return {
             'contactName': name or '',
-            'telephone': phone or '',
+            'telephone': self._dpd_phone(phone),
             'email': email or '',
         }
+
+    def _dpd_phone(self, phone):
+        value = str(phone or '').strip()
+        if not value:
+            return ''
+
+        prefix = '+' if value.startswith('+') else ''
+        digits = re.sub(r'\D', '', value)
+        if value.startswith('00'):
+            prefix = '+'
+            digits = digits[2:]
+        if prefix == '+' and digits.startswith('440'):
+            digits = f'44{digits[3:]}'
+
+        normalized = f'{prefix}{digits}' if digits else ''
+        return normalized[:15]
 
     def _order_reference(self, order):
         return (order.external_order_id or order.order_number or str(order.id)).strip()
