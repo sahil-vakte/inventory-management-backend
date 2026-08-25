@@ -52,23 +52,22 @@ class DPDShippingClient:
     @property
     def api_mode(self):
         host = self.base_url.lower()
-        if (
-            'developers.api.dpd.co.uk' in host
-            or 'developers.api.customers.dpd.co.uk' in host
-            or 'api.customers.dpd.co.uk' in host
-        ):
+        if _is_dpd_uk_api_host(host):
             return 'dpd_uk'
         return 'shipping_api'
 
     def ensure_configured(self):
         missing = []
+        uses_docs_base_url = _is_dpd_docs_host(self.base_url)
         if not self.enabled:
             missing.append('DPD_INTEGRATION_ENABLED=true')
         if not self.base_url:
             missing.append('DPD_API_BASE_URL')
+        elif uses_docs_base_url:
+            missing.append('DPD_API_BASE_URL=https://developers.api.customers.dpd.co.uk')
         if not self.api_token and not (self.api_key and self.api_secret and self.token_url):
             missing.append('DPD_API_TOKEN or DPD_API_KEY + DPD_API_SECRET + DPD_TOKEN_URL')
-        if self.api_mode == 'shipping_api':
+        if not uses_docs_base_url and self.api_mode == 'shipping_api':
             if not self.customer_id:
                 missing.append('DPD_CUSTOMER_ID')
             if not self.bu_code:
@@ -108,6 +107,13 @@ class DPDShippingClient:
         if response.status_code >= 400:
             raise DPDAPIError(
                 f'DPD returned HTTP {response.status_code}',
+                status_code=response.status_code,
+                response_data=response_data,
+            )
+        if _response_looks_like_html(response_data):
+            raise DPDAPIError(
+                'DPD shipment endpoint returned HTML instead of JSON. '
+                'Use the customer API base URL, not the DPD documentation URL.',
                 status_code=response.status_code,
                 response_data=response_data,
             )
@@ -522,6 +528,19 @@ def _response_looks_like_html(response_data):
         return False
     raw = str(response_data.get('raw') or '').lstrip().lower()
     return raw.startswith('<!doctype html') or raw.startswith('<html')
+
+
+def _is_dpd_uk_api_host(value):
+    host = str(value or '').lower()
+    return (
+        'developers.api.customers.dpd.co.uk' in host
+        or 'api.customers.dpd.co.uk' in host
+    )
+
+
+def _is_dpd_docs_host(value):
+    host = str(value or '').lower()
+    return 'developers.api.dpd.co.uk' in host and not _is_dpd_uk_api_host(host)
 
 
 def _utc_now_iso_seconds():
