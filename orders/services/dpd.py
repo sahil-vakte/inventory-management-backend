@@ -7,6 +7,7 @@ import requests
 from django.conf import settings
 
 from products.serializers import get_product_weight_kg
+from orders.services.courier import courier_service_code
 
 
 logger = logging.getLogger(__name__)
@@ -75,10 +76,15 @@ class DPDShippingClient:
 
     def create_shipment(self, order, *, weight_in_grams=None, service_code=None):
         self.ensure_configured()
-        payload = self.build_create_shipment_payload(
+        shipping_options = self.resolve_shipping_options(
             order,
             weight_in_grams=weight_in_grams,
             service_code=service_code,
+        )
+        payload = self.build_create_shipment_payload(
+            order,
+            weight_in_grams=shipping_options['weight_in_grams'],
+            service_code=shipping_options['service_code'],
         )
         url = f"{self.base_url}{self._normalized_path(self.create_shipment_path)}"
         logger.info('Creating DPD shipment for local order %s', order.order_number)
@@ -103,6 +109,33 @@ class DPDShippingClient:
         self._raise_for_messages(response_data, response.status_code)
         return response_data
 
+    def resolve_shipping_options(self, order, *, weight_in_grams=None, service_code=None):
+        """Resolve DPD service code using WIMS DPD booking rules."""
+        resolved_weight = int(weight_in_grams or self._order_weight_in_grams(order) or self.default_weight_grams)
+        explicit_service_code, delivery_code_override = self._split_requested_service_code(service_code)
+        delivery_code = delivery_code_override or self._delivery_code(order)
+        derived_service = self._derive_service_code(
+            order,
+            resolved_weight,
+            delivery_code_override=delivery_code_override,
+        )
+        resolved_service = explicit_service_code or derived_service
+        if not resolved_service and not delivery_code:
+            resolved_service = self.default_service_code
+
+        if not resolved_service:
+            raise ValueError(
+                'No DPD service code mapping found for '
+                f'delivery method {delivery_code or "UNKNOWN"} and weight {resolved_weight}g. '
+                'Update the DPD criteria or pass a valid DPD service_code.'
+            )
+
+        return {
+            'weight_in_grams': resolved_weight,
+            'shipment_type': 'PARCEL',
+            'service_code': resolved_service,
+        }
+
     def build_create_shipment_payload(self, order, *, weight_in_grams=None, service_code=None):
         if self.api_mode == 'dpd_uk':
             return self._build_dpd_uk_domestic_payload(
@@ -119,7 +152,7 @@ class DPDShippingClient:
 
     def _build_shipping_api_payload(self, order, *, weight_in_grams=None, service_code=None):
         resolved_weight = int(weight_in_grams or self._order_weight_in_grams(order) or self.default_weight_grams)
-        resolved_service = service_code or self.default_service_code
+        resolved_service = service_code
         parcel_weight_kg = max(Decimal(resolved_weight) / Decimal('1000'), Decimal('0.001'))
 
         shipment = {
@@ -154,7 +187,7 @@ class DPDShippingClient:
 
     def _build_dpd_uk_domestic_payload(self, order, *, weight_in_grams=None, service_code=None):
         resolved_weight = int(weight_in_grams or self._order_weight_in_grams(order) or self.default_weight_grams)
-        resolved_service = service_code or self.default_service_code
+        resolved_service = service_code
         collection_address = self._dpd_uk_address(self._sender_address(), fallback_name=settings.DPD_SENDER_NAME)
         delivery_address = self._dpd_uk_address(self._receiver_address(order), fallback_name=order.customer_name)
 
@@ -275,6 +308,69 @@ class DPDShippingClient:
             ('DPD_SENDER_STREET', settings.DPD_SENDER_STREET),
         ]
         return [name for name, value in required_pairs if not value]
+
+    def _derive_service_code(self, order, weight_in_grams, delivery_code_override=None):
+        delivery_code = delivery_code_override or self._delivery_code(order)
+        if not (2501 <= weight_in_grams <= 30000):
+            return None
+
+        return {
+            'STD': '11',
+            'NEXTDAY': '12',
+            'NEXTDAY12': '13',
+            'SATURDAY': '16',
+            'NEXTDAY1030': '14',
+        }.get(delivery_code)
+
+    def _split_requested_service_code(self, service_code):
+        if not service_code:
+            return None, None
+
+        normalized = ' '.join(str(service_code).strip().upper().split())
+        compact = ''.join(normalized.split())
+        internal_delivery_codes = {
+            'STD': 'STD',
+            'STANDARD': 'STD',
+            'STANDARDDELIVERY': 'STD',
+            'NEXTDAY': 'NEXTDAY',
+            'NEXT DAY': 'NEXTDAY',
+            'NEXTDAY12': 'NEXTDAY12',
+            'NEXT DAY 12': 'NEXTDAY12',
+            'NEXTDAYBY12': 'NEXTDAY12',
+            'NEXT DAY BY 12': 'NEXTDAY12',
+            'SATURDAY': 'SATURDAY',
+            'NEXTDAY1030': 'NEXTDAY1030',
+            'NEXT DAY 10:30': 'NEXTDAY1030',
+            'NEXTDAYBY10:30': 'NEXTDAY1030',
+            'NEXTDAYBY1030': 'NEXTDAY1030',
+            'NEXT DAY BY 10:30': 'NEXTDAY1030',
+        }
+        delivery_code = internal_delivery_codes.get(normalized) or internal_delivery_codes.get(compact)
+        if delivery_code:
+            return None, delivery_code
+        return str(service_code).strip(), None
+
+    def _delivery_code(self, order):
+        raw_code = (
+            order.courier_service_code
+            or courier_service_code(order.courier_service_name)
+            or courier_service_code(order.shipping_method)
+            or order.shipping_method
+            or ''
+        )
+        normalized = ' '.join(str(raw_code).strip().upper().split())
+        compact = ''.join(normalized.split())
+        aliases = {
+            'NEXTDAY': 'NEXTDAY',
+            'NEXTDAY12': 'NEXTDAY12',
+            'NEXTDAYBY12': 'NEXTDAY12',
+            'NEXTDAY1030': 'NEXTDAY1030',
+            'NEXTDAYBY10:30': 'NEXTDAY1030',
+            'NEXTDAYBY1030': 'NEXTDAY1030',
+            'SATURDAY': 'SATURDAY',
+            'STD': 'STD',
+        }
+        return aliases.get(compact, compact)
 
     def _dpd_uk_address(self, address, *, fallback_name):
         street = address.get('street') or ''

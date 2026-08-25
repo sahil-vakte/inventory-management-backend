@@ -942,10 +942,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         try:
             dpd_client = DPDShippingClient()
             dpd_client.ensure_configured()
-            response_data = dpd_client.create_shipment(
+            shipping_options = dpd_client.resolve_shipping_options(
                 order,
                 weight_in_grams=serializer.validated_data.get('weight_in_grams'),
                 service_code=serializer.validated_data.get('service_code') or None,
+            )
+            response_data = dpd_client.create_shipment(
+                order,
+                weight_in_grams=shipping_options['weight_in_grams'],
+                service_code=shipping_options['service_code'],
             )
             label_pdf = extract_dpd_label_pdf(response_data)
             if not label_pdf:
@@ -961,7 +966,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             _save_shipping_label_pdf(order, label_pdf, provider='dpd')
             tracking_number = extract_dpd_tracking_number(response_data)
             dpd_shipment_identifier = extract_dpd_shipment_identifier(response_data)
-            service_code = serializer.validated_data.get('service_code') or settings.DPD_DEFAULT_SERVICE_CODE
+            service_code = shipping_options['service_code']
 
             note_parts = ['DPD shipment booked.']
             if dpd_shipment_identifier:
@@ -992,6 +997,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         if serializer.validated_data.get('return_label_pdf'):
             return FileResponse(
@@ -1005,6 +1012,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             'tracking_number': tracking_number,
             'dpd_shipment_identifier': dpd_shipment_identifier,
             'service_code': service_code,
+            'dpd_booking_options': shipping_options,
             'label_url': _shipping_label_api_url(request, order),
             'public_label_url': _public_shipping_label_api_url(request, order),
             'dpd_response': _sanitize_dpd_response(response_data),

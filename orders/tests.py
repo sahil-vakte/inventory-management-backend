@@ -1869,6 +1869,98 @@ class OrderWithItemsAPITest(TestCase):
         DPD_SENDER_PHONE='01162542366',
         DPD_SENDER_EMAIL='info@tiaknight.co.uk',
     )
+    def test_dpd_booking_rules_select_service_code_by_weight_and_delivery_method(self):
+        from orders.services.dpd import DPDShippingClient
+
+        client = DPDShippingClient()
+        cases = [
+            ('STD', '11'),
+            ('NEXT DAY', '12'),
+            ('NEXT DAY BY 12', '13'),
+            ('SATURDAY', '16'),
+            ('NEXT DAY BY 10:30', '14'),
+        ]
+
+        for delivery_code, expected_service_code in cases:
+            with self.subTest(delivery_code=delivery_code):
+                order = Order.objects.create(
+                    customer_name='DPD Rule Customer',
+                    courier_service_code=delivery_code,
+                    total_amount=Decimal('10.00'),
+                    created_by=self.user,
+                )
+
+                options = client.resolve_shipping_options(order, weight_in_grams=3000)
+
+                self.assertEqual(options['shipment_type'], 'PARCEL')
+                self.assertEqual(options['service_code'], expected_service_code)
+                self.assertEqual(options['weight_in_grams'], 3000)
+
+    @override_settings(
+        DPD_INTEGRATION_ENABLED=True,
+        DPD_API_BASE_URL='https://developers.api.dpd.co.uk',
+        DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
+        DPD_API_TOKEN='test-dpd-token',
+        DPD_API_KEY='test-client-id',
+        DPD_API_SECRET='',
+        DPD_TOKEN_URL='',
+        DPD_CUSTOMER_ID='260959',
+        DPD_BU_CODE='',
+        DPD_DEFAULT_SERVICE_CODE='11',
+        DPD_DEFAULT_SERVICE_ELEMENT_CODES=[],
+        DPD_DEFAULT_WEIGHT_GRAMS=100,
+        DPD_LABEL_FORMAT='PDF',
+        DPD_LABEL_SIZE='A6',
+        DPD_SENDER_NAME='Civani Ltd',
+        DPD_SENDER_COMPANY='Civani Ltd',
+        DPD_SENDER_COUNTRY_CODE='GB',
+        DPD_SENDER_POSTCODE='LE2 7SR',
+        DPD_SENDER_CITY='Leicester',
+        DPD_SENDER_STREET='85 Commercial Square',
+        DPD_SENDER_ADDRESS2='',
+        DPD_SENDER_CONTACT_NAME='Civani Ltd',
+        DPD_SENDER_PHONE='01162542366',
+        DPD_SENDER_EMAIL='info@tiaknight.co.uk',
+    )
+    def test_dpd_booking_rules_reject_internal_delivery_code_outside_weight_range(self):
+        from orders.services.dpd import DPDShippingClient
+
+        order = Order.objects.create(
+            customer_name='DPD Rule Customer',
+            courier_service_code='STD',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+
+        with self.assertRaisesMessage(ValueError, 'No DPD service code mapping found'):
+            DPDShippingClient().resolve_shipping_options(order, weight_in_grams=2500)
+
+    @override_settings(
+        DPD_INTEGRATION_ENABLED=True,
+        DPD_API_BASE_URL='https://developers.api.dpd.co.uk',
+        DPD_CREATE_SHIPMENT_PATH='/v1/customer/shipping/shipments/domestic',
+        DPD_API_TOKEN='test-dpd-token',
+        DPD_API_KEY='test-client-id',
+        DPD_API_SECRET='',
+        DPD_TOKEN_URL='',
+        DPD_CUSTOMER_ID='260959',
+        DPD_BU_CODE='',
+        DPD_DEFAULT_SERVICE_CODE='11',
+        DPD_DEFAULT_SERVICE_ELEMENT_CODES=[],
+        DPD_DEFAULT_WEIGHT_GRAMS=100,
+        DPD_LABEL_FORMAT='PDF',
+        DPD_LABEL_SIZE='A6',
+        DPD_SENDER_NAME='Civani Ltd',
+        DPD_SENDER_COMPANY='Civani Ltd',
+        DPD_SENDER_COUNTRY_CODE='GB',
+        DPD_SENDER_POSTCODE='LE2 7SR',
+        DPD_SENDER_CITY='Leicester',
+        DPD_SENDER_STREET='85 Commercial Square',
+        DPD_SENDER_ADDRESS2='',
+        DPD_SENDER_CONTACT_NAME='Civani Ltd',
+        DPD_SENDER_PHONE='01162542366',
+        DPD_SENDER_EMAIL='info@tiaknight.co.uk',
+    )
     @patch('orders.services.dpd.requests.post')
     def test_book_dpd_uk_shipping_uses_domestic_payload_without_bu_code(self, mock_post):
         encoded_label = base64.b64encode(b'%PDF-1.4 dpd uk label').decode('ascii')
