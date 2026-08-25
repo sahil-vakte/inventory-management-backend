@@ -1896,6 +1896,16 @@ class OrderWithItemsAPITest(TestCase):
                 self.assertEqual(options['service_code'], expected_service_code)
                 self.assertEqual(options['weight_in_grams'], 3000)
 
+        next_day_order = Order.objects.create(
+            customer_name='DPD Next Day Rule Customer',
+            courier_service_code='NEXT DAY',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        next_day_options = client.resolve_shipping_options(next_day_order, weight_in_grams=1)
+        self.assertEqual(next_day_options['service_code'], '12')
+        self.assertEqual(next_day_options['shipment_type'], 'PARCEL')
+
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,
         DPD_API_BASE_URL='https://developers.api.dpd.co.uk',
