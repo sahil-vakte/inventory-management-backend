@@ -311,12 +311,14 @@ class DPDShippingClient:
 
     def _derive_service_code(self, order, weight_in_grams, delivery_code_override=None):
         delivery_code = delivery_code_override or self._delivery_code(order)
+        if delivery_code == 'NEXTDAY' and 1 <= weight_in_grams <= 30000:
+            return '12'
+
         if not (2501 <= weight_in_grams <= 30000):
             return None
 
         return {
             'STD': '11',
-            'NEXTDAY': '12',
             'NEXTDAY12': '13',
             'SATURDAY': '16',
             'NEXTDAY1030': '14',

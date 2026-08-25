@@ -3554,7 +3554,7 @@
                     "book-dpd-shipping"
                   ]
                 },
-                "description": "Books shipment in DPD API. In DPD UK mode WIMS calls /v1/customer/shipping/shipments/domestic with Bearer token plus client-id header. WIMS saves the returned PDF label, marks the order SHIPPED only after the label is saved, and returns label_url/public_label_url for printing. DPD rules: 2501-30000g + STD -> PARCEL/11; NEXT DAY -> PARCEL/12; NEXT DAY BY 12 -> PARCEL/13; SATURDAY -> PARCEL/16; NEXT DAY BY 10:30 -> PARCEL/14. Real DPD service_code values such as 11 can still be passed directly.",
+                "description": "Books shipment in DPD API. In DPD UK mode WIMS calls /v1/customer/shipping/shipments/domestic with Bearer token plus client-id header. WIMS saves the returned PDF label, marks the order SHIPPED only after the label is saved, and returns label_url/public_label_url for printing. DPD rules: 2501-30000g + STD -> PARCEL/11; 1-30000g + NEXT DAY -> PARCEL/12; 2501-30000g + NEXT DAY BY 12 -> PARCEL/13; 2501-30000g + SATURDAY -> PARCEL/16; 2501-30000g + NEXT DAY BY 10:30 -> PARCEL/14. Real DPD service_code values such as 11 can still be passed directly.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"weight_in_grams\": 3000,\n  \"service_code\": \"11\",\n  \"notes\": \"Booked through DPD UK API\",\n  \"return_label_pdf\": false\n}",
