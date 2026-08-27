@@ -2112,7 +2112,8 @@ class OrderWithItemsAPITest(TestCase):
         mock_post.return_value = mock_response
 
         order = Order.objects.create(
-            customer_name='DPD UK Customer',
+            customer_name='CAROL',
+            customer_company='CHILDS',
             external_order_id='WEB-DPD-UK-001',
             customer_email='dpduk@example.com',
             customer_phone='+44 (07123) 456789',
@@ -2166,8 +2167,16 @@ class OrderWithItemsAPITest(TestCase):
             '+447123456789',
         )
         self.assertEqual(
+            request_payload['outboundConsignment']['deliveryDetails']['contactDetails']['contactName'],
+            'CAROL CHILDS',
+        )
+        self.assertEqual(
             request_payload['outboundConsignment']['deliveryDetails']['notificationDetails']['mobile'],
             '+447123456789',
+        )
+        self.assertEqual(
+            request_payload['outboundConsignment']['deliveryDetails']['address']['organisation'],
+            'CAROL CHILDS',
         )
         self.assertEqual(
             request_payload['outboundConsignment']['deliveryDetails']['address']['postcode'],
