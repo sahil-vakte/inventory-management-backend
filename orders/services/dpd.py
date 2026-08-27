@@ -256,7 +256,12 @@ class DPDShippingClient:
         resolved_service = service_code
         network_code = self._dpd_uk_network_code(resolved_service)
         collection_address = self._dpd_uk_address(self._sender_address(), fallback_name=settings.DPD_SENDER_NAME)
-        delivery_address = self._dpd_uk_address(self._receiver_address(order), fallback_name=order.customer_name)
+        recipient_name = self._receiver_recipient_name(order)
+        delivery_address = self._dpd_uk_address(
+            self._receiver_address(order),
+            fallback_name=recipient_name,
+            prefer_name=True,
+        )
 
         return {
             'shipmentDate': _utc_now_iso_seconds(),
@@ -272,7 +277,7 @@ class DPDShippingClient:
                 },
                 'deliveryDetails': {
                     'contactDetails': self._dpd_uk_contact(
-                        order.customer_name or 'Customer',
+                        recipient_name,
                         order.customer_phone,
                         order.customer_email,
                     ),
@@ -377,15 +382,16 @@ class DPDShippingClient:
         }
 
     def _receiver_address(self, order):
+        recipient_name = self._receiver_recipient_name(order)
         return {
-            'name': order.customer_name or 'Customer',
+            'name': recipient_name,
             'companyName': order.customer_company or '',
             'countryCode': self._country_code(order.shipping_country),
             'zipCode': order.shipping_postal_code or '',
             'city': order.shipping_city or '',
             'street': order.shipping_address_line1 or '',
             'address2': order.shipping_address_line2 or '',
-            'contactName': order.customer_name or '',
+            'contactName': recipient_name,
             'contactPhone': order.customer_phone or '',
             'contactEmail': order.customer_email or '',
         }
@@ -474,11 +480,14 @@ class DPDShippingClient:
         }
         return aliases.get(compact, compact)
 
-    def _dpd_uk_address(self, address, *, fallback_name):
+    def _dpd_uk_address(self, address, *, fallback_name, prefer_name=False):
         street = address.get('street') or ''
         address2 = address.get('address2') or ''
+        organisation = address.get('companyName') or fallback_name or ''
+        if prefer_name:
+            organisation = address.get('name') or organisation
         return {
-            'organisation': address.get('companyName') or fallback_name or '',
+            'organisation': organisation,
             'property': '',
             'street': street,
             'locality': address2,
@@ -487,6 +496,33 @@ class DPDShippingClient:
             'postcode': address.get('zipCode') or '',
             'countryCode': address.get('countryCode') or 'GB',
         }
+
+    def _receiver_recipient_name(self, order):
+        name = ' '.join(str(order.customer_name or '').split())
+        company = ' '.join(str(order.customer_company or '').split())
+        if not name:
+            return company or 'Customer'
+
+        name_lower = name.lower()
+        company_lower = company.lower()
+        if (
+            company
+            and company_lower not in name_lower
+            and len(name.split()) == 1
+            and self._looks_like_person_name_part(company)
+        ):
+            return f'{name} {company}'
+        return name
+
+    def _looks_like_person_name_part(self, value):
+        normalized = ' '.join(str(value or '').split())
+        if not normalized or len(normalized.split()) > 2:
+            return False
+        company_terms = {'ltd', 'limited', 'llc', 'plc', 'inc', 'company', 'co', 'group'}
+        tokens = {token.strip('.,').lower() for token in normalized.split()}
+        if tokens & company_terms:
+            return False
+        return bool(re.fullmatch(r"[A-Za-z][A-Za-z' -]*", normalized))
 
     def _dpd_uk_contact(self, name, phone, email):
         return {
