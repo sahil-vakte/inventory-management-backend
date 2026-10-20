@@ -115,6 +115,11 @@
       "key": "public_label_url",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "dhl_product_code",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -3605,7 +3610,87 @@
               "response": []
             },
             {
-              "name": "Download Saved Shipping Label (Royal Mail or DPD)",
+              "name": "DHL Config Status",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/dhl/config/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "dhl",
+                    "config"
+                  ]
+                },
+                "description": "Checks DHL Express MyDHL API configuration without exposing client secret or account numbers. MyDHL uses HTTP Basic authentication. Booking requires DHL_INTEGRATION_ENABLED=true, client ID, client secret, account number, sender details, and a confirmed DHL product code."
+              },
+              "response": []
+            },
+            {
+              "name": "Book DHL Shipping",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/book-dhl-shipping/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "{{order_id}}",
+                    "book-dhl-shipping"
+                  ]
+                },
+                "description": "Books DHL Express MyDHL shipment and saves DHL's inline PDF label. The order must be COMPLETED. DHL is selected only for a qualifying item longer than 20m (excluding Fleece, Lace/Trimmings, and Elastic Tape), 6000-30000g total weight, and NEXT DAY delivery. service_code is the DHL product code; omit it only after DHL_DEFAULT_PRODUCT_CODE is configured. account_number is optional and must match one of WIMS's configured DHL account numbers.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"weight_in_grams\": 6500,\n  \"service_code\": \"{{dhl_product_code}}\",\n  \"notes\": \"Booked through DHL Express MyDHL API\",\n  \"return_label_pdf\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Download DHL Shipping Label",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/orders/{{order_id}}/shipping-label/",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "orders",
+                    "{{order_id}}",
+                    "shipping-label"
+                  ]
+                },
+                "description": "Returns the PDF label saved during Book DHL Shipping. This never creates another DHL shipment."
+              },
+              "response": []
+            },
+            {
+              "name": "Download Saved Shipping Label (Royal Mail, DPD, or DHL)",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -3623,7 +3708,7 @@
                     ""
                   ]
                 },
-                "description": "Returns the saved printable shipping label for the order. For DPD this returns the label saved during Book DPD Shipping, which may be HTML in DPD UK mode. For Royal Mail, if the label file is missing but royal_mail_order_identifier is saved, WIMS fetches the PDF from Royal Mail and saves it for reprint. This endpoint does not create another shipment."
+                "description": "Returns the saved printable shipping label for the order. For DPD this may be printable HTML. For DHL it returns the PDF saved from the MyDHL booking response. For Royal Mail, if the label file is missing but royal_mail_order_identifier is saved, WIMS fetches the PDF from Royal Mail and saves it for reprint. This endpoint does not create another shipment."
               },
               "response": []
             },
@@ -3638,7 +3723,7 @@
                     "{{public_label_url}}"
                   ]
                 },
-                "description": "Returns the saved printable shipping label without Authorization header. Use public_label_url returned by Book Royal Mail Shipping or Book DPD Shipping. The URL is signed and only works for the saved label file."
+                "description": "Returns the saved printable shipping label without Authorization header. Use public_label_url returned by Book Royal Mail Shipping, Book DPD Shipping, or Book DHL Shipping. The URL is signed and only works for the saved label file."
               },
               "response": []
             },

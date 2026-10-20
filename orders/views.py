@@ -22,6 +22,7 @@ from .serializers import (
     OrderItemSerializer, OrderItemCreateSerializer, OrderStatusHistorySerializer,
     OrderConfirmSerializer, OrderShipSerializer, OrderCancelSerializer,
     OrderStatsSerializer, RoyalMailShipmentSerializer, DPDShipmentSerializer,
+    DHLShipmentSerializer,
     OrderBatchListSerializer, OrderBatchCreateSerializer, OrderBatchDetailSerializer
 )
 from .services.dpd import (
@@ -33,6 +34,14 @@ from .services.dpd import (
     extract_dpd_parcel_numbers,
     extract_dpd_shipment_identifier,
     extract_dpd_tracking_number,
+)
+from .services.dhl import (
+    DHLAPIError,
+    DHLConfigError,
+    DHLShippingClient,
+    extract_dhl_label_pdf,
+    extract_dhl_shipment_identifier,
+    extract_dhl_tracking_number,
 )
 from .services.royal_mail import (
     RoyalMailAPIError,
@@ -96,6 +105,19 @@ def _sanitize_dpd_response(data):
         }
     if isinstance(data, list):
         return [_sanitize_dpd_response(item) for item in data]
+    return data
+
+
+def _sanitize_dhl_response(data):
+    """Remove embedded DHL label/document image data from API responses."""
+    if isinstance(data, dict):
+        return {
+            key: _sanitize_dhl_response(value)
+            for key, value in data.items()
+            if key.lower() not in {'content', 'documentimage', 'image', 'label', 'labeldata'}
+        }
+    if isinstance(data, list):
+        return [_sanitize_dhl_response(item) for item in data]
     return data
 
 
@@ -716,6 +738,51 @@ class OrderViewSet(viewsets.ModelViewSet):
             ),
         })
 
+    @action(detail=False, methods=['get'], url_path='dhl/config')
+    def dhl_config(self, request):
+        """Return DHL Express MyDHL configuration status without exposing secrets."""
+        sender_configured = all([
+            settings.DHL_SENDER_NAME,
+            settings.DHL_SENDER_POSTCODE,
+            settings.DHL_SENDER_CITY,
+            settings.DHL_SENDER_STREET,
+            settings.DHL_SENDER_PHONE,
+            settings.DHL_SENDER_EMAIL,
+        ])
+        booking_enabled = all([
+            settings.DHL_INTEGRATION_ENABLED,
+            settings.DHL_API_BASE_URL,
+            settings.DHL_CLIENT_ID,
+            settings.DHL_CLIENT_SECRET,
+            settings.DHL_ACCOUNT_NUMBER,
+            settings.DHL_DEFAULT_PRODUCT_CODE,
+            sender_configured,
+        ])
+        return Response({
+            'configured': booking_enabled,
+            'booking_enabled': booking_enabled,
+            'api_mode': 'dhl_express_mydhl',
+            'sandbox_mode': settings.DHL_API_BASE_URL.rstrip('/').endswith('/test'),
+            'api_base_url': settings.DHL_API_BASE_URL,
+            'create_shipment_path': '/shipments',
+            'auth_mode': 'http_basic',
+            'client_id_present': bool(settings.DHL_CLIENT_ID),
+            'client_secret_present': bool(settings.DHL_CLIENT_SECRET),
+            'account_number_present': bool(settings.DHL_ACCOUNT_NUMBER),
+            'secondary_account_number_present': bool(settings.DHL_SECONDARY_ACCOUNT_NUMBER),
+            'default_product_code': settings.DHL_DEFAULT_PRODUCT_CODE,
+            'default_weight_grams': settings.DHL_DEFAULT_WEIGHT_GRAMS,
+            'label_template': settings.DHL_LABEL_TEMPLATE,
+            'international_booking_enabled': settings.DHL_ALLOW_INTERNATIONAL,
+            'sender_configured': sender_configured,
+            'sender_country_code': settings.DHL_SENDER_COUNTRY_CODE,
+            'message': (
+                'DHL Express MyDHL API is configured.'
+                if booking_enabled else
+                'Set DHL_INTEGRATION_ENABLED=true, MyDHL credentials, account number, DHL product code, and sender settings before booking.'
+            ),
+        })
+
     @action(detail=False, methods=['get'], url_path='royal-mail/oauth/start')
     def royal_mail_oauth_start(self, request):
         """Return the Royal Mail authorization URL for connecting the account."""
@@ -1083,6 +1150,127 @@ class OrderViewSet(viewsets.ModelViewSet):
             'label_format': label_extension,
             'dpd_label_response': label_download_response,
             'dpd_response': _sanitize_dpd_response(response_data),
+            'order': OrderDetailSerializer(order, context={'request': request}).data,
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='book-dhl-shipping')
+    def book_dhl_shipping(self, request, pk=None):
+        """Create a DHL Express MyDHL shipment and save its printable label."""
+        order = self.get_object()
+        serializer = DHLShipmentSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        if order.order_status == Order.STATUS_SHIPPED:
+            return Response(
+                {
+                    'error': 'Shipment already booked for this order.',
+                    'message': 'Order is already shipped, so DHL booking was not called again.',
+                    'order_status': order.order_status,
+                    'tracking_number': order.tracking_number,
+                    'carrier': order.carrier,
+                    'label_url': _shipping_label_api_url(request, order) if order.shipping_label_file else None,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if order.shipping_label_file:
+            return Response(
+                {
+                    'error': 'Shipping label already exists for this order.',
+                    'message': 'DHL booking was not called again. Use the shipping-label endpoint to print the saved label.',
+                    'order_status': order.order_status,
+                    'tracking_number': order.tracking_number,
+                    'carrier': order.carrier,
+                    'label_url': _shipping_label_api_url(request, order),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if order.order_status != Order.STATUS_COMPLETED:
+            return Response(
+                {'error': f'Cannot ship order in {order.order_status} status. Complete the order before DHL booking.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        shipping_options = None
+        try:
+            dhl_client = DHLShippingClient()
+            dhl_client.ensure_configured()
+            shipping_options = dhl_client.resolve_shipping_options(
+                order,
+                weight_in_grams=serializer.validated_data.get('weight_in_grams'),
+                service_code=serializer.validated_data.get('service_code') or None,
+            )
+            response_data = dhl_client.create_shipment(
+                order,
+                weight_in_grams=shipping_options['weight_in_grams'],
+                service_code=shipping_options['service_code'],
+                account_number=serializer.validated_data.get('account_number') or None,
+            )
+            label_pdf = extract_dhl_label_pdf(response_data)
+            dhl_shipment_identifier = extract_dhl_shipment_identifier(response_data)
+            tracking_number = extract_dhl_tracking_number(response_data)
+            if not label_pdf:
+                return Response(
+                    {
+                        'error': 'DHL did not return a printable PDF label.',
+                        'message': 'WIMS order was not marked as shipped because no label was saved.',
+                        'dhl_shipment_identifier': dhl_shipment_identifier,
+                        'dhl_response': _sanitize_dhl_response(response_data),
+                    },
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            _save_shipping_label_file(order, label_pdf, provider='dhl', extension='pdf')
+            note_parts = ['DHL Express shipment booked.']
+            if dhl_shipment_identifier:
+                note_parts.append(f'DHL shipment ID: {dhl_shipment_identifier}.')
+            if serializer.validated_data.get('notes'):
+                note_parts.append(serializer.validated_data['notes'])
+            note = ' '.join(note_parts)
+            order.internal_notes = f"{order.internal_notes}\n{note}".strip() if order.internal_notes else note
+            order.shipping_method = shipping_options['service_code']
+            order.save(update_fields=['internal_notes', 'shipping_method', 'updated_at'])
+            order.mark_shipped(
+                tracking_number=tracking_number,
+                carrier='DHL',
+                user=request.user,
+            )
+        except DHLConfigError as exc:
+            return Response({
+                'error': str(exc),
+                'message': 'Complete the DHL .env settings before booking shipments.',
+                'config_url': '/api/v1/orders/dhl/config/',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except DHLAPIError as exc:
+            return Response(
+                {
+                    'error': str(exc),
+                    'dhl_status_code': exc.status_code,
+                    'dhl_booking_options': shipping_options,
+                    'dhl_response': _sanitize_dhl_response(exc.response_data),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if serializer.validated_data.get('return_label_pdf'):
+            return FileResponse(
+                default_storage.open(order.shipping_label_file, 'rb'),
+                content_type='application/pdf',
+                filename=_shipping_label_filename(order),
+            )
+
+        return Response({
+            'message': 'DHL shipment booked, order marked as shipped, and label saved',
+            'tracking_number': tracking_number,
+            'dhl_shipment_identifier': dhl_shipment_identifier,
+            'service_code': shipping_options['service_code'],
+            'dhl_booking_options': shipping_options,
+            'label_url': _shipping_label_api_url(request, order),
+            'public_label_url': _public_shipping_label_api_url(request, order),
+            'label_format': 'pdf',
+            'dhl_response': _sanitize_dhl_response(response_data),
             'order': OrderDetailSerializer(order, context={'request': request}).data,
         }, status=status.HTTP_200_OK)
 

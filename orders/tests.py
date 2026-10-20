@@ -3578,6 +3578,212 @@ class OrderWithItemsAPITest(TestCase):
         self.assertEqual(order.order_status, Order.STATUS_COMPLETED)
 
 
+class DHLShippingAPITest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='dhl_test_user',
+            password='test123',
+            is_staff=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    @override_settings(
+        DHL_INTEGRATION_ENABLED=True,
+        DHL_API_BASE_URL='https://express.api.dhl.com/mydhlapi/test',
+        DHL_CLIENT_ID='dhl-test-client',
+        DHL_CLIENT_SECRET='dhl-test-secret',
+        DHL_ACCOUNT_NUMBER='K820021',
+        DHL_SECONDARY_ACCOUNT_NUMBER='K920021',
+        DHL_DEFAULT_PRODUCT_CODE='P',
+        DHL_DEFAULT_WEIGHT_GRAMS=100,
+        DHL_DEFAULT_LENGTH_CM=30,
+        DHL_DEFAULT_WIDTH_CM=20,
+        DHL_DEFAULT_HEIGHT_CM=10,
+        DHL_LABEL_TEMPLATE='ECOM26_84_001',
+        DHL_ALLOW_INTERNATIONAL=False,
+        DHL_SENDER_NAME='Civani Ltd',
+        DHL_SENDER_COMPANY='Civani Ltd',
+        DHL_SENDER_COUNTRY_CODE='GB',
+        DHL_SENDER_POSTCODE='LE2 7SR',
+        DHL_SENDER_CITY='Leicester',
+        DHL_SENDER_STREET='85 Commercial Square',
+        DHL_SENDER_ADDRESS2='',
+        DHL_SENDER_CONTACT_NAME='Warehouse',
+        DHL_SENDER_PHONE='01162542366',
+        DHL_SENDER_EMAIL='warehouse@example.com',
+    )
+    @patch('orders.services.dhl.requests.post')
+    def test_book_dhl_shipping_saves_label_and_marks_order_shipped(self, mock_post):
+        encoded_label = base64.b64encode(b'%PDF-1.4 dhl label').decode('ascii')
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            'shipmentTrackingNumber': 'DHLTRACK123',
+            'documents': [{
+                'typeCode': 'label',
+                'content': encoded_label,
+            }],
+        }
+        mock_post.return_value = mock_response
+        order = self._qualifying_order()
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-dhl-shipping/',
+            {'weight_in_grams': 6500, 'notes': 'DHL integration test'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, Order.STATUS_SHIPPED)
+        self.assertEqual(order.carrier, 'DHL')
+        self.assertEqual(order.tracking_number, 'DHLTRACK123')
+        self.assertEqual(order.shipping_method, 'P')
+        self.assertEqual(order.shipping_label_file, f'shipping_labels/dhl/order-{order.id}-label.pdf')
+        self.assertEqual(response.data['dhl_shipment_identifier'], 'DHLTRACK123')
+        self.assertNotIn('content', response.data['dhl_response']['documents'][0])
+        self.assertIn('DHLTRACK123', order.internal_notes)
+
+        self.assertEqual(
+            mock_post.call_args.args[0],
+            'https://express.api.dhl.com/mydhlapi/test/shipments',
+        )
+        self.assertEqual(mock_post.call_args.kwargs['auth'], ('dhl-test-client', 'dhl-test-secret'))
+        payload = mock_post.call_args.kwargs['json']
+        self.assertEqual(payload['productCode'], 'P')
+        self.assertEqual(payload['accounts'][0]['number'], 'K820021')
+        self.assertEqual(payload['customerReferences'][0]['value'], 'WEB-DHL-001')
+        self.assertEqual(payload['content']['packages'][0]['weight'], 6.5)
+        self.assertFalse(payload['content']['isCustomsDeclarable'])
+        self.assertEqual(payload['customerDetails']['receiverDetails']['contactInformation']['fullName'], 'DHL Customer')
+
+    @override_settings(
+        DHL_INTEGRATION_ENABLED=True,
+        DHL_API_BASE_URL='https://express.api.dhl.com/mydhlapi/test',
+        DHL_CLIENT_ID='dhl-test-client',
+        DHL_CLIENT_SECRET='dhl-test-secret',
+        DHL_ACCOUNT_NUMBER='K820021',
+        DHL_DEFAULT_PRODUCT_CODE='P',
+        DHL_SENDER_NAME='Civani Ltd',
+        DHL_SENDER_COUNTRY_CODE='GB',
+        DHL_SENDER_POSTCODE='LE2 7SR',
+        DHL_SENDER_CITY='Leicester',
+        DHL_SENDER_STREET='85 Commercial Square',
+        DHL_SENDER_PHONE='01162542366',
+        DHL_SENDER_EMAIL='warehouse@example.com',
+    )
+    def test_dhl_rule_is_returned_before_dpd_for_qualifying_order(self):
+        order = self._qualifying_order()
+
+        response = self.client.get(f'/api/v1/orders/{order.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        service = response.data['shipping_service']
+        self.assertEqual(service['provider'], 'DHL')
+        self.assertEqual(service['service_code'], 'P')
+        self.assertEqual(service['matched_item_skus'], ['DHL-LONG-001'])
+        self.assertEqual(
+            service['booking_url'],
+            f'/api/v1/orders/{order.id}/book-dhl-shipping/',
+        )
+
+    @override_settings(
+        DHL_INTEGRATION_ENABLED=False,
+        DHL_API_BASE_URL='https://express.api.dhl.com/mydhlapi/test',
+        DHL_CLIENT_ID='dhl-test-client',
+        DHL_CLIENT_SECRET='dhl-test-secret',
+        DHL_ACCOUNT_NUMBER='',
+        DHL_SECONDARY_ACCOUNT_NUMBER='',
+        DHL_DEFAULT_PRODUCT_CODE='',
+        DHL_SENDER_NAME='',
+        DHL_SENDER_POSTCODE='',
+        DHL_SENDER_CITY='',
+        DHL_SENDER_STREET='',
+        DHL_SENDER_PHONE='',
+        DHL_SENDER_EMAIL='',
+    )
+    def test_dhl_config_does_not_expose_secret(self):
+        response = self.client.get('/api/v1/orders/dhl/config/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['configured'])
+        self.assertTrue(response.data['client_id_present'])
+        self.assertTrue(response.data['client_secret_present'])
+        self.assertNotIn('dhl-test-secret', str(response.data))
+
+    @override_settings(
+        DHL_INTEGRATION_ENABLED=True,
+        DHL_API_BASE_URL='https://express.api.dhl.com/mydhlapi/test',
+        DHL_CLIENT_ID='dhl-test-client',
+        DHL_CLIENT_SECRET='dhl-test-secret',
+        DHL_ACCOUNT_NUMBER='K820021',
+        DHL_DEFAULT_PRODUCT_CODE='P',
+        DHL_SENDER_NAME='Civani Ltd',
+        DHL_SENDER_COUNTRY_CODE='GB',
+        DHL_SENDER_POSTCODE='LE2 7SR',
+        DHL_SENDER_CITY='Leicester',
+        DHL_SENDER_STREET='85 Commercial Square',
+        DHL_SENDER_PHONE='01162542366',
+        DHL_SENDER_EMAIL='warehouse@example.com',
+    )
+    @patch('orders.services.dhl.requests.post')
+    def test_dhl_does_not_book_non_completed_order(self, mock_post):
+        order = self._qualifying_order(order_status=Order.STATUS_NEW)
+
+        response = self.client.post(
+            f'/api/v1/orders/{order.id}/book-dhl-shipping/',
+            {'weight_in_grams': 6500},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Cannot ship order in NEW status', response.data['error'])
+        mock_post.assert_not_called()
+
+    def _qualifying_order(self, order_status=Order.STATUS_COMPLETED):
+        color = Color.objects.create(color_code='DHL', color_name='DHL Test')
+        product = Product.objects.create(
+            vs_parent_id=93001,
+            vs_child_id=93001,
+            parent_reference='DHL-LONG-001',
+            child_reference='DHL-LONG-001',
+            parent_product_title='DHL Long Fabric',
+            child_product_title='DHL Long Fabric',
+            weight_kg=Decimal('6.500'),
+        )
+        stock_item = StockItem.objects.create(
+            sku='DHL-LONG-001',
+            product_type='DHL',
+            product=product,
+            color=color,
+            available_stock_in_mtr=30,
+        )
+        order = Order.objects.create(
+            customer_name='DHL Customer',
+            external_order_id='WEB-DHL-001',
+            customer_email='dhl@example.com',
+            customer_phone='07123456789',
+            shipping_address_line1='10 Delivery Street',
+            shipping_city='London',
+            shipping_postal_code='SW1A 2AA',
+            shipping_country='UK',
+            courier_service_code='NEXT DAY',
+            total_amount=Decimal('100.00'),
+            order_status=order_status,
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            stock_item=stock_item,
+            sku='DHL-LONG-001',
+            product_name='Long Fabric, Length: 25 MTR',
+            quantity=1,
+            quantity_ordered=1,
+            unit_price=Decimal('100.00'),
+        )
+        return order
+
+
 class DashboardStatsAPITest(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='dashboard_user', password='test123')

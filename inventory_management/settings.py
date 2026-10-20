@@ -299,3 +299,37 @@ DPD_SENDER_ADDRESS2 = _env_str('DPD_SENDER_ADDRESS2', '')
 DPD_SENDER_CONTACT_NAME = _env_str('DPD_SENDER_CONTACT_NAME', '')
 DPD_SENDER_PHONE = _env_str('DPD_SENDER_PHONE', '')
 DPD_SENDER_EMAIL = _env_str('DPD_SENDER_EMAIL', '')
+
+# DHL Express MyDHL API
+DHL_INTEGRATION_ENABLED = os.environ.get(
+    'DHL_INTEGRATION_ENABLED',
+    'false',
+).strip().lower() in {'1', 'true', 'yes', 'on'}
+DHL_API_BASE_URL = _env_str(
+    'DHL_API_BASE_URL',
+    'https://express.api.dhl.com/mydhlapi/test',
+).rstrip('/')
+DHL_CLIENT_ID = _env_str('DHL_CLIENT_ID', '')
+DHL_CLIENT_SECRET = _env_str('DHL_CLIENT_SECRET', '')
+DHL_ACCOUNT_NUMBER = _env_str('DHL_ACCOUNT_NUMBER', '')
+DHL_SECONDARY_ACCOUNT_NUMBER = _env_str('DHL_SECONDARY_ACCOUNT_NUMBER', '')
+DHL_DEFAULT_PRODUCT_CODE = _env_str('DHL_DEFAULT_PRODUCT_CODE', '')
+DHL_DEFAULT_WEIGHT_GRAMS = int(os.environ.get('DHL_DEFAULT_WEIGHT_GRAMS', '100'))
+DHL_DEFAULT_LENGTH_CM = int(os.environ.get('DHL_DEFAULT_LENGTH_CM', '30'))
+DHL_DEFAULT_WIDTH_CM = int(os.environ.get('DHL_DEFAULT_WIDTH_CM', '20'))
+DHL_DEFAULT_HEIGHT_CM = int(os.environ.get('DHL_DEFAULT_HEIGHT_CM', '10'))
+DHL_LABEL_TEMPLATE = _env_str('DHL_LABEL_TEMPLATE', 'ECOM26_84_001')
+DHL_ALLOW_INTERNATIONAL = os.environ.get(
+    'DHL_ALLOW_INTERNATIONAL',
+    'false',
+).strip().lower() in {'1', 'true', 'yes', 'on'}
+DHL_SENDER_NAME = _env_str('DHL_SENDER_NAME', '')
+DHL_SENDER_COMPANY = _env_str('DHL_SENDER_COMPANY', '')
+DHL_SENDER_COUNTRY_CODE = _env_str('DHL_SENDER_COUNTRY_CODE', 'GB')
+DHL_SENDER_POSTCODE = _env_str('DHL_SENDER_POSTCODE', '')
+DHL_SENDER_CITY = _env_str('DHL_SENDER_CITY', '')
+DHL_SENDER_STREET = _env_str('DHL_SENDER_STREET', '')
+DHL_SENDER_ADDRESS2 = _env_str('DHL_SENDER_ADDRESS2', '')
+DHL_SENDER_CONTACT_NAME = _env_str('DHL_SENDER_CONTACT_NAME', '')
+DHL_SENDER_PHONE = _env_str('DHL_SENDER_PHONE', '')
+DHL_SENDER_EMAIL = _env_str('DHL_SENDER_EMAIL', '')

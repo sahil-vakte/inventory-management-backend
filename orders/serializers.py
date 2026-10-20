@@ -9,6 +9,7 @@ from stock.serializers import StockItemListSerializer
 from stock.sku_utils import normalize_sku_reference
 from products.serializers import get_product_child_product_url, get_product_weight_kg
 from .services.courier import courier_service_code
+from .services.dhl import DHLShippingClient, get_dhl_route
 from .services.dpd import DPDShippingClient
 from .services.label_links import make_public_label_token
 from .services.royal_mail import RoyalMailClickDropClient
@@ -453,6 +454,15 @@ class DPDShipmentSerializer(serializers.Serializer):
     return_label_pdf = serializers.BooleanField(required=False, default=False)
 
 
+class DHLShipmentSerializer(serializers.Serializer):
+    """Serializer for booking a DHL Express MyDHL shipment."""
+    weight_in_grams = serializers.IntegerField(required=False, min_value=1)
+    service_code = serializers.CharField(required=False, allow_blank=True)
+    account_number = serializers.CharField(required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    return_label_pdf = serializers.BooleanField(required=False, default=False)
+
+
 class OrderCancelSerializer(serializers.Serializer):
     """Serializer for cancelling an order"""
     reason = serializers.CharField(required=True)
@@ -683,7 +693,11 @@ def get_order_shipping_service(order):
             'message': 'No courier/delivery method is available for this order.',
         }
 
-    for resolver in (get_dpd_shipping_service, get_royal_mail_shipping_service):
+    for resolver in (
+        get_dhl_shipping_service,
+        get_dpd_shipping_service,
+        get_royal_mail_shipping_service,
+    ):
         service = resolver(order, weight_in_grams)
         if service:
             return service
@@ -693,6 +707,29 @@ def get_order_shipping_service(order):
         'delivery_method': delivery_method,
         'weight_in_grams': weight_in_grams,
         'message': 'No shipping rule matched this order.',
+    }
+
+
+def get_dhl_shipping_service(order, weight_in_grams):
+    delivery_method = get_order_delivery_method(order)
+    route = get_dhl_route(order, weight_in_grams, delivery_method=delivery_method)
+    if not route:
+        return None
+
+    service_code = DHLShippingClient().default_product_code or None
+    return {
+        'provider': 'DHL',
+        'delivery_method': delivery_method,
+        'weight_in_grams': weight_in_grams,
+        'shipment_type': 'PARCEL',
+        'service_code': service_code,
+        'routing_reason': route['routing_reason'],
+        'matched_item_skus': route['matched_item_skus'],
+        'booking_url': f'/api/v1/orders/{order.id}/book-dhl-shipping/',
+        **(
+            {'message': 'Set DHL_DEFAULT_PRODUCT_CODE before DHL booking.'}
+            if not service_code else {}
+        ),
     }
 
 
