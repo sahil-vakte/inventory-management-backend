@@ -94,6 +94,8 @@ EXTENDED_METADATA_FIELDS = {
     'updated_at',
 }
 
+CSV_ENCODINGS = ('utf-8-sig', 'cp1252', 'latin-1')
+
 
 class Command(BaseCommand):
     help = (
@@ -145,6 +147,7 @@ class Command(BaseCommand):
         chunk_size = max(1, chunk_size)
         source_file_name = source_file_name or file_path.name
         source_date = self._source_date_from_name(source_file_name)
+        csv_encoding = self._detect_csv_encoding(file_path)
 
         stats = {
             'batch_id': batch_id,
@@ -174,8 +177,9 @@ class Command(BaseCommand):
                 f"Importing {source_file_name} with batch '{batch_id}'"
                 + (' (dry run)' if dry_run else '')
             )
+            self.stdout.write(f'Reading CSV using {csv_encoding} encoding')
 
-        with file_path.open('r', encoding='utf-8-sig', newline='') as handle:
+        with file_path.open('r', encoding=csv_encoding, newline='') as handle:
             reader = csv.reader(handle)
             try:
                 source_headers = next(reader)
@@ -205,6 +209,21 @@ class Command(BaseCommand):
                 )
 
         return stats
+
+    def _detect_csv_encoding(self, file_path):
+        """Use strict decoding so product text is not silently corrupted."""
+        for encoding in CSV_ENCODINGS:
+            try:
+                with file_path.open('r', encoding=encoding, newline='') as handle:
+                    while handle.read(1024 * 1024):
+                        pass
+                return encoding
+            except UnicodeDecodeError:
+                continue
+
+        raise CommandError(
+            'CSV could not be decoded as UTF-8, Windows-1252, or Latin-1.'
+        )
 
     def _process_chunk(
         self, chunk, header_specs, source_file_name, source_date,
