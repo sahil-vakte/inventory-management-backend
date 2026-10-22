@@ -755,7 +755,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             settings.DHL_CLIENT_ID,
             settings.DHL_CLIENT_SECRET,
             settings.DHL_ACCOUNT_NUMBER,
-            settings.DHL_DEFAULT_PRODUCT_CODE,
+            settings.DHL_NEXT_DAY_PRODUCT_CODE,
             sender_configured,
         ])
         return Response({
@@ -771,6 +771,9 @@ class OrderViewSet(viewsets.ModelViewSet):
             'account_number_present': bool(settings.DHL_ACCOUNT_NUMBER),
             'secondary_account_number_present': bool(settings.DHL_SECONDARY_ACCOUNT_NUMBER),
             'default_product_code': settings.DHL_DEFAULT_PRODUCT_CODE,
+            'next_day_product_code': settings.DHL_NEXT_DAY_PRODUCT_CODE,
+            'next_day_12_product_code_present': bool(settings.DHL_NEXT_DAY_12_PRODUCT_CODE),
+            'excluded_product_keywords': settings.DHL_EXCLUDED_PRODUCT_KEYWORDS,
             'default_weight_grams': settings.DHL_DEFAULT_WEIGHT_GRAMS,
             'label_template': settings.DHL_LABEL_TEMPLATE,
             'international_booking_enabled': settings.DHL_ALLOW_INTERNATIONAL,

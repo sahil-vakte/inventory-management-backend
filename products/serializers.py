@@ -98,7 +98,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'vs_child_id', 'child_reference', 'child_product_title',
+            'vs_child_id', 'child_reference', 'child_product_title', 'short_title',
             'parent_product_images', 'child_product_url',
             'brand_name', 'effective_price', 'is_active',
             'child_active', 'parent_active', 'featured', 'is_deleted',

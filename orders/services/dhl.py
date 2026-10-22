@@ -33,6 +33,8 @@ class DHLShippingClient:
         self.account_number = settings.DHL_ACCOUNT_NUMBER
         self.secondary_account_number = settings.DHL_SECONDARY_ACCOUNT_NUMBER
         self.default_product_code = settings.DHL_DEFAULT_PRODUCT_CODE
+        self.next_day_product_code = settings.DHL_NEXT_DAY_PRODUCT_CODE
+        self.next_day_12_product_code = settings.DHL_NEXT_DAY_12_PRODUCT_CODE
         self.default_weight_grams = settings.DHL_DEFAULT_WEIGHT_GRAMS
         self.default_length_cm = settings.DHL_DEFAULT_LENGTH_CM
         self.default_width_cm = settings.DHL_DEFAULT_WIDTH_CM
@@ -65,14 +67,20 @@ class DHLShippingClient:
         route = get_dhl_route(order, resolved_weight, delivery_method=delivery_method)
         if not route:
             raise ValueError(
-                'No DHL routing rule matched this order. DHL requires a qualifying item '
-                'longer than 20 metres, a 6000-30000g order weight, and NEXT DAY delivery.'
+                'No DHL routing rule matched this order. DHL requires a qualifying wholesale '
+                'fabric order of 20 metres or more (excluding configured product types) and '
+                'a supported delivery method: STD, NEXT DAY, or NEXT DAY 12.'
             )
 
-        product_code = (service_code or self.default_product_code or '').strip().upper()
+        product_code = (service_code or self._product_code_for_route(route) or '').strip().upper()
         if not product_code:
+            setting_name = (
+                'DHL_NEXT_DAY_12_PRODUCT_CODE'
+                if route['service_name'] == 'NEXT DAY 12:00'
+                else 'DHL_NEXT_DAY_PRODUCT_CODE'
+            )
             raise ValueError(
-                'DHL product code is required. Set DHL_DEFAULT_PRODUCT_CODE or pass service_code.'
+                f'DHL product code is required. Set {setting_name} or pass service_code.'
             )
 
         return {
@@ -80,9 +88,15 @@ class DHLShippingClient:
             'shipment_type': 'PARCEL',
             'service_code': product_code,
             'delivery_method': delivery_method,
+            'service_name': route['service_name'],
             'routing_reason': route['routing_reason'],
             'matched_item_skus': route['matched_item_skus'],
         }
+
+    def _product_code_for_route(self, route):
+        if route['service_name'] == 'NEXT DAY 12:00':
+            return self.next_day_12_product_code
+        return self.next_day_product_code or self.default_product_code
 
     def create_shipment(
         self,
@@ -336,20 +350,25 @@ class DHLShippingClient:
 
 def get_dhl_route(order, weight_in_grams, *, delivery_method=None):
     delivery_method = (delivery_method or '').upper().strip()
-    if not (6000 <= int(weight_in_grams or 0) <= 30000):
+    service_name = _dhl_service_name(delivery_method)
+    if not service_name:
         return None
-    if delivery_method != 'NEXT DAY':
+    if not order.is_wholesale:
         return None
 
     matched_item_skus = []
     for item in order.items.all():
-        if _item_has_qualifying_length(item):
+        if _item_is_qualifying_wholesale_fabric(item):
             matched_item_skus.append(item.sku)
     if not matched_item_skus:
         return None
 
     return {
-        'routing_reason': 'Qualifying item longer than 20m, 6000-30000g order weight, and NEXT DAY delivery.',
+        'service_name': service_name,
+        'routing_reason': (
+            f'Wholesale fabric order of 20 metres or more, excluding configured product '
+            f'types; {delivery_method} delivery maps to DHL {service_name} parcel service.'
+        ),
         'matched_item_skus': matched_item_skus,
     }
 
@@ -406,20 +425,38 @@ def _find_first_value(data, keys):
     return None
 
 
-def _item_has_qualifying_length(item):
+def _dhl_service_name(delivery_method):
+    normalized = re.sub(r'\s+', ' ', delivery_method or '').strip().upper()
+    if normalized in {'STD', 'STANDARD', 'NEXT DAY'}:
+        return 'NEXT DAY'
+    if normalized in {'NEXT DAY 12', 'NEXT DAY BY 12', 'NEXT DAY 12:00', 'NEXT DAY BY 12:00'}:
+        return 'NEXT DAY 12:00'
+    return None
+
+
+def _item_is_qualifying_wholesale_fabric(item):
     product_name = item.product_name or ''
-    normalized_name = product_name.lower()
-    if any(value in normalized_name for value in ('fleece', 'lace', 'trimming', 'elastic tape')):
+    product = getattr(getattr(item, 'stock_item', None), 'product', None)
+    product_titles = [
+        getattr(product, 'parent_product_title', '') if product else '',
+        getattr(product, 'child_product_title', '') if product else '',
+    ]
+    searchable_text = ' '.join([product_name, *product_titles]).lower()
+    if any(value in searchable_text for value in settings.DHL_EXCLUDED_PRODUCT_KEYWORDS):
         return False
 
-    product = getattr(getattr(item, 'stock_item', None), 'product', None)
-    values = [product_name, getattr(product, 'attribute_length', '') if product else '']
+    values = [
+        product_name,
+        *product_titles,
+        getattr(product, 'attribute_length', '') if product else '',
+    ]
     if product:
         values.extend(
             data.attribute_1_length or ''
             for data in product.extended_data.all()
         )
-    return any(_length_in_metres(value) > Decimal('20') for value in values)
+    length_in_metres = max((_length_in_metres(value) for value in values), default=Decimal('0'))
+    return length_in_metres >= Decimal('20') or int(item.quantity or 0) >= 20
 
 
 def _length_in_metres(value):

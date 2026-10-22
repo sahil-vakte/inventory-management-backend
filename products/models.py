@@ -140,6 +140,7 @@ class Product(models.Model):
     # Product Information
     parent_product_title = models.CharField(max_length=500)
     child_product_title = models.CharField(max_length=500)
+    short_title = models.CharField(max_length=500, blank=True, null=True)
     product_subtitle = models.CharField(max_length=300, blank=True, null=True)
     product_summary = models.TextField(blank=True, null=True)
     product_description = models.TextField(blank=True, null=True)
@@ -368,6 +369,7 @@ class ProductExtendedData(models.Model):
     blank_column_8 = models.TextField(db_column='blank_column_8', blank=True, null=True)
     parent_product_title = models.TextField(db_column='Parent Product Title', blank=True, null=True)
     child_product_title = models.TextField(db_column='Child Product Title', blank=True, null=True)
+    short_title = models.TextField(db_column='ShortTitle', blank=True, null=True)
     product_subtitle = models.TextField(db_column='Product Subtitle', blank=True, null=True)
     product_summary = models.TextField(db_column='Product Summary', blank=True, null=True)
     product_description = models.TextField(db_column='Product Description', blank=True, null=True)

@@ -29,7 +29,7 @@ class StockProductListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'vs_child_id', 'child_reference', 'child_product_title',
+            'vs_child_id', 'child_reference', 'child_product_title', 'short_title',
             'parent_product_images', 'child_product_url',
             'brand_name', 'price_break_1_price', 'is_active',
             'child_active', 'parent_active', 'featured', 'is_deleted',
@@ -359,7 +359,8 @@ class StockBatchCreateSerializer(serializers.Serializer):
 
             product = getattr(stock_item, 'product', None)
             product_name = (
-                getattr(product, 'child_product_title', None)
+                getattr(product, 'short_title', None)
+                or getattr(product, 'child_product_title', None)
                 or getattr(product, 'parent_product_title', None)
                 or stock_item.product_type
                 or stock_item.sku
@@ -408,7 +409,8 @@ class StockBatchCreateSerializer(serializers.Serializer):
 
 class StockBatchLabelSerializer(serializers.ModelSerializer):
     sku = serializers.CharField(source='batch.sku', read_only=True)
-    product_name = serializers.CharField(source='batch.product_name', read_only=True)
+    product_name = serializers.SerializerMethodField()
+    short_title = serializers.SerializerMethodField()
     batch_id = serializers.CharField(source='batch.batch_id', read_only=True)
     supplier = serializers.CharField(source='batch.supplier', read_only=True)
     date = serializers.DateField(source='batch.batch_date', read_only=True)
@@ -416,9 +418,16 @@ class StockBatchLabelSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockBatchRoll
         fields = [
-            'sku', 'product_name', 'meterage', 'batch_id', 'supplier',
+            'sku', 'product_name', 'short_title', 'meterage', 'batch_id', 'supplier',
             'date', 'roll_number', 'label_generated', 'label_generated_at'
         ]
+
+    def get_short_title(self, obj):
+        product = getattr(getattr(obj.batch, 'stock_item', None), 'product', None)
+        return getattr(product, 'short_title', None) or None
+
+    def get_product_name(self, obj):
+        return self.get_short_title(obj) or obj.batch.product_name
 
 
 def normalize_stock_batch_sku(value):

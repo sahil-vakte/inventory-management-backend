@@ -26,6 +26,7 @@ FINALIZED_COLUMNS = {
     'Available On This Website',
     'Parent Product Title',
     'Child Product Title',
+    'ShortTitle',
     'Product Subtitle',
     'Product Summary',
     'Product Description',
@@ -295,6 +296,7 @@ class Command(BaseCommand):
             'child_reference': self._normalize_sku(row_data.get('Child Reference')) or '',
             'parent_product_title': self._clean(row_data.get('Parent Product Title')) or '',
             'child_product_title': self._clean(row_data.get('Child Product Title')) or '',
+            'short_title': self._clean(row_data.get('ShortTitle')),
             'product_subtitle': self._clean(row_data.get('Product Subtitle')),
             'product_summary': self._clean(row_data.get('Product Summary')),
             'product_description': self._clean(row_data.get('Product Description')),
@@ -638,20 +640,15 @@ class Command(BaseCommand):
         return specs
 
     def _validate_extended_model_columns(self, header_specs):
-        model_db_columns = {
-            field.db_column or field.column
-            for field in ProductExtendedData._meta.fields
-            if field.name not in EXTENDED_METADATA_FIELDS
-        }
+        present_columns = {spec['db_column'] for spec in header_specs}
         missing = [
-            spec['db_column']
-            for spec in header_specs
-            if spec['db_column'] not in model_db_columns
+            column for column in ('VS Parent ID', 'VS Child ID')
+            if column not in present_columns
         ]
         if missing:
             raise CommandError(
-                'ProductExtendedData is missing CSV columns: '
-                + ', '.join(missing[:10])
+                'Product CSV is missing required identifier columns: '
+                + ', '.join(missing)
             )
 
     def _row_data(self, header_specs, values):

@@ -22,14 +22,15 @@ Suggested environment variables:
 
 ```env
 DHL_INTEGRATION_ENABLED=false
-DHL_ENVIRONMENT=test
-DHL_API_BASE_URL=
-DHL_TOKEN_URL=
+DHL_API_BASE_URL=https://express.api.dhl.com/mydhlapi/test
 DHL_CLIENT_ID=
 DHL_CLIENT_SECRET=
 DHL_ACCOUNT_NUMBER=
-DHL_LABEL_FORMAT=PDF
-DHL_LABEL_SIZE=A6
+DHL_SECONDARY_ACCOUNT_NUMBER=
+DHL_DEFAULT_PRODUCT_CODE=
+DHL_NEXT_DAY_PRODUCT_CODE=
+DHL_NEXT_DAY_12_PRODUCT_CODE=
+DHL_EXCLUDED_PRODUCT_KEYWORDS=fleece,lace,trimming,tape,tutu net,polycotton
 DHL_SENDER_NAME=Civani Ltd
 DHL_SENDER_COMPANY=Civani Ltd
 DHL_SENDER_STREET=85 Commercial Square
@@ -48,8 +49,7 @@ DHL_SENDER_EMAIL=
    - Confirm whether this is DHL Express MyDHL API, DHL Parcel UK API, or
      another DHL product.
 2. Test and production API base URLs.
-3. OAuth token URL, required OAuth grant type, scopes, and required headers.
-4. Confirmation that the supplied credentials are test or production
+3. Confirmation that the supplied credentials are test or production
    credentials.
 5. Which account number to use for domestic UK, EU, and international
    shipments.
@@ -63,16 +63,13 @@ DHL_SENDER_EMAIL=
 10. Required DHL test shipment addresses and any account approval needed before
     production booking.
 
-## DHL Routing Rule Provided So Far
-
-The initial DHL rule received is incomplete and must be confirmed before it is
-enabled:
+## DHL Routing Rule
 
 | Condition | Planned result |
 | --- | --- |
-| An order contains any item longer than 20 metres, except Fleece, Lace/Trimmings, or Elastic Tape | Candidate for DHL |
-| Order weight is 6,000 to 30,000 grams | Candidate for DHL |
-| Delivery method is `NEXT DAY` | DHL parcel shipment |
+| Wholesale fabric order of 20 metres or more, excluding Fleece, Lace, Trimmings, Tapes, Tutu Nets, and Polycotton | DHL parcel candidate |
+| Delivery method is `STD` or `NEXT DAY` | DHL `NEXT DAY` service |
+| Delivery method is `NEXT DAY 12` / `NEXT DAY BY 12` | DHL `NEXT DAY 12:00` service |
 
 The DHL service/product code is still required. Do not route any order to DHL
 until the product code and account mapping are confirmed.
@@ -85,8 +82,8 @@ until the product code and account mapping are confirmed.
 3. If a DHL rule matches, WIMS displays the planned DHL service in the order
    `shipping_service` response.
 4. Warehouse calls a DHL booking endpoint for a completed order.
-5. WIMS obtains an OAuth access token, creates the shipment, then retrieves the
-   printable label if DHL returns it separately.
+5. WIMS uses MyDHL HTTP Basic authentication, creates the shipment, and receives
+   the printable label in the shipment response.
 6. Only after a label is saved does WIMS save the DHL tracking number, carrier,
    shipping method, shipment reference, and change the order status to
    `SHIPPED`.
@@ -140,8 +137,8 @@ GET /api/v1/orders/{order_id}/shipping-label/
 - [x] Reused the existing saved-label and public-label mechanisms.
 - [x] Save DHL tracking number, carrier (`DHL`), product code, shipment
   reference note, and label before marking the order as shipped.
-- [x] Added the supplied DHL routing rule: qualifying long item, 6000-30000g,
-  and `NEXT DAY` delivery.
+- [x] Added the DHL wholesale-fabric routing rule and the `STD` / `NEXT DAY` /
+  `NEXT DAY 12` service mapping.
 - [x] Included DHL in the computed `shipping_service` field in order list and
   detail responses.
 - [x] Updated `POSTMAN_COLLECTION_COMPLETE.json` with DHL config, booking, and

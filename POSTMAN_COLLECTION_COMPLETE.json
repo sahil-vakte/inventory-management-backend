@@ -941,7 +941,7 @@
                     "import-excel"
                   ]
                 },
-                "description": "Upload Product Master Excel file or Actual_Product_Data backup CSV. Use form-data key `file`. Full CSV imports start in the background and return 202 to avoid timeout. For CSV backup imports, optional form-data keys: `dry_run`, `batch_id`, `limit`, `chunk_size`, `skip_products`, `sync`.",
+                "description": "Upload Product Master Excel file or Visualsoft product export CSV. Use form-data key `file`. CSV `ShortTitle` is saved as the product short title and is used by stock label responses. Full CSV imports start in the background and return 202 to avoid timeout. For CSV backup imports, optional form-data keys: `dry_run`, `batch_id`, `limit`, `chunk_size`, `skip_products`, `sync`.",
                 "body": {
                   "mode": "formdata",
                   "formdata": [
@@ -3654,7 +3654,7 @@
                     "book-dhl-shipping"
                   ]
                 },
-                "description": "Books DHL Express MyDHL shipment and saves DHL's inline PDF label. The order must be COMPLETED. DHL is selected only for a qualifying item longer than 20m (excluding Fleece, Lace/Trimmings, and Elastic Tape), 6000-30000g total weight, and NEXT DAY delivery. service_code is the DHL product code; omit it only after DHL_DEFAULT_PRODUCT_CODE is configured. account_number is optional and must match one of WIMS's configured DHL account numbers.",
+                "description": "Books DHL Express MyDHL shipment and saves DHL's inline PDF label. The order must be COMPLETED. DHL is selected for a qualifying wholesale fabric order of 20m or more, excluding Fleece, Lace, Trimmings, Tapes, Tutu Nets, and Polycotton. STD and NEXT DAY map to DHL NEXT DAY; NEXT DAY 12 maps to DHL NEXT DAY 12:00. service_code is the DHL account product code; omit it only after the relevant DHL_NEXT_DAY_PRODUCT_CODE or DHL_NEXT_DAY_12_PRODUCT_CODE is configured. account_number is optional and must match one of WIMS's configured DHL account numbers.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"weight_in_grams\": 6500,\n  \"service_code\": \"{{dhl_product_code}}\",\n  \"notes\": \"Booked through DHL Express MyDHL API\",\n  \"return_label_pdf\": false\n}",

@@ -148,6 +148,26 @@ class StockBatchIncomingAPITest(TestCase):
         self.assertEqual(response.data['labels'][0]['meterage'], 100)
         self.assertEqual(response.data['labels'][0]['supplier'], 'Supplier Ltd')
 
+    def test_label_endpoint_prefers_product_short_title(self):
+        self.product.short_title = 'Product AB Short'
+        self.product.save(update_fields=['short_title'])
+        batch = StockBatch.objects.create(
+            stock_item=self.stock_item,
+            sku='AB',
+            product_name='Product AB Long Name',
+            supplier='Supplier Ltd',
+            created_by=self.user,
+            total_meterage=100,
+            roll_count=1,
+        )
+        StockBatchRoll.objects.create(batch=batch, roll_number=1, meterage=100)
+
+        response = self.client.get(f'/api/v1/stock-batches/{batch.batch_id}/labels/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['labels'][0]['short_title'], 'Product AB Short')
+        self.assertEqual(response.data['labels'][0]['product_name'], 'Product AB Short')
+
     def test_stock_batch_list_returns_roll_details(self):
         batch = StockBatch.objects.create(
             stock_item=self.stock_item,

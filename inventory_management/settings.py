@@ -314,6 +314,21 @@ DHL_CLIENT_SECRET = _env_str('DHL_CLIENT_SECRET', '')
 DHL_ACCOUNT_NUMBER = _env_str('DHL_ACCOUNT_NUMBER', '')
 DHL_SECONDARY_ACCOUNT_NUMBER = _env_str('DHL_SECONDARY_ACCOUNT_NUMBER', '')
 DHL_DEFAULT_PRODUCT_CODE = _env_str('DHL_DEFAULT_PRODUCT_CODE', '')
+# DHL product codes are account-specific. Keep separate values when DHL assigns
+# a different code to the before-noon service.
+DHL_NEXT_DAY_PRODUCT_CODE = _env_str(
+    'DHL_NEXT_DAY_PRODUCT_CODE',
+    DHL_DEFAULT_PRODUCT_CODE,
+)
+DHL_NEXT_DAY_12_PRODUCT_CODE = _env_str('DHL_NEXT_DAY_12_PRODUCT_CODE', '')
+DHL_EXCLUDED_PRODUCT_KEYWORDS = tuple(
+    value.strip().lower()
+    for value in _env_str(
+        'DHL_EXCLUDED_PRODUCT_KEYWORDS',
+        'fleece,lace,trimming,tape,tutu net,polycotton',
+    ).split(',')
+    if value.strip()
+)
 DHL_DEFAULT_WEIGHT_GRAMS = int(os.environ.get('DHL_DEFAULT_WEIGHT_GRAMS', '100'))
 DHL_DEFAULT_LENGTH_CM = int(os.environ.get('DHL_DEFAULT_LENGTH_CM', '30'))
 DHL_DEFAULT_WIDTH_CM = int(os.environ.get('DHL_DEFAULT_WIDTH_CM', '20'))

@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from rest_framework.test import APIClient
 from .models import Order, OrderItem, OrderBatch, RoyalMailOAuthToken
 from .services.xml_parser import XMLOrderParser
+from .services.dhl import DHLShippingClient, get_dhl_route
 from colors.models import Color
 from products.models import Product, ProductExtendedData
 from stock.models import StockItem
@@ -3658,6 +3659,31 @@ class DHLShippingAPITest(TestCase):
         self.assertEqual(payload['customerDetails']['receiverDetails']['contactInformation']['fullName'], 'DHL Customer')
 
     @override_settings(
+        DHL_NEXT_DAY_PRODUCT_CODE='N',
+        DHL_NEXT_DAY_12_PRODUCT_CODE='T',
+    )
+    def test_dhl_rule_maps_delivery_method_to_planned_service(self):
+        standard_order = self._qualifying_order(courier_service_code='STD')
+        standard_route = DHLShippingClient().resolve_shipping_options(standard_order)
+        standard_order.courier_service_code = 'NEXT DAY 12'
+        standard_order.save(update_fields=['courier_service_code'])
+        noon_route = DHLShippingClient().resolve_shipping_options(standard_order)
+
+        self.assertEqual(standard_route['service_name'], 'NEXT DAY')
+        self.assertEqual(standard_route['service_code'], 'N')
+        self.assertEqual(noon_route['service_name'], 'NEXT DAY 12:00')
+        self.assertEqual(noon_route['service_code'], 'T')
+
+    def test_dhl_rule_excludes_tutu_net_and_polycotton(self):
+        order = self._qualifying_order(product_name='Tutu Net, Length: 25 MTR')
+        self.assertIsNone(get_dhl_route(order, 3000, delivery_method='NEXT DAY'))
+
+        item = order.items.get()
+        item.product_name = 'Polycotton, Length: 25 MTR'
+        item.save(update_fields=['product_name'])
+        self.assertIsNone(get_dhl_route(order, 3000, delivery_method='NEXT DAY'))
+
+    @override_settings(
         DHL_INTEGRATION_ENABLED=True,
         DHL_API_BASE_URL='https://express.api.dhl.com/mydhlapi/test',
         DHL_CLIENT_ID='dhl-test-client',
@@ -3740,7 +3766,13 @@ class DHLShippingAPITest(TestCase):
         self.assertIn('Cannot ship order in NEW status', response.data['error'])
         mock_post.assert_not_called()
 
-    def _qualifying_order(self, order_status=Order.STATUS_COMPLETED):
+    def _qualifying_order(
+        self,
+        order_status=Order.STATUS_COMPLETED,
+        external_order_id='WEB-DHL-001',
+        courier_service_code='NEXT DAY',
+        product_name='Long Fabric, Length: 25 MTR',
+    ):
         color = Color.objects.create(color_code='DHL', color_name='DHL Test')
         product = Product.objects.create(
             vs_parent_id=93001,
@@ -3760,14 +3792,14 @@ class DHLShippingAPITest(TestCase):
         )
         order = Order.objects.create(
             customer_name='DHL Customer',
-            external_order_id='WEB-DHL-001',
+            external_order_id=external_order_id,
             customer_email='dhl@example.com',
             customer_phone='07123456789',
             shipping_address_line1='10 Delivery Street',
             shipping_city='London',
             shipping_postal_code='SW1A 2AA',
             shipping_country='UK',
-            courier_service_code='NEXT DAY',
+            courier_service_code=courier_service_code,
             total_amount=Decimal('100.00'),
             order_status=order_status,
             created_by=self.user,
@@ -3776,9 +3808,9 @@ class DHLShippingAPITest(TestCase):
             order=order,
             stock_item=stock_item,
             sku='DHL-LONG-001',
-            product_name='Long Fabric, Length: 25 MTR',
-            quantity=1,
-            quantity_ordered=1,
+            product_name=product_name,
+            quantity=20,
+            quantity_ordered=20,
             unit_price=Decimal('100.00'),
         )
         return order

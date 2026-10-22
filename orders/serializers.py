@@ -716,18 +716,25 @@ def get_dhl_shipping_service(order, weight_in_grams):
     if not route:
         return None
 
-    service_code = DHLShippingClient().default_product_code or None
+    dhl_client = DHLShippingClient()
+    service_code = dhl_client._product_code_for_route(route) or None
+    product_code_setting = (
+        'DHL_NEXT_DAY_12_PRODUCT_CODE'
+        if route['service_name'] == 'NEXT DAY 12:00'
+        else 'DHL_NEXT_DAY_PRODUCT_CODE'
+    )
     return {
         'provider': 'DHL',
         'delivery_method': delivery_method,
         'weight_in_grams': weight_in_grams,
         'shipment_type': 'PARCEL',
+        'service_name': route['service_name'],
         'service_code': service_code,
         'routing_reason': route['routing_reason'],
         'matched_item_skus': route['matched_item_skus'],
         'booking_url': f'/api/v1/orders/{order.id}/book-dhl-shipping/',
         **(
-            {'message': 'Set DHL_DEFAULT_PRODUCT_CODE before DHL booking.'}
+            {'message': f'Set {product_code_setting} before DHL booking.'}
             if not service_code else {}
         ),
     }
