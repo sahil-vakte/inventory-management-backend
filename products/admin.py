@@ -96,7 +96,7 @@ class ProductAdmin(admin.ModelAdmin):
         }),
         ('Product Details', {
             'fields': (
-                'parent_product_title', 'child_product_title', 'product_subtitle',
+                'parent_product_title', 'child_product_title', 'short_title', 'product_subtitle',
                 'product_summary', 'product_description', 'brand', 'categories'
             )
         }),
