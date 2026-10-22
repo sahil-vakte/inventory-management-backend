@@ -94,11 +94,6 @@ class ProductAdmin(admin.ModelAdmin):
                 'vs_parent_id', 'vs_child_id', 'parent_reference', 'child_reference'
             )
         }),
-        ('Product Locations', {
-            'fields': (
-                'primary_location', 'secondary_location',
-            )
-        }),
         ('Product Details', {
             'fields': (
                 'parent_product_title', 'child_product_title', 'product_subtitle',

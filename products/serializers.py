@@ -92,17 +92,13 @@ class ProductListSerializer(serializers.ModelSerializer):
     is_active = serializers.ReadOnlyField()
     child_product_url = serializers.SerializerMethodField()
     
-    primary_location = serializers.CharField(source='primary_location.id', read_only=True)
-    secondary_location = serializers.CharField(source='secondary_location.id', read_only=True)
-    
     class Meta:
         model = Product
         fields = [
             'vs_child_id', 'child_reference', 'child_product_title', 'short_title',
             'parent_product_images', 'child_product_url',
             'brand_name', 'effective_price', 'is_active',
-            'child_active', 'parent_active', 'featured', 'is_deleted',
-            'primary_location', 'secondary_location'
+            'child_active', 'parent_active', 'featured', 'is_deleted'
         ]
 
     def get_child_product_url(self, obj):
@@ -116,11 +112,6 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     is_active = serializers.ReadOnlyField()
     child_product_url = serializers.SerializerMethodField()
     
-    primary_location = LocationSerializer(read_only=True)
-    primary_location_id = serializers.CharField(source='primary_location.id', read_only=True)
-    secondary_location = LocationSerializer(read_only=True)
-    secondary_location_id = serializers.CharField(source='secondary_location.id', read_only=True)
-    
     class Meta:
         model = Product
         fields = '__all__'
@@ -131,9 +122,6 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 
 class ProductCreateUpdateSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating products"""
-    
-    primary_location = serializers.CharField(required=False, allow_null=True, write_only=True)
-    secondary_location = serializers.CharField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = Product
@@ -146,24 +134,6 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         if data.get('cost_price_inc_vat', 0) < 0:
             raise serializers.ValidationError("Cost price cannot be negative")
 
-        # Validate primary_location exists if provided
-        primary_location_id = data.get('primary_location')
-        if primary_location_id:
-            try:
-                primary_location = Location.objects.get(id=primary_location_id)
-                data['primary_location'] = primary_location
-            except Location.DoesNotExist:
-                raise serializers.ValidationError({"primary_location": "Primary location does not exist."})
-        
-        # Validate secondary_location exists if provided
-        secondary_location_id = data.get('secondary_location')
-        if secondary_location_id:
-            try:
-                secondary_location = Location.objects.get(id=secondary_location_id)
-                data['secondary_location'] = secondary_location
-            except Location.DoesNotExist:
-                raise serializers.ValidationError({"secondary_location": "Secondary location does not exist."})
-        
         return data
 
     def validate_vs_child_id(self, value):
