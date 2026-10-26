@@ -7,12 +7,29 @@ from decimal import Decimal
 from .models import Order, OrderItem, OrderBatch, OrderBatchOrder, OrderStatusHistory
 from stock.serializers import StockItemListSerializer
 from stock.sku_utils import normalize_sku_reference
+from products.models import Product
 from products.serializers import get_product_child_product_url, get_product_weight_kg
 from .services.courier import courier_service_code
 from .services.dhl import DHLShippingClient, get_dhl_route
 from .services.dpd import DPDShippingClient
 from .services.label_links import make_public_label_token
 from .services.royal_mail import RoyalMailClickDropClient
+
+
+def get_order_item_short_title(item, cache):
+    product = getattr(getattr(item, 'stock_item', None), 'product', None)
+    if product:
+        return product.short_title or None
+
+    sku = normalize_sku_reference(item.sku)
+    if not sku:
+        return None
+
+    if sku not in cache:
+        cache[sku] = Product.all_objects.filter(
+            child_reference=sku
+        ).values_list('short_title', flat=True).first()
+    return cache[sku] or None
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -25,6 +42,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     child_product_url = serializers.SerializerMethodField()
     unit_weight_gm = serializers.SerializerMethodField()
     total_weight_gm = serializers.SerializerMethodField()
+    short_title = serializers.SerializerMethodField()
     available_stock_in_mtr = serializers.IntegerField(source='stock_item.available_stock_in_mtr', read_only=True)
 
     def get_assigned_to_username(self, obj):
@@ -50,12 +68,18 @@ class OrderItemSerializer(serializers.ModelSerializer):
         weight = get_product_weight_kg(getattr(stock_item, 'product', None))
         total_weight = weight * Decimal(obj.quantity or 0)
         return weight_kg_to_gm(total_weight)
+
+    def get_short_title(self, obj):
+        cache = getattr(self, '_short_title_by_sku', {})
+        self._short_title_by_sku = cache
+        return get_order_item_short_title(obj, cache)
     
     class Meta:
         model = OrderItem
         fields = [
             'id', 'order', 'stock_item', 'stock_detail',
             'sku', 'product_name', 'product_type', 'color_code',
+            'short_title',
             'parent_product_images', 'child_product_url', 'available_stock_in_mtr',
             'unit_weight_gm', 'total_weight_gm',
             'quantity', 'quantity_ordered', 'quantity_processed',
@@ -160,6 +184,7 @@ class OrderListSerializer(serializers.ModelSerializer):
     public_shipping_label_url = serializers.SerializerMethodField()
     shipping_address = serializers.CharField(read_only=True)
     billing_address = serializers.CharField(read_only=True)
+    short_titles = serializers.SerializerMethodField()
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -213,6 +238,16 @@ class OrderListSerializer(serializers.ModelSerializer):
         token = make_public_label_token(obj)
         path = f'/api/v1/orders/{obj.id}/shipping-label/public/{token}/'
         return request.build_absolute_uri(path) if request else path
+
+    def get_short_titles(self, obj):
+        titles = []
+        cache = getattr(self, '_short_title_by_sku', {})
+        for item in obj.items.all():
+            short_title = get_order_item_short_title(item, cache)
+            if short_title and short_title not in titles:
+                titles.append(short_title)
+        self._short_title_by_sku = cache
+        return titles
     
     class Meta:
         model = Order
@@ -228,6 +263,7 @@ class OrderListSerializer(serializers.ModelSerializer):
             'tiaknight_order_date_raw', 'tiaknight_fetched_at',
             'total_amount', 'item_count', 'total_quantity',
             'total_weight_gm',
+            'short_titles',
             'shipping_method', 'carrier', 'courier_service_name', 'courier_service_code',
             'shipping_service',
             'royal_mail_order_identifier', 'shipping_label_file',
@@ -282,6 +318,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     shipping_service = serializers.SerializerMethodField()
     shipping_label_url = serializers.SerializerMethodField()
     public_shipping_label_url = serializers.SerializerMethodField()
+    short_titles = serializers.SerializerMethodField()
 
     def get_completion_percentage(self, obj):
         return obj.get_completion_percentage()
@@ -335,6 +372,16 @@ class OrderDetailSerializer(serializers.ModelSerializer):
         token = make_public_label_token(obj)
         path = f'/api/v1/orders/{obj.id}/shipping-label/public/{token}/'
         return request.build_absolute_uri(path) if request else path
+
+    def get_short_titles(self, obj):
+        titles = []
+        cache = getattr(self, '_short_title_by_sku', {})
+        for item in obj.items.all():
+            short_title = get_order_item_short_title(item, cache)
+            if short_title and short_title not in titles:
+                titles.append(short_title)
+        self._short_title_by_sku = cache
+        return titles
     
     class Meta:
         model = Order

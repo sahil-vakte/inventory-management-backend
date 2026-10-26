@@ -97,12 +97,17 @@ class StockBatchIncomingAPITest(TestCase):
         self.assertEqual(second.batch_id, f"BATCH-{timezone.localdate():%Y%m%d}-2")
 
     def test_stock_list_product_uses_price_break_1_price(self):
+        self.product.short_title = 'Short Product AB'
+        self.product.save(update_fields=['short_title'])
+
         response = self.client.get('/api/v1/stock/')
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['results'][0]['short_title'], 'Short Product AB')
         product_data = response.data['results'][0]['product']
         self.assertNotIn('effective_price', product_data)
         self.assertEqual(product_data['price_break_1_price'], '9.50')
+        self.assertEqual(product_data['short_title'], 'Short Product AB')
 
     def test_stock_responses_include_child_product_url_from_extended_data(self):
         ProductExtendedData.objects.create(

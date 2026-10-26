@@ -511,6 +511,75 @@ class OrderWithItemsAPITest(TestCase):
         mock_response.content = content
         mock_get.return_value = mock_response
 
+    def test_order_responses_include_product_short_titles(self):
+        color = Color.objects.create(color_code='STL', color_name='Steel')
+        product = Product.objects.create(
+            vs_parent_id=97001,
+            vs_child_id=97001,
+            parent_reference='SHORT-TITLE-SKU',
+            child_reference='SHORT-TITLE-SKU',
+            parent_product_title='Long Product Title',
+            child_product_title='Long Child Product Title',
+            short_title='Short Label Title',
+        )
+        stock_item = StockItem.objects.create(
+            sku='SHORT-TITLE-SKU',
+            product_type='FABRIC',
+            product=product,
+            color=color,
+            available_stock_in_mtr=10,
+        )
+        order = Order.objects.create(
+            customer_name='Short Title Customer',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=order,
+            stock_item=stock_item,
+            sku='SHORT-TITLE-SKU',
+            product_name='Long Child Product Title',
+            quantity=1,
+            unit_price=Decimal('10.00'),
+        )
+
+        list_response = self.client.get('/api/v1/orders/')
+        detail_response = self.client.get(f'/api/v1/orders/{order.id}/')
+        with_items_response = self.client.get('/api/v1/orders/with-items/')
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(with_items_response.status_code, 200)
+
+        order_row = next(row for row in list_response.data['results'] if row['id'] == order.id)
+        self.assertEqual(order_row['short_titles'], ['Short Label Title'])
+        self.assertEqual(detail_response.data['short_titles'], ['Short Label Title'])
+        self.assertEqual(detail_response.data['items'][0]['short_title'], 'Short Label Title')
+        with_items_row = next(
+            row for row in with_items_response.data['results'] if row['id'] == order.id
+        )
+        self.assertEqual(with_items_row['items'][0]['short_title'], 'Short Label Title')
+
+        fallback_order = Order.objects.create(
+            customer_name='SKU Fallback Customer',
+            total_amount=Decimal('10.00'),
+            created_by=self.user,
+        )
+        OrderItem.objects.create(
+            order=fallback_order,
+            sku='SHORT-TITLE-SKU',
+            product_name='Long Child Product Title',
+            quantity=1,
+            unit_price=Decimal('10.00'),
+        )
+        fallback_detail_response = self.client.get(f'/api/v1/orders/{fallback_order.id}/')
+
+        self.assertEqual(fallback_detail_response.status_code, 200)
+        self.assertEqual(
+            fallback_detail_response.data['items'][0]['short_title'],
+            'Short Label Title',
+        )
+
     def test_with_items_returns_orders_with_nested_items(self):
         order = Order.objects.create(
             customer_name='Test Customer',
