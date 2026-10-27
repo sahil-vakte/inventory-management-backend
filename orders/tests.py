@@ -2187,7 +2187,7 @@ class OrderWithItemsAPITest(TestCase):
             external_order_id='WEB-DPD-UK-001',
             customer_email='dpduk@example.com',
             customer_phone='+44 (07123) 456789',
-            shipping_address_line1='10 Delivery Street',
+            shipping_address_line1='10 Delivery Street With An Extended Address Name',
             shipping_city='London',
             shipping_postal_code='SW1A 2AA',
             shipping_country='UK',
@@ -2252,6 +2252,19 @@ class OrderWithItemsAPITest(TestCase):
             request_payload['outboundConsignment']['deliveryDetails']['address']['postcode'],
             'SW1A 2AA',
         )
+        self.assertEqual(
+            request_payload['outboundConsignment']['deliveryDetails']['address']['street'],
+            '10 Delivery Street With An Extended',
+        )
+        self.assertEqual(
+            request_payload['outboundConsignment']['deliveryDetails']['address']['locality'],
+            'Address Name',
+        )
+
+        from orders.services.dpd import DPDShippingClient
+
+        with self.assertRaisesMessage(ValueError, 'DPD supports at most two address lines'):
+            DPDShippingClient()._dpd_uk_address_lines(' '.join(['Address'] * 11), '')
 
     @override_settings(
         DPD_INTEGRATION_ENABLED=True,

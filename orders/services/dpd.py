@@ -14,6 +14,10 @@ from orders.services.courier import courier_service_code
 logger = logging.getLogger(__name__)
 
 
+# DPD UK validates both printable address lines to 35 characters.
+DPD_UK_ADDRESS_LINE_MAX_LENGTH = 35
+
+
 class DPDConfigError(ValueError):
     pass
 
@@ -481,8 +485,10 @@ class DPDShippingClient:
         return aliases.get(compact, compact)
 
     def _dpd_uk_address(self, address, *, fallback_name, prefer_name=False):
-        street = address.get('street') or ''
-        address2 = address.get('address2') or ''
+        street, locality = self._dpd_uk_address_lines(
+            address.get('street'),
+            address.get('address2'),
+        )
         organisation = address.get('companyName') or fallback_name or ''
         if prefer_name:
             organisation = address.get('name') or organisation
@@ -490,12 +496,43 @@ class DPDShippingClient:
             'organisation': organisation,
             'property': '',
             'street': street,
-            'locality': address2,
+            'locality': locality,
             'town': address.get('city') or '',
             'county': '',
             'postcode': address.get('zipCode') or '',
             'countryCode': address.get('countryCode') or 'GB',
         }
+
+    def _dpd_uk_address_lines(self, street, address2):
+        """Fit WIMS address text into DPD UK's two printable address lines."""
+        combined = ' '.join(f'{street or ""} {address2 or ""}'.split())
+        if not combined:
+            return '', ''
+
+        lines = []
+        remaining = combined
+        while remaining:
+            if len(remaining) <= DPD_UK_ADDRESS_LINE_MAX_LENGTH:
+                lines.append(remaining)
+                break
+
+            split_at = remaining.rfind(' ', 0, DPD_UK_ADDRESS_LINE_MAX_LENGTH + 1)
+            if split_at <= 0:
+                raise ValueError(
+                    'DPD address contains a word longer than '
+                    f'{DPD_UK_ADDRESS_LINE_MAX_LENGTH} characters and cannot be printed safely.'
+                )
+            lines.append(remaining[:split_at])
+            remaining = remaining[split_at + 1:]
+
+            if len(lines) == 2 and remaining:
+                raise ValueError(
+                    'DPD supports at most two address lines of '
+                    f'{DPD_UK_ADDRESS_LINE_MAX_LENGTH} characters. '
+                    'Shorten the shipping address before booking.'
+                )
+
+        return (lines + ['', ''])[:2]
 
     def _receiver_recipient_name(self, order):
         name = ' '.join(str(order.customer_name or '').split())
