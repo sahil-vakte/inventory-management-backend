@@ -3,17 +3,21 @@ import hashlib
 import json
 import logging
 import re
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
+from django.db import models, transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 
 from colors.models import Color
 from products.models import Brand, Category, Location, Product, ProductExtendedData
-from stock.models import StockItem
+from stock.models import StockItem, StockMovement
 from stock.sku_utils import normalize_sku_reference
 
 logger = logging.getLogger(__name__)
@@ -96,19 +100,94 @@ EXTENDED_METADATA_FIELDS = {
 
 CSV_ENCODINGS = ('utf-8-sig', 'cp1252', 'latin-1')
 
+# Columns not represented by Product are retained in ProductExtendedData.raw_data.
+PRODUCT_COLUMNS = {
+    'vs_parent_id': 'VS Parent ID',
+    'parent_reference': 'Parent Reference',
+    'child_reference': ('Child Reference', 'Child'),
+    'parent_product_title': 'Parent Product Title',
+    'child_product_title': 'Child Product Title',
+    'short_title': ('ShortTitle', 'Short Title', 'short_title'),
+    'product_subtitle': 'Product Subtitle',
+    'product_summary': 'Product Summary',
+    'product_description': 'Product Description',
+    'available_on_this_website': 'Available On This Website',
+    'attribute_length': 'Attribute 1 (Length)',
+    'attribute_colour': 'Attribute 2 (Colour)',
+    'attribute_top_sizes': 'Attribute 3 (Top Sizes)',
+    'attribute_dress_sizes': 'Attribute 4 (Dress Sizes)',
+    'attribute_design': 'Attribute 5 (Design)',
+    'attribute_print': 'Attribute 6 (Print)',
+    'attribute_weight': 'Attribute 7 (Weight)',
+    'attribute_width': 'Attribute 8 (Width)',
+    'attribute_size': ('Attribute 9 (Size)', 'Attribute 8 (Size)'),
+    'attribute_choose_type': 'Attribute 10 (Choose Type)',
+    'attribute_gift_card_value': 'Attribute 11 (Gift Card Value)',
+    'attribute_colours_pf': 'Attribute 12 (Colours PF)',
+    'allow_sample_request': 'Allow Sample Request',
+    'sample_request_cost': 'Sample Request Cost',
+    'tag_colours': 'Tag 2 (Colours)',
+    'tag_matching_lycra_mesh': 'Tag 8 (Matching Lycra & Mesh )',
+    'tag_material': 'Tag 3 (Material)',
+    'tag_materials': 'Tag 11 (Materials)',
+    'tag_print_texture': 'Tag 1 (Print/ Texture)',
+    'tag_quantity_box': 'Tag 6 (Quantity Box)',
+    'tag_trimmings': 'Tag 4 (Trimmings)',
+    'release_date': 'Release Date',
+    'available_now': 'Available Now',
+    'date_added': 'Date Added',
+    'parent_product_sash': 'Parent Product Sash',
+    'deposit_price_inc_vat': 'Deposit Price (Inc VAT)',
+    'rrp_price_inc_vat': 'RRP Price (Inc VAT)',
+    'cost_price_inc_vat': 'Cost Price (Inc VAT)',
+    'vat_rate': 'VAT Rate',
+    'stock_value': 'Stock Value',
+    'min_purchase_quantity': 'Min Purchase Quantity',
+    'max_purchase_quantity': 'Max Purchase Quantity',
+    'minimum_age': 'Minimum Age',
+    'pick_location': 'Pick Location',
+    'stock_message': 'Stock Message',
+    'weight_kg': 'Weight (in KGs)',
+    'child_active': 'Child Active',
+    'parent_active': 'Parent Active',
+    'archive_delete': 'Archive (Delete)',
+    'archive_redirect_url': 'Archive Redirect URL',
+    'parent_product_url': 'Parent Product Url',
+    'child_product_url': 'Child Product Url',
+    'parent_product_images': 'Parent Product Images',
+    'child_product_images': 'Child Product Images',
+    'meta_title': 'Meta Title',
+    'meta_keywords': 'Meta Keywords',
+    'meta_description': 'Meta Description',
+    'display_on_sale_page': 'Display On Sale Page',
+    'featured': 'Featured',
+    'trade_only_product': 'Trade Only Product',
+}
+for _number in range(1, 6):
+    for _suffix, _label in (
+        ('quantity', 'Quantity'), ('price', 'Price Inc VAT'),
+        ('sale_price', 'Sale Price Inc VAT'), ('deposit_price', 'Deposit Price Inc VAT'),
+        ('allow_further_discounts', 'Allow Further Discounts Inc VAT'),
+    ):
+        PRODUCT_COLUMNS[f'price_break_{_number}_{_suffix}'] = f'Price Break {_number} ({_label})'
+
 
 class Command(BaseCommand):
     help = (
-        'Import the full Actual_Product_Data backup CSV into ProductExtendedData '
-        'and project finalized columns into Product without changing existing APIs.'
+        'Import product backup XLSX/CSV files, updating changed products and live stock '
+        'without deleting products. Use --dry-run to preview without writing.'
     )
 
     def add_arguments(self, parser):
-        parser.add_argument('--file', required=True, help='Path to Actual_Product_Data_BackUp CSV')
+        parser.add_argument('--file', required=True, help='Path to product backup XLSX, XLS, or CSV')
         parser.add_argument('--batch-id', default=None, help='Import batch identifier')
         parser.add_argument('--chunk-size', type=int, default=500, help='Rows to process per transaction')
         parser.add_argument('--limit', type=int, default=None, help='Optional maximum number of data rows to read')
         parser.add_argument('--dry-run', action='store_true', help='Validate and report without writing')
+        parser.add_argument(
+            '--clear-blank-locations', action='store_true',
+            help='Explicitly clear existing primary/warehouse locations when Pick Location is blank',
+        )
         parser.add_argument(
             '--skip-products',
             action='store_true',
@@ -127,27 +206,37 @@ class Command(BaseCommand):
             limit=options['limit'],
             dry_run=options['dry_run'],
             skip_products=options['skip_products'],
+            clear_blank_locations=options['clear_blank_locations'],
             write_output=True,
         )
 
         self.stdout.write(self.style.SUCCESS('Import scan complete.'))
         for key, value in stats.items():
             self.stdout.write(f'{key}: {value}')
+        if stats['errors']:
+            raise CommandError('Some product rows failed validation. Review error_examples before importing.')
 
     def import_file(
         self, file_path, batch_id=None, chunk_size=500, limit=None,
-        dry_run=False, skip_products=False, write_output=False,
+        dry_run=False, skip_products=False, write_output=False, clear_blank_locations=False,
         source_file_name=None
     ):
         file_path = Path(file_path)
         if not file_path.exists():
             raise CommandError(f'File not found: {file_path}')
 
-        batch_id = batch_id or timezone.now().strftime('%Y%m%d%H%M%S')
+        batch_id = str(batch_id or timezone.now().strftime('%Y%m%d%H%M%S'))
+        if len(batch_id) > 100:
+            raise CommandError('batch_id must be at most 100 characters')
+        if limit is not None and limit < 1:
+            raise CommandError('limit must be a positive number, or omitted for all rows')
         chunk_size = max(1, chunk_size)
         source_file_name = source_file_name or file_path.name
         source_date = self._source_date_from_name(source_file_name)
-        csv_encoding = self._detect_csv_encoding(file_path)
+        self.clear_blank_locations = clear_blank_locations
+        self._preview_stock_skus = {}
+        self._seen_product_ids = set()
+        self._related_cache = {}
 
         stats = {
             'batch_id': batch_id,
@@ -155,6 +244,7 @@ class Command(BaseCommand):
             'rows_seen': 0,
             'products_created': 0,
             'products_updated': 0,
+            'products_unchanged': 0,
             'brands_created': 0,
             'brands_updated': 0,
             'categories_created': 0,
@@ -165,32 +255,35 @@ class Command(BaseCommand):
             'locations_updated': 0,
             'stock_created': 0,
             'stock_updated': 0,
+            'stock_unchanged': 0,
+            'stock_quantities_changed': 0,
+            'stock_locations_changed': 0,
             'extended_created': 0,
             'extended_updated': 0,
             'extended_skipped': 0,
             'invalid_product_rows': 0,
             'errors': 0,
+            'warnings': 0,
+            'warning_examples': [],
+            'error_examples': [],
+            'change_examples': [],
         }
+        self._stats = stats
 
         if write_output:
             self.stdout.write(
                 f"Importing {source_file_name} with batch '{batch_id}'"
                 + (' (dry run)' if dry_run else '')
             )
-            self.stdout.write(f'Reading CSV using {csv_encoding} encoding')
-
-        with file_path.open('r', encoding=csv_encoding, newline='') as handle:
-            reader = csv.reader(handle)
-            try:
-                source_headers = next(reader)
-            except StopIteration:
-                raise CommandError('CSV file is empty')
+        with self._read_rows(file_path, write_output) as (source_headers, reader):
 
             header_specs = self._build_header_specs(source_headers)
             self._validate_extended_model_columns(header_specs)
 
             chunk = []
             for row_number, values in enumerate(reader, start=2):
+                if not any(self._clean(value) is not None for value in values):
+                    continue
                 if limit is not None and stats['rows_seen'] >= limit:
                     break
                 stats['rows_seen'] += 1
@@ -201,6 +294,8 @@ class Command(BaseCommand):
                         batch_id, dry_run, skip_products, stats, write_output
                     )
                     chunk = []
+                    if write_output:
+                        self.stdout.write(f"Processed {stats['rows_seen']} rows; errors: {stats['errors']}")
 
             if chunk:
                 self._process_chunk(
@@ -209,6 +304,54 @@ class Command(BaseCommand):
                 )
 
         return stats
+
+    @contextmanager
+    def _read_rows(self, file_path, write_output=False):
+        suffix = file_path.suffix.lower()
+        if suffix == '.csv':
+            encoding = self._detect_csv_encoding(file_path)
+            if write_output:
+                self.stdout.write(f'Reading CSV using {encoding} encoding')
+            with file_path.open('r', encoding=encoding, newline='') as handle:
+                reader = csv.reader(handle)
+                headers = next(reader, None)
+                if headers is None:
+                    raise CommandError('Product file is empty')
+                yield headers, reader
+        elif suffix == '.xlsx':
+            from openpyxl import load_workbook
+
+            workbook = load_workbook(file_path, read_only=True, data_only=True)
+            try:
+                sheet_name = next(
+                    (name for name in ('Products', 'Product Master') if name in workbook.sheetnames),
+                    None,
+                )
+                if sheet_name is None:
+                    raise CommandError('Workbook must contain a Products or Product Master sheet')
+                if write_output:
+                    self.stdout.write(f'Reading worksheet {sheet_name}')
+                reader = workbook[sheet_name].iter_rows(values_only=True)
+                headers = next(reader, None)
+                if headers is None:
+                    raise CommandError('Product sheet is empty')
+                yield headers, reader
+            finally:
+                workbook.close()
+        elif suffix == '.xls':
+            import pandas as pd
+
+            with pd.ExcelFile(file_path) as workbook:
+                sheet_name = next(
+                    (name for name in ('Products', 'Product Master') if name in workbook.sheet_names),
+                    None,
+                )
+                if sheet_name is None:
+                    raise CommandError('Workbook must contain a Products or Product Master sheet')
+                frame = workbook.parse(sheet_name, dtype=object).where(pd.notna, None)
+                yield [None if str(h).startswith('Unnamed:') else h for h in frame.columns], frame.itertuples(index=False, name=None)
+        else:
+            raise CommandError('File must be XLSX, XLS, or CSV')
 
     def _detect_csv_encoding(self, file_path):
         """Use strict decoding so product text is not silently corrupted."""
@@ -242,27 +385,37 @@ class Command(BaseCommand):
             product = None
             if not skip_products:
                 try:
-                    product, created, product_related_stats = self._upsert_product(row_data, dry_run)
-                    self._merge_stats(stats, product_related_stats)
-                    if product is None:
-                        stats['invalid_product_rows'] += 1
-                    elif created:
-                        stats['products_created'] += 1
-                    else:
-                        stats['products_updated'] += 1
-                    if product is not None:
-                        stock_item, stock_created, stock_related_stats = self._upsert_stock_item(
-                            row_data, product, dry_run
+                    self._current_row = row_number
+                    self._pending_related = {}
+                    with nullcontext() if dry_run else transaction.atomic():
+                        product, product_action, product_fields, product_stats = self._upsert_product(row_data, dry_run)
+                        stock_item, stock_action, stock_fields, stock_stats = self._upsert_stock_item(
+                            row_data, product, dry_run, batch_id
                         )
-                        self._merge_stats(stats, stock_related_stats)
-                        if stock_item is not None:
-                            if stock_created:
-                                stats['stock_created'] += 1
-                            else:
-                                stats['stock_updated'] += 1
+                    self._merge_stats(stats, product_stats)
+                    self._merge_stats(stats, stock_stats)
+                    self._related_cache.update(self._pending_related)
+                    stats[f'products_{product_action}'] += 1
+                    stats[f'stock_{stock_action}'] += 1
+                    if 'available_stock_in_mtr' in stock_fields:
+                        stats['stock_quantities_changed'] += 1
+                    if {'primary_location', 'warehouse_location'} & set(stock_fields):
+                        stats['stock_locations_changed'] += 1
+                    self._preview_stock_skus[stock_item.sku] = product.pk
+                    if product_action != 'unchanged' or stock_action != 'unchanged':
+                        self._example('change_examples', {
+                            'row_number': row_number, 'vs_child_id': product.pk,
+                            'product_action': product_action, 'product_fields': product_fields,
+                            'stock_action': stock_action, 'stock_fields': stock_fields,
+                        })
                 except Exception as exc:
+                    product = None
                     stats['errors'] += 1
-                    logger.exception('Could not project product/stock row %s', row_number)
+                    stats['invalid_product_rows'] += 1
+                    self._example('error_examples', {
+                        'row_number': row_number, 'vs_child_id': row_data.get('VS Child ID'),
+                        'error': str(exc)[:1000],
+                    })
                     if write_output:
                         self.stderr.write(f'Row {row_number}: product/stock projection failed: {exc}')
 
@@ -296,96 +449,70 @@ class Command(BaseCommand):
             'categories_created': 0,
             'categories_updated': 0,
         }
-        vs_child_id = self._to_int(row_data.get('VS Child ID'))
-        if vs_child_id is None:
-            return None, False, related_stats
+        vs_child_id = self._parse_field(Product._meta.get_field('vs_child_id'), row_data.get('VS Child ID'))
+        if vs_child_id in self._seen_product_ids:
+            raise ValueError(f'Duplicate VS Child ID {vs_child_id} in the file')
+        self._seen_product_ids.add(vs_child_id)
+        queryset = Product.all_objects if dry_run else Product.all_objects.select_for_update()
+        product = queryset.filter(pk=vs_child_id).first()
+        created = product is None
+        if created:
+            product = Product(vs_child_id=vs_child_id)
 
-        vs_parent_id = self._to_int(row_data.get('VS Parent ID')) or 0
-        brand, brand_created = self._get_brand(row_data.get('Brand'), dry_run)
+        defaults = {}
+        for name, columns in PRODUCT_COLUMNS.items():
+            columns = (columns,) if isinstance(columns, str) else columns
+            column = next((column for column in columns if column in row_data), None)
+            if column is None:
+                continue
+            value = row_data[column]
+            if name in {'parent_product_title', 'child_product_title'} and not self._clean(value):
+                value = getattr(product, name) or row_data.get('Parent Product Title')
+                self._warning(f'{column} is blank; keeping the existing title or using Parent Product Title')
+            if name == 'pick_location' and not self._clean(value) and not self.clear_blank_locations:
+                continue
+            defaults[name] = self._parse_field(Product._meta.get_field(name), value)
+
+        for name in ('vs_parent_id', 'parent_product_title', 'child_product_title'):
+            if created and name not in defaults:
+                raise ValueError(f'Missing required product field: {PRODUCT_COLUMNS[name]}')
+        for name in ('parent_reference', 'child_reference'):
+            if name in defaults:
+                defaults[name] = self._normalize_sku(defaults[name]) or ''
+        if created and defaults.get('available_on_this_website') is not None:
+            for name in ('child_active', 'parent_active'):
+                defaults.setdefault(name, defaults['available_on_this_website'])
+
+        brand = None
+        if 'Brand' in row_data:
+            brand, brand_created = self._get_brand(row_data['Brand'], dry_run)
+            defaults['brand'] = brand
         if brand is not None:
             if brand_created:
                 related_stats['brands_created'] += 1
             else:
                 related_stats['brands_updated'] += 1
-        child_active = self._active_flag(row_data.get('Child Active'), row_data.get('Available On This Website'))
-        parent_active = self._active_flag(row_data.get('Parent Active'), row_data.get('Available On This Website'))
-        defaults = {
-            'vs_parent_id': vs_parent_id,
-            'parent_reference': self._normalize_sku(row_data.get('Parent Reference')) or '',
-            'child_reference': self._normalize_sku(row_data.get('Child Reference')) or '',
-            'parent_product_title': self._clean(row_data.get('Parent Product Title')) or '',
-            'child_product_title': self._clean(row_data.get('Child Product Title')) or '',
-            'short_title': self._clean(row_data.get('ShortTitle')),
-            'product_subtitle': self._clean(row_data.get('Product Subtitle')),
-            'product_summary': self._clean(row_data.get('Product Summary')),
-            'product_description': self._clean(row_data.get('Product Description')),
-            'brand': brand,
-            'available_on_this_website': self._to_bool(row_data.get('Available On This Website')),
-            'attribute_length': self._clean(row_data.get('Attribute 1 (Length)')),
-            'tag_colours': self._clean(row_data.get('Tag 2 (Colours)')),
-            'tag_material': self._clean(row_data.get('Tag 3 (Material)')),
-            'tag_print_texture': self._clean(row_data.get('Tag 1 (Print/ Texture)')),
-            'allow_sample_request': self._to_bool(row_data.get('Allow Sample Request')),
-            'sample_request_cost': self._to_decimal(row_data.get('Sample Request Cost')),
-            'parent_product_sash': self._clean(row_data.get('Parent Product Sash')),
-            'rrp_price_inc_vat': self._to_decimal(row_data.get('RRP Price (Inc VAT)')) or Decimal('0.00'),
-            'cost_price_inc_vat': self._to_decimal(row_data.get('Cost Price (Inc VAT)')) or Decimal('0.00'),
-            'vat_rate': self._to_decimal(row_data.get('VAT Rate')) or Decimal('20.00'),
-            'display_on_sale_page': self._to_bool(row_data.get('Display On Sale Page')) is not False,
-            'stock_value': self._to_decimal(row_data.get('Stock Value')) or Decimal('0.00'),
-            'min_purchase_quantity': self._to_int(row_data.get('Min Purchase Quantity')) or 1,
-            'max_purchase_quantity': self._to_int(row_data.get('Max Purchase Quantity')) or 0,
-            'pick_location': self._clean(row_data.get('Pick Location')),
-            'stock_message': self._clean(row_data.get('Stock Message')),
-            'weight_kg': self._to_decimal(row_data.get('Weight (in KGs)')) or Decimal('0.000'),
-            'parent_product_url': self._clean(row_data.get('Parent Product Url')),
-            'child_product_url': self._clean(row_data.get('Child Product Url')),
-            'parent_product_images': self._clean(row_data.get('Parent Product Images')),
-            'child_product_images': self._clean(row_data.get('Child Product Images')),
-            'meta_title': self._clean(row_data.get('Meta Title')),
-            'meta_keywords': self._clean(row_data.get('Meta Keywords')),
-            'meta_description': self._clean(row_data.get('Meta Description')),
-            'child_active': child_active,
-            'parent_active': parent_active,
-        }
+        fields = self._changed_fields(product, defaults, created)
+        for name, value in defaults.items():
+            setattr(product, name, value)
+        if not dry_run:
+            if created:
+                product.save(force_insert=True)
+            elif fields:
+                product.save(update_fields=fields + ['updated_at'])
+        if 'Categories' in row_data:
+            category_stats, categories_changed = self._sync_categories(
+                product, row_data['Categories'], dry_run=dry_run, created=created,
+            )
+            self._merge_stats(related_stats, category_stats)
+            if categories_changed:
+                fields.append('categories')
+                if not dry_run and not created:
+                    product.save(update_fields=['updated_at'])
+        action = 'created' if created else ('updated' if fields else 'unchanged')
+        return product, action, fields, related_stats
 
-        for number in range(1, 6):
-            defaults[f'price_break_{number}_quantity'] = self._to_int(
-                row_data.get(f'Price Break {number} (Quantity)')
-            )
-            defaults[f'price_break_{number}_price'] = self._to_decimal(
-                row_data.get(f'Price Break {number} (Price Inc VAT)')
-            )
-            defaults[f'price_break_{number}_sale_price'] = self._to_decimal(
-                row_data.get(f'Price Break {number} (Sale Price Inc VAT)')
-            )
-            defaults[f'price_break_{number}_deposit_price'] = self._to_decimal(
-                row_data.get(f'Price Break {number} (Deposit Price Inc VAT)')
-            )
-            defaults[f'price_break_{number}_allow_further_discounts'] = self._to_bool(
-                row_data.get(f'Price Break {number} (Allow Further Discounts Inc VAT)')
-            )
-
-        if dry_run:
-            existing = Product.all_objects.filter(vs_child_id=vs_child_id).exists()
-            product = Product(vs_child_id=vs_child_id, **defaults)
-            self._merge_stats(
-                related_stats,
-                self._sync_categories(product, row_data.get('Categories'), dry_run=True),
-            )
-            return product, not existing, related_stats
-
-        product, created = Product.all_objects.update_or_create(
-            vs_child_id=vs_child_id,
-            defaults=defaults,
-        )
-        self._merge_stats(
-            related_stats,
-            self._sync_categories(product, row_data.get('Categories')),
-        )
-        return product, created, related_stats
-
-    def _upsert_stock_item(self, row_data, product, dry_run):
+    def _upsert_stock_item(self, row_data, product, dry_run, batch_id):
         related_stats = {
             'colors_created': 0,
             'colors_updated': 0,
@@ -393,85 +520,91 @@ class Command(BaseCommand):
             'locations_updated': 0,
         }
         sku = self._stock_sku(row_data, product)
-        available_stock = self._to_int(row_data.get('Stock Value')) or 0
         if not sku:
-            return None, False, related_stats
+            raise ValueError('Cannot determine stock SKU')
+        queryset = StockItem.all_objects if dry_run else StockItem.all_objects.select_for_update()
+        stock_item = queryset.filter(pk=sku).first()
+        if stock_item is not None and stock_item.product_id != product.pk:
+            raise ValueError(f'Stock SKU {sku} is linked to a different product')
+        created = stock_item is None
+        if created:
+            stock_item = StockItem(sku=sku, product=product)
 
-        color, color_created = self._get_or_create_color(row_data, dry_run)
-        if color_created:
-            related_stats['colors_created'] += 1
-        else:
-            related_stats['colors_updated'] += 1
-        location, location_created = self._get_or_create_location(row_data.get('Pick Location'), dry_run)
-        if location is not None:
-            if location_created:
-                related_stats['locations_created'] += 1
-            else:
-                related_stats['locations_updated'] += 1
-        product_type = (
-            self._clean(row_data.get('Parent Reference'))
-            or self._clean(row_data.get('Child Reference'))
-            or sku
-        )
+        product_type = product.parent_reference or product.child_reference or sku
         product_type = self._normalize_sku(product_type)[:20]
         defaults = {
-            'product_type': product_type,
             'product': product,
-            'color': color,
-            'available_stock_in_mtr': available_stock,
-            'minimum_stock_level': self._to_int(row_data.get('Min Purchase Quantity')) or 0,
-            'maximum_stock_level': self._to_int(row_data.get('Max Purchase Quantity')) or 0,
-            'warehouse_location': self._clean(row_data.get('Pick Location')),
-            'primary_location': location,
-            'unit_cost': self._to_decimal(row_data.get('Cost Price (Inc VAT)')) or Decimal('0.00'),
-            'last_purchase_price': self._to_decimal(row_data.get('Cost Price (Inc VAT)')) or Decimal('0.00'),
             'is_active': product.is_active,
-            'is_deleted': False,
         }
+        if created or any(key in row_data for key in ('Parent Reference', 'Child Reference', 'Child')):
+            defaults['product_type'] = product_type
+        has_color = any(self._clean(row_data.get(key)) for key in ('Tag 2 (Colours)', 'Attribute 2 (Colour)'))
+        if created or has_color:
+            color, color_created = self._get_or_create_color(row_data, dry_run)
+            defaults['color'] = color
+            related_stats['colors_created' if color_created else 'colors_updated'] += 1
 
-        if dry_run:
-            exists = StockItem.all_objects.filter(sku=sku).exists()
-            return StockItem(sku=sku, **defaults), not exists, related_stats
+        for name, column in (
+            ('available_stock_in_mtr', 'Stock Value'),
+            ('minimum_stock_level', 'Min Purchase Quantity'),
+            ('maximum_stock_level', 'Max Purchase Quantity'),
+            ('unit_cost', 'Cost Price (Inc VAT)'),
+            ('last_purchase_price', 'Cost Price (Inc VAT)'),
+        ):
+            if column in row_data and self._clean(row_data[column]) is not None:
+                defaults[name] = self._parse_field(StockItem._meta.get_field(name), row_data[column])
 
-        stock_item, created = StockItem.all_objects.update_or_create(
-            sku=sku,
-            defaults=defaults,
-        )
-        return stock_item, created, related_stats
+        location_name = self._clean(row_data.get('Pick Location'))
+        if location_name or ('Pick Location' in row_data and self.clear_blank_locations):
+            location, location_created = self._get_or_create_location(location_name, dry_run)
+            if location is not None:
+                related_stats['locations_created' if location_created else 'locations_updated'] += 1
+            defaults['warehouse_location'] = self._parse_field(
+                StockItem._meta.get_field('warehouse_location'), location_name,
+            )
+            defaults['primary_location'] = location
 
-    def _sync_categories(self, product, categories_value, dry_run=False):
+        old_stock = stock_item.available_stock_in_mtr
+        fields = self._changed_fields(stock_item, defaults, created)
+        for name, value in defaults.items():
+            setattr(stock_item, name, value)
+        if not dry_run:
+            if created:
+                stock_item.save(force_insert=True)
+            elif fields:
+                stock_item.save(update_fields=fields + ['updated_at', 'last_stock_update'])
+            if 'available_stock_in_mtr' in fields and old_stock != stock_item.available_stock_in_mtr:
+                StockMovement.objects.create(
+                    stock_item=stock_item, movement_type='ADJUSTMENT',
+                    quantity=stock_item.available_stock_in_mtr - old_stock,
+                    old_stock_level=old_stock, new_stock_level=stock_item.available_stock_in_mtr,
+                    reference_number=batch_id[:100], reason='Product backup import',
+                    created_by='product-import',
+                )
+        action = 'created' if created else ('updated' if fields else 'unchanged')
+        return stock_item, action, fields, related_stats
+
+    def _sync_categories(self, product, categories_value, dry_run=False, created=False):
         stats = {'categories_created': 0, 'categories_updated': 0}
         names = self._category_names(categories_value)
-        if not names:
-            return stats
+        old_names = set() if created else set(product.categories.values_list('name', flat=True))
+        changed = old_names != set(names)
 
         categories = []
         for name in names:
-            if dry_run:
-                if Category.all_objects.filter(name=name[:100]).exists():
-                    stats['categories_updated'] += 1
-                else:
-                    stats['categories_created'] += 1
-                continue
-            category, _ = Category.all_objects.get_or_create(name=name[:100])
-            if _:
-                stats['categories_created'] += 1
-            else:
-                stats['categories_updated'] += 1
+            category, category_created = self._related_object(Category, {'name': name}, {}, dry_run)
+            stats['categories_created' if category_created else 'categories_updated'] += 1
             categories.append(category)
-        if product is not None and not dry_run:
+        if changed and not dry_run:
             product.categories.set(categories)
-        return stats
+        return stats, changed
 
     def _get_brand(self, value, dry_run):
         name = self._clean(value)
         if not name:
             return None, False
-        if dry_run:
-            exists = Brand.all_objects.filter(name=name[:100]).exists()
-            return Brand(name=name[:100]), not exists
-        brand, created = Brand.all_objects.get_or_create(name=name[:100])
-        return brand, created
+        name = self._parse_field(Brand._meta.get_field('name'), name)
+        return self._related_object(Brand, {'name': name}, {}, dry_run)
 
     def _get_or_create_color(self, row_data, dry_run):
         color_name = self._first_list_value(
@@ -480,30 +613,32 @@ class Command(BaseCommand):
         ) or 'Unknown'
         color_code = self._color_code(color_name)
 
-        if dry_run:
-            exists = Color.all_objects.filter(color_code=color_code).exists()
-            return Color(color_code=color_code, color_name=color_name[:100]), not exists
-
-        color, created = Color.all_objects.update_or_create(
-            color_code=color_code,
-            defaults={
-                'color_name': color_name[:100],
-                'is_deleted': False,
-                'deleted_at': None,
-            },
+        return self._related_object(
+            Color, {'color_code': color_code}, {'color_name': color_name[:100]}, dry_run,
         )
-        return color, created
 
     def _get_or_create_location(self, value, dry_run):
         name = self._clean(value)
         if not name:
             return None, False
         name = name[:100]
+        return self._related_object(Location, {'name': name}, {}, dry_run)
+
+    def _related_object(self, model, lookup, defaults, dry_run):
+        key = (model, tuple(sorted(lookup.items())))
+        for cache in (self._related_cache, self._pending_related):
+            if key in cache:
+                return cache[key], False
+        manager = model._base_manager
         if dry_run:
-            exists = Location.objects.filter(name=name).exists()
-            return Location(name=name), not exists
-        location, created = Location.objects.get_or_create(name=name)
-        return location, created
+            instance = manager.filter(**lookup).first()
+            created = instance is None
+            if created:
+                instance = model(**lookup, **defaults)
+        else:
+            instance, created = manager.get_or_create(**lookup, defaults=defaults)
+        self._pending_related[key] = instance
+        return instance, created
 
     def _category_names(self, categories_value):
         names = []
@@ -511,6 +646,8 @@ class Command(BaseCommand):
         for path in re.split(r'[,;]+', self._clean(categories_value) or ''):
             for part in path.split('>'):
                 name = part.strip()
+                if len(name) > 100:
+                    raise ValueError('Category name exceeds 100 characters')
                 key = name.lower()
                 if name and key not in seen:
                     seen.add(key)
@@ -537,20 +674,35 @@ class Command(BaseCommand):
         if not sku or product is None or not getattr(product, 'pk', None):
             return sku
 
-        existing_for_product = StockItem.all_objects.filter(product=product).order_by('sku').first()
-        if existing_for_product:
-            return self._normalize_sku(existing_for_product.sku)[:50]
+        existing_for_product = StockItem.all_objects.filter(product_id=product.pk)
+        linked_skus = list(existing_for_product.values_list('sku', flat=True)[:2])
+        if linked_skus:
+            if len(linked_skus) == 1:
+                return linked_skus[0]
+            if existing_for_product.filter(pk=sku).exists():
+                return sku
+            candidates = list(existing_for_product.values_list('sku', flat=True)[:5])
+            raise ValueError(
+                f'Product {product.pk} has multiple stock items and no exact reference match. '
+                f'Candidate SKUs: {candidates}. Correct the reference or stock links before importing.'
+            )
 
-        if not StockItem.all_objects.filter(sku=sku).exclude(product=product).exists():
+        if not self._sku_conflicts(sku, product):
             return sku
 
         suffix = f' {product.vs_child_id}'
         candidate = f'{sku[:50 - len(suffix)]}{suffix}'
-        if not StockItem.all_objects.filter(sku=candidate).exclude(product=product).exists():
+        if not self._sku_conflicts(candidate, product):
             return candidate
 
         fallback = f'VS{product.vs_child_id}'[:50]
         return fallback
+
+    def _sku_conflicts(self, sku, product):
+        return (
+            (sku in self._preview_stock_skus and self._preview_stock_skus[sku] != product.pk)
+            or StockItem.all_objects.filter(sku=sku).exclude(product_id=product.pk).exists()
+        )
 
     def _normalize_sku(self, value):
         return normalize_sku_reference(value)
@@ -647,8 +799,12 @@ class Command(BaseCommand):
 
     def _build_header_specs(self, source_headers):
         specs = []
+        seen = set()
         for index, header in enumerate(source_headers, start=1):
-            original_header = (header or '').strip()
+            original_header = str(header or '').strip()
+            if original_header and original_header in seen:
+                raise CommandError(f'Duplicate product column: {original_header}')
+            seen.add(original_header)
             db_column = original_header or f'blank_column_{index}'
             specs.append({
                 'index': index,
@@ -666,14 +822,14 @@ class Command(BaseCommand):
         ]
         if missing:
             raise CommandError(
-                'Product CSV is missing required identifier columns: '
+                'Product file is missing required identifier columns: '
                 + ', '.join(missing)
             )
 
     def _row_data(self, header_specs, values):
         data = {}
         for offset, spec in enumerate(header_specs):
-            data[spec['db_column']] = values[offset] if offset < len(values) else ''
+            data[spec['db_column']] = self._clean(values[offset]) if offset < len(values) else None
         return data
 
     def _row_hash(self, raw_payload):
@@ -684,10 +840,85 @@ class Command(BaseCommand):
         match = re.search(r'(\d{8})', file_name)
         if not match:
             return None
+        for date_format in ('%Y%m%d', '%d%m%Y'):
+            try:
+                return datetime.strptime(match.group(1), date_format).date()
+            except ValueError:
+                continue
+        return None
+
+    def _parse_field(self, field, value):
+        value = self._clean(value)
+        if value is None:
+            if field.null:
+                return None
+            if field.has_default():
+                return field.get_default()
+            raise ValueError(f'{field.name} is required')
         try:
-            return datetime.strptime(match.group(1), '%d%m%Y').date()
-        except ValueError:
-            return None
+            if isinstance(field, models.BooleanField):
+                parsed = self._to_bool(value)
+                if parsed is None:
+                    raise ValueError('expected Y/N, true/false, or 1/0')
+            elif isinstance(field, models.IntegerField):
+                decimal = Decimal(value)
+                if not decimal.is_finite() or decimal != decimal.to_integral_value():
+                    raise ValueError('expected a whole number')
+                parsed = int(decimal)
+            elif isinstance(field, models.DecimalField):
+                parsed = Decimal(value)
+                if not parsed.is_finite():
+                    raise ValueError('expected a finite decimal')
+                quantum = Decimal(1).scaleb(-field.decimal_places)
+                rounded = parsed.quantize(quantum)
+                if rounded != parsed:
+                    raise ValueError(f'exceeds {field.decimal_places} decimal places')
+                parsed = rounded
+            elif isinstance(field, models.DateTimeField):
+                # Visualsoft exports an unset date as a MySQL zero-date sentinel.
+                if field.null and value in {'0000-00-00', '0000-00-00 00:00:00', '0000-00-00T00:00:00'}:
+                    return None
+                parsed = parse_datetime(value)
+                if parsed is None:
+                    date = parse_date(value)
+                    parsed = datetime.combine(date, datetime.min.time()) if date else None
+                if parsed is None:
+                    raise ValueError('expected an ISO date or datetime')
+                if timezone.is_naive(parsed):
+                    parsed = timezone.make_aware(parsed, timezone.get_default_timezone())
+            else:
+                parsed = value
+            relative_url = isinstance(field, models.URLField) and value.startswith('/') and not value.startswith('//')
+            if relative_url:
+                for validator in field.validators:
+                    if not isinstance(validator, URLValidator):
+                        validator(parsed)
+            else:
+                field.run_validators(parsed)
+            return parsed
+        except (ValidationError, InvalidOperation, ValueError, OverflowError) as exc:
+            raise ValueError(f'{field.name}: {exc}') from exc
+
+    def _changed_fields(self, instance, defaults, created):
+        if created:
+            return list(defaults)
+        changed = []
+        for name, value in defaults.items():
+            field = instance._meta.get_field(name)
+            current = getattr(instance, field.attname)
+            expected = value.pk if isinstance(value, models.Model) else value
+            new_relation = isinstance(value, models.Model) and value.pk is None
+            if current != expected or new_relation:
+                changed.append(name)
+        return changed
+
+    def _example(self, key, value):
+        if len(self._stats[key]) < 20:
+            self._stats[key].append(value)
+
+    def _warning(self, message):
+        self._stats['warnings'] += 1
+        self._example('warning_examples', {'row_number': self._current_row, 'message': message})
 
     def _clean(self, value):
         if value is None:

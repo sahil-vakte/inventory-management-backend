@@ -760,10 +760,10 @@
                     "products"
                   ]
                 },
-                "description": "Create a product.",
+                "description": "Create a product, including the optional short_title used for label printing. Required fields: vs_parent_id, vs_child_id, parent_product_title, child_product_title. Use an unused vs_child_id. Returns HTTP 201 with the product object, including short_title.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"vs_parent_id\": 1000,\n  \"vs_child_id\": 1001,\n  \"parent_reference\": \"FAB-001\",\n  \"child_reference\": \"FAB-001-RED\",\n  \"parent_product_title\": \"Premium Fabric\",\n  \"child_product_title\": \"Premium Fabric - Red\",\n  \"brand\": \"{{brand_id}}\",\n  \"rrp_price_inc_vat\": \"29.99\",\n  \"cost_price_inc_vat\": \"12.50\",\n  \"vat_rate\": \"20.00\",\n  \"child_active\": true,\n  \"parent_active\": true,\n  \"featured\": false\n}"
+                  "raw": "{\n  \"vs_parent_id\": 1000,\n  \"vs_child_id\": 1001,\n  \"parent_reference\": \"FAB-001\",\n  \"child_reference\": \"FAB-001-RED\",\n  \"parent_product_title\": \"Premium Fabric\",\n  \"child_product_title\": \"Premium Fabric - Red\",\n  \"short_title\": \"Premium Fabric - Red\",\n  \"brand\": \"{{brand_id}}\",\n  \"rrp_price_inc_vat\": \"29.99\",\n  \"cost_price_inc_vat\": \"12.50\",\n  \"vat_rate\": \"20.00\",\n  \"child_active\": true,\n  \"parent_active\": true,\n  \"featured\": false\n}"
                 }
               },
               "response": []
@@ -811,10 +811,10 @@
                     "{{product_id}}"
                   ]
                 },
-                "description": "Replace a product.",
+                "description": "Update a product, including short_title. Set product_id to the existing product's vs_child_id and keep the payload vs_child_id equal to it. PUT requires vs_parent_id, vs_child_id, parent_product_title, and child_product_title. Returns HTTP 200 with the updated product object, including short_title.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"vs_parent_id\": 1000,\n  \"vs_child_id\": 1001,\n  \"parent_reference\": \"FAB-001\",\n  \"child_reference\": \"FAB-001-RED\",\n  \"parent_product_title\": \"Premium Fabric\",\n  \"child_product_title\": \"Premium Fabric - Red\",\n  \"brand\": \"{{brand_id}}\",\n  \"rrp_price_inc_vat\": \"29.99\",\n  \"cost_price_inc_vat\": \"12.50\",\n  \"vat_rate\": \"20.00\",\n  \"child_active\": true,\n  \"parent_active\": true,\n  \"featured\": false\n}"
+                  "raw": "{\n  \"vs_parent_id\": 1000,\n  \"vs_child_id\": 1001,\n  \"parent_reference\": \"FAB-001\",\n  \"child_reference\": \"FAB-001-RED\",\n  \"parent_product_title\": \"Premium Fabric\",\n  \"child_product_title\": \"Premium Fabric - Red\",\n  \"short_title\": \"Premium Fabric - Red\",\n  \"brand\": \"{{brand_id}}\",\n  \"rrp_price_inc_vat\": \"29.99\",\n  \"cost_price_inc_vat\": \"12.50\",\n  \"vat_rate\": \"20.00\",\n  \"child_active\": true,\n  \"parent_active\": true,\n  \"featured\": false\n}"
                 }
               },
               "response": []
@@ -841,10 +841,10 @@
                     "{{product_id}}"
                   ]
                 },
-                "description": "Partially update a product.",
+                "description": "Update only the supplied product fields. Set product_id to the existing product's vs_child_id. This example changes short_title only; omitted fields remain unchanged. Returns HTTP 200 with the updated product object, including short_title.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"vs_parent_id\": 1000,\n  \"vs_child_id\": 1001,\n  \"parent_reference\": \"FAB-001\",\n  \"child_reference\": \"FAB-001-RED\",\n  \"parent_product_title\": \"Premium Fabric\",\n  \"child_product_title\": \"Premium Fabric - Red\",\n  \"brand\": \"{{brand_id}}\",\n  \"rrp_price_inc_vat\": \"29.99\",\n  \"cost_price_inc_vat\": \"12.50\",\n  \"vat_rate\": \"20.00\",\n  \"child_active\": true,\n  \"parent_active\": true,\n  \"featured\": false\n}"
+                  "raw": "{\n  \"short_title\": \"Premium Fabric - Red\"\n}"
                 }
               },
               "response": []
@@ -941,7 +941,7 @@
                     "import-excel"
                   ]
                 },
-                "description": "Upload Product Master Excel file or Visualsoft product export CSV. Use form-data key `file`. CSV `ShortTitle` is saved as the product short title and is used by stock label responses. Full CSV imports start in the background and return 202 to avoid timeout. For CSV backup imports, optional form-data keys: `dry_run`, `batch_id`, `limit`, `chunk_size`, `skip_products`, `sync`.",
+                "description": "Upload a product XLSX (Products or Product Master sheet) or CSV using form-data key file. ShortTitle maps to product.short_title. Default example is a full dry run: no product, stock, location, or audit rows are written. Inspect stats.products_created/products_updated/products_unchanged, stock_created/stock_updated/stock_unchanged, stock_quantities_changed, stock_locations_changed, errors and error_examples. Rows match by VS Child ID, not SKU. Set dry_run=false to apply changes, including live Stock Value and nonblank Pick Location; no products are deleted, reserved stock and secondary locations are preserved. Blank Pick Location cells preserve current locations unless clear_blank_locations=true. Omitted product columns are preserved; present blank optional product cells clear the field. Missing child titles keep the existing title or fall back to Parent Product Title, with warnings. Unmapped source columns are retained in extended raw data. Full writes run in background and return 202 unless sync=true; large full-file dry runs are best run with the management command to avoid HTTP timeouts. Leave limit disabled to process every row.",
                 "body": {
                   "mode": "formdata",
                   "formdata": [
@@ -954,37 +954,44 @@
                       "key": "dry_run",
                       "value": "true",
                       "type": "text",
-                      "description": "Optional for CSV uploads. Use true to validate without writing."
+                      "description": "Keep true for the first test. Validates and previews XLSX/CSV changes without writing. Set false only after reviewing the dry run."
                     },
                     {
                       "key": "batch_id",
-                      "value": "product-backup-20260611",
+                      "value": "product-backup-20261028",
                       "type": "text",
-                      "description": "Optional CSV import batch id."
+                      "description": "Optional import batch id for this workbook."
                     },
                     {
                       "key": "limit",
                       "value": "100",
                       "type": "text",
-                      "description": "Optional CSV row limit for testing."
+                      "disabled": true,
+                      "description": "Disabled for the full import. Enable only for an intentional 100-row test."
                     },
                     {
                       "key": "chunk_size",
                       "value": "500",
                       "type": "text",
-                      "description": "Optional CSV processing chunk size."
+                      "description": "Number of source rows to process per chunk."
                     },
                     {
                       "key": "skip_products",
                       "value": "false",
                       "type": "text",
-                      "description": "Optional for CSV uploads. Use true to save extended rows only."
+                      "description": "Keep false to update products and live stock. True stores extended backup rows only."
                     },
                     {
                       "key": "sync",
                       "value": "false",
                       "type": "text",
-                      "description": "Optional for CSV uploads. Use true only for small files/tests; full imports should run in background."
+                      "description": "Use true only for small live tests. Full live imports run in background by default; dry runs return results synchronously."
+                    },
+                    {
+                      "key": "clear_blank_locations",
+                      "value": "false",
+                      "type": "text",
+                      "description": "False preserves current locations when Pick Location is blank. True explicitly clears primary and warehouse locations for blank source cells; secondary locations remain unchanged."
                     }
                   ]
                 }
@@ -997,7 +1004,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/v1/products/import-status/?batch_id=product-backup-20260611",
+                  "raw": "{{base_url}}/api/v1/products/import-status/?batch_id=product-backup-20261028",
                   "host": [
                     "{{base_url}}"
                   ],
@@ -1010,11 +1017,11 @@
                   "query": [
                     {
                       "key": "batch_id",
-                      "value": "product-backup-20260611"
+                      "value": "product-backup-20261028"
                     }
                   ]
                 },
-                "description": "Check progress summary for a CSV backup import batch."
+                "description": "Check persisted backup-row counts for an XLSX/CSV live import batch. A dry run writes no batch rows. This reports progress counts, not a completed/failed job state; check server logs for the final live-import statistics."
               },
               "response": []
             },

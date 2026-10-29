@@ -5,13 +5,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
-import pandas as pd
-from django.db import transaction
 from django.db import models
 from django.db import close_old_connections
 from django.db.utils import OperationalError
 from django.core.management.base import CommandError
-from decimal import Decimal
 import logging
 import os
 import tempfile
@@ -22,7 +19,6 @@ from .serializers import (
     ProductCreateUpdateSerializer, CategorySerializer, BrandSerializer, LocationSerializer
 )
 from .management.commands.import_product_backup_csv import Command as ProductBackupCSVImportCommand
-from stock.sku_utils import normalize_sku_reference
 
 logger = logging.getLogger(__name__)
 
@@ -209,124 +205,25 @@ class ProductViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'], url_path='import-excel')
     def import_excel(self, request):
-        """Import products from Excel or the full product backup CSV file"""
-        try:
-            if 'file' not in request.FILES:
-                return Response(
-                    {'error': 'No file provided'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            file = request.FILES['file']
-
-            if file.name.lower().endswith('.csv'):
-                return self._import_backup_csv(file, request)
-            
-            if not file.name.endswith(('.xlsx', '.xls')):
-                return Response(
-                    {'error': 'File must be Excel (.xlsx/.xls) or CSV (.csv) format'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Read Excel file
-            try:
-                df = pd.read_excel(file, sheet_name='Product Master')
-            except Exception as e:
-                return Response(
-                    {'error': f'Error reading Excel file: {str(e)}'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Import data
-            created_count = 0
-            updated_count = 0
-            errors = []
-            
-            with transaction.atomic():
-                for index, row in df.iterrows():
-                    try:
-                        if pd.isna(row.get('VS Child ID')):
-                            continue
-                        
-                        vs_child_id = int(row['VS Child ID'])
-                        
-                        # Create or get brand
-                        brand = None
-                        if not pd.isna(row.get('Brand')):
-                            brand_name = str(row['Brand']).strip()
-                            brand, _ = Brand.objects.get_or_create(name=brand_name)
-                        
-                        # Prepare product data
-                        product_data = {
-                            'vs_parent_id': int(row.get('VS Parent ID', 0)) if not pd.isna(row.get('VS Parent ID')) else 0,
-                            'parent_reference': normalize_sku_reference(row.get('Parent Reference')) if not pd.isna(row.get('Parent Reference')) else '',
-                            'child_reference': normalize_sku_reference(
-                                row.get('Child Reference', row.get('Child'))
-                            ) if not pd.isna(row.get('Child Reference', row.get('Child'))) else '',
-                            'parent_product_title': str(row.get('Parent Product Title', '')).strip() if not pd.isna(row.get('Parent Product Title')) else '',
-                            'child_product_title': str(row.get('Child Product Title', '')).strip() if not pd.isna(row.get('Child Product Title')) else '',
-                            'product_subtitle': str(row.get('Product Subtitle', '')).strip() if not pd.isna(row.get('Product Subtitle')) else '',
-                            'product_summary': str(row.get('Product Summary', '')).strip() if not pd.isna(row.get('Product Summary')) else '',
-                            'product_description': str(row.get('Product Description', '')).strip() if not pd.isna(row.get('Product Description')) else '',
-                            'brand': brand,
-                            
-                            # Attributes
-                            'attribute_colour': str(row.get('Attribute 2 (Colour)', '')).strip() if not pd.isna(row.get('Attribute 2 (Colour)')) else '',
-                            'attribute_length': str(row.get('Attribute 1 (Length)', '')).strip() if not pd.isna(row.get('Attribute 1 (Length)')) else '',
-                            'attribute_size': str(row.get('Attribute 8 (Size)', '')).strip() if not pd.isna(row.get('Attribute 8 (Size)')) else '',
-                            
-                            # Pricing
-                            'rrp_price_inc_vat': Decimal(str(row.get('RRP Price (Inc VAT)', 0))) if not pd.isna(row.get('RRP Price (Inc VAT)')) else Decimal('0.00'),
-                            'cost_price_inc_vat': Decimal(str(row.get('Cost Price (Inc VAT)', 0))) if not pd.isna(row.get('Cost Price (Inc VAT)')) else Decimal('0.00'),
-                            'deposit_price_inc_vat': Decimal(str(row.get('Deposit Price (Inc VAT)', 0))) if not pd.isna(row.get('Deposit Price (Inc VAT)')) else Decimal('0.00'),
-                            'vat_rate': Decimal(str(row.get('VAT Rate', 20))) if not pd.isna(row.get('VAT Rate')) else Decimal('20.00'),
-                            
-                            # Status
-                            'child_active': str(row.get('Child Active', 'N')).upper() == 'Y',
-                            'parent_active': str(row.get('Parent Active', 'N')).upper() == 'Y',
-                            'featured': str(row.get('Featured', 'N')).upper() == 'Y',
-                            'display_on_sale_page': str(row.get('Display On Sale Page', 'Y')).upper() == 'Y',
-                            'trade_only_product': str(row.get('Trade Only Product', 'N')).upper() == 'Y',
-                            
-                            # Weight and stock
-                            'weight_kg': Decimal(str(row.get('Weight (in KGs)', 0))) if not pd.isna(row.get('Weight (in KGs)')) else Decimal('0.000'),
-                            'stock_value': Decimal(str(row.get('Stock Value', 0))) if not pd.isna(row.get('Stock Value')) else Decimal('0.00'),
-                            'min_purchase_quantity': int(row.get('Min Purchase Quantity', 1)) if not pd.isna(row.get('Min Purchase Quantity')) else 1,
-                            'max_purchase_quantity': int(row.get('Max Purchase Quantity', 0)) if not pd.isna(row.get('Max Purchase Quantity')) else 0,
-                        }
-                        
-                        # Get or create product
-                        product, created = Product.objects.update_or_create(
-                            vs_child_id=vs_child_id,
-                            defaults=product_data
-                        )
-                        
-                        if created:
-                            created_count += 1
-                        else:
-                            updated_count += 1
-                            
-                    except Exception as e:
-                        errors.append(f"Row {index + 1}: {str(e)}")
-            
-            return Response({
-                'message': 'Import completed successfully',
-                'created': created_count,
-                'updated': updated_count,
-                'errors': errors[:10]  # Limit errors to first 10
-            }, status=status.HTTP_200_OK)
-            
-        except Exception as e:
+        """Import XLSX/CSV product backups with optional no-write change preview."""
+        if 'file' not in request.FILES:
             return Response(
-                {'error': f'Unexpected error: {str(e)}'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST,
             )
+        file = request.FILES['file']
+        if not file.name.lower().endswith(('.xlsx', '.xls', '.csv')):
+            return Response(
+                {'error': 'File must be Excel (.xlsx/.xls) or CSV (.csv) format'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return self._import_backup_file(file, request)
 
-    def _import_backup_csv(self, uploaded_file, request):
-        """Persist full backup CSV rows and project finalized fields into Product."""
+    def _import_backup_file(self, uploaded_file, request):
+        """Use one importer for Excel and CSV so preview and write follow identical rules."""
         tmp_path = None
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
+            suffix = os.path.splitext(uploaded_file.name)[1].lower()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
                 tmp_path = tmp_file.name
                 for chunk in uploaded_file.chunks():
                     tmp_file.write(chunk)
@@ -337,6 +234,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             limit = self._to_optional_positive_int(request.data.get('limit'))
             dry_run = self._to_bool(request.data.get('dry_run'))
             skip_products = self._to_bool(request.data.get('skip_products'))
+            clear_blank_locations = self._to_bool(request.data.get('clear_blank_locations'))
             run_sync = dry_run or limit is not None or self._to_bool(request.data.get('sync'))
 
             if not run_sync:
@@ -346,17 +244,18 @@ class ProductViewSet(viewsets.ModelViewSet):
                     batch_id=batch_id,
                     chunk_size=chunk_size,
                     skip_products=skip_products,
+                    clear_blank_locations=clear_blank_locations,
                 )
                 tmp_path = None
                 return Response({
-                    'message': 'CSV import started in background',
+                    'message': 'Product import started in background',
                     'file_name': uploaded_file.name,
                     'mode': 'background',
                     'batch_id': batch_id,
                     'status_url': request.build_absolute_uri(
                         f'/api/v1/products/import-status/?batch_id={batch_id}'
                     ),
-                    'note': 'Large CSV imports run in background to avoid request timeout. Re-uploading the same file updates existing rows instead of creating duplicates.',
+                    'note': 'Large imports run in background. Products are matched by VS Child ID; unchanged products and stock are not saved. No products are deleted.',
                 }, status=status.HTTP_202_ACCEPTED)
 
             stats = importer.import_file(
@@ -366,21 +265,23 @@ class ProductViewSet(viewsets.ModelViewSet):
                 limit=limit,
                 dry_run=dry_run,
                 skip_products=skip_products,
+                clear_blank_locations=clear_blank_locations,
                 write_output=False,
                 source_file_name=uploaded_file.name,
             )
 
             return Response({
-                'message': 'CSV import completed successfully' if not dry_run else 'CSV dry-run completed successfully',
+                'message': 'Product import completed' if not dry_run else 'Product dry-run completed without writing',
                 'file_name': uploaded_file.name,
                 'mode': 'dry_run' if dry_run else 'import',
+                'has_errors': bool(stats['errors']),
                 'stats': stats,
             }, status=status.HTTP_200_OK)
         except CommandError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response(
-                {'error': f'Error importing CSV file: {str(e)}'},
+                {'error': f'Error importing product file: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         finally:
@@ -388,7 +289,8 @@ class ProductViewSet(viewsets.ModelViewSet):
                 os.remove(tmp_path)
 
     def _start_background_csv_import(
-        self, tmp_path, source_file_name, batch_id, chunk_size, skip_products
+        self, tmp_path, source_file_name, batch_id, chunk_size, skip_products,
+        clear_blank_locations=False,
     ):
         thread = threading.Thread(
             target=self._run_background_csv_import,
@@ -398,13 +300,15 @@ class ProductViewSet(viewsets.ModelViewSet):
                 'batch_id': batch_id,
                 'chunk_size': chunk_size,
                 'skip_products': skip_products,
+                'clear_blank_locations': clear_blank_locations,
             },
             daemon=True,
         )
         thread.start()
 
     def _run_background_csv_import(
-        self, tmp_path, source_file_name, batch_id, chunk_size, skip_products
+        self, tmp_path, source_file_name, batch_id, chunk_size, skip_products,
+        clear_blank_locations=False,
     ):
         try:
             close_old_connections()
@@ -415,13 +319,14 @@ class ProductViewSet(viewsets.ModelViewSet):
                 chunk_size=chunk_size,
                 dry_run=False,
                 skip_products=skip_products,
+                clear_blank_locations=clear_blank_locations,
                 write_output=False,
                 source_file_name=source_file_name,
             )
-            logger.info('Background product CSV import completed: %s', stats)
+            logger.info('Background product backup import completed: %s', stats)
         except Exception:
             logger.exception(
-                'Background product CSV import failed for %s batch %s',
+                'Background product backup import failed for %s batch %s',
                 source_file_name,
                 batch_id,
             )
@@ -432,7 +337,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='import-status')
     def import_status(self, request):
-        """Get progress summary for a backup CSV import batch."""
+        """Get persisted-row progress for an XLSX/CSV backup import batch."""
         batch_id = request.query_params.get('batch_id')
         if not batch_id:
             return Response(

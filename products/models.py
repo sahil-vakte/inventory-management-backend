@@ -172,11 +172,11 @@ class Product(models.Model):
     )
     
     # Tags
-    tag_colours = models.CharField(max_length=200, blank=True, null=True)
+    tag_colours = models.CharField(max_length=500, blank=True, null=True)
     tag_matching_lycra_mesh = models.CharField(max_length=200, blank=True, null=True)
     tag_material = models.CharField(max_length=200, blank=True, null=True)
     tag_materials = models.CharField(max_length=200, blank=True, null=True)
-    tag_print_texture = models.CharField(max_length=200, blank=True, null=True)
+    tag_print_texture = models.CharField(max_length=500, blank=True, null=True)
     tag_quantity_box = models.CharField(max_length=200, blank=True, null=True)
     tag_trimmings = models.CharField(max_length=200, blank=True, null=True)
     
