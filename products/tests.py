@@ -202,7 +202,8 @@ class ProductBackupWorkbookImportTest(TestCase):
     def test_maps_all_model_fields_and_preserves_unmapped_columns_in_raw_data(self):
         row = self.row(**{
             'Attribute 2 (Colour)': 'Magenta', 'Attribute 8 (Width)': '150cm',
-            'Attribute 9 (Size)': 'Large', 'Tag 4 (Trimmings)': 'Lace',
+            'Attribute 9 (Size)': 'Large', 'Attribute 13 (Drop Size)': '2 metre drop',
+            'Tag 4 (Trimmings)': 'Lace',
             'Tag 2 (Colours)': 'Red,' * 55, 'Tag 1 (Print/ Texture)': 'Printed,' * 30,
             'Deposit Price (Inc VAT)': '1.25', 'Featured': 'Y',
             'Minimum Age': 18, 'Available Now': 'Y', 'Trade Only Product': 'Y',
@@ -217,6 +218,11 @@ class ProductBackupWorkbookImportTest(TestCase):
         self.assertEqual(product.attribute_colour, 'Magenta')
         self.assertEqual(product.attribute_width, '150cm')
         self.assertEqual(product.attribute_size, 'Large')
+        self.assertEqual(product.attribute_drop_size, '2 metre drop')
+        self.assertEqual(
+            ProductExtendedData.objects.get(product=product).attribute_13_drop_size,
+            '2 metre drop',
+        )
         self.assertEqual(product.tag_trimmings, 'Lace')
         self.assertEqual(product.tag_colours, 'Red,' * 55)
         self.assertEqual(product.deposit_price_inc_vat, Decimal('1.25'))
@@ -269,7 +275,7 @@ class ProductBackupWorkbookImportTest(TestCase):
         self.assertEqual(StockItem.objects.get(pk='SAME').product_id, 101)
         self.assertEqual(StockItem.objects.get(pk='SAME 102').product_id, 102)
 
-    def test_multiple_stock_items_require_an_exact_reference_match(self):
+    def test_multiple_stock_items_do_not_block_product_reference_updates(self):
         product, stock = self.existing_product_and_stock()
         alternate = StockItem.objects.create(
             sku='ALTERNATE', product=product, product_type='PARENT', color=stock.color,
@@ -281,9 +287,83 @@ class ProductBackupWorkbookImportTest(TestCase):
         alternate.refresh_from_db()
         self.assertEqual(stock.available_stock_in_mtr, 12)
         self.assertEqual(alternate.available_stock_in_mtr, 99)
-        invalid = self.import_rows([self.row(**{'Child Reference': 'UNKNOWN'})], dry_run=True)
-        self.assertEqual(invalid['errors'], 1)
-        self.assertIn('multiple stock items', invalid['error_examples'][0]['error'])
+        rows = [self.row(**{'Child Reference': 'NEW-REFERENCE', 'Stock Value': 7})]
+        preview = self.import_rows(rows, dry_run=True)
+        self.assertEqual(preview['errors'], 0, preview['error_examples'])
+        self.assertEqual(preview['products_updated'], 1)
+        self.assertEqual(preview['stock_created'], 1)
+        self.assertFalse(StockItem.objects.filter(pk='NEW-REFERENCE').exists())
+        live = self.import_rows(rows)
+        self.assertEqual(live['errors'], 0, live['error_examples'])
+        product.refresh_from_db()
+        stock.refresh_from_db()
+        alternate.refresh_from_db()
+        self.assertEqual(product.child_reference, 'NEW-REFERENCE')
+        self.assertEqual(StockItem.objects.get(pk='NEW-REFERENCE').available_stock_in_mtr, 7)
+        self.assertEqual(stock.available_stock_in_mtr, 12)
+        self.assertEqual(alternate.available_stock_in_mtr, 99)
+        repeated = self.import_rows(rows)
+        self.assertEqual(repeated['stock_unchanged'], 1)
+
+    def test_shared_reference_with_legacy_links_creates_product_specific_stock(self):
+        product, stock = self.existing_product_and_stock()
+        alternate = StockItem.objects.create(
+            sku='OTHER-COLOUR', product=product, product_type='PARENT', color=stock.color,
+            available_stock_in_mtr=99,
+        )
+        wholesale = Product.objects.create(
+            vs_child_id=202, vs_parent_id=200, child_reference='SHARED',
+            parent_product_title='Wholesale Roll', child_product_title='30m Wholesale Roll',
+        )
+        wholesale_stock = StockItem.objects.create(
+            sku='SHARED', product=wholesale, product_type='ROLL', color=stock.color,
+            available_stock_in_mtr=3, reserved_stock=1, primary_location=stock.primary_location,
+        )
+        rows = [self.row(**{'Child Reference': 'SHARED', 'Stock Value': 56})]
+        preview = self.import_rows(rows, dry_run=True)
+        self.assertEqual(preview['errors'], 0, preview['error_examples'])
+        self.assertEqual(preview['products_updated'], 1)
+        self.assertEqual(preview['stock_created'], 1)
+        self.assertFalse(StockItem.objects.filter(pk='SHARED 101').exists())
+
+        live = self.import_rows(rows)
+        self.assertEqual(live['errors'], 0, live['error_examples'])
+        scoped = StockItem.objects.get(pk='SHARED 101')
+        self.assertEqual(scoped.product_id, product.pk)
+        self.assertEqual(scoped.available_stock_in_mtr, 56)
+        wholesale_stock.refresh_from_db()
+        stock.refresh_from_db()
+        alternate.refresh_from_db()
+        self.assertEqual(wholesale_stock.product_id, wholesale.pk)
+        self.assertEqual(wholesale_stock.available_stock_in_mtr, 3)
+        self.assertEqual(wholesale_stock.reserved_stock, 1)
+        self.assertEqual(stock.available_stock_in_mtr, 10)
+        self.assertEqual(alternate.available_stock_in_mtr, 99)
+        movement = StockMovement.objects.get(stock_item=scoped)
+        self.assertEqual((movement.old_stock_level, movement.new_stock_level), (0, 56))
+        count = StockItem.all_objects.count()
+        repeated = self.import_rows(rows)
+        self.assertEqual(repeated['products_unchanged'], 1)
+        self.assertEqual(repeated['stock_unchanged'], 1)
+        self.assertEqual(StockItem.all_objects.count(), count)
+
+    def test_shared_reference_does_not_overwrite_a_single_wrong_variant_link(self):
+        product, stock = self.existing_product_and_stock()
+        other = Product.objects.create(
+            vs_child_id=202, vs_parent_id=200,
+            parent_product_title='Other', child_product_title='Other',
+        )
+        occupied = StockItem.objects.create(
+            sku='SHARED', product=other, product_type='OTHER', color=stock.color,
+            available_stock_in_mtr=3,
+        )
+        stats = self.import_rows([self.row(**{'Child Reference': 'SHARED', 'Stock Value': 56})])
+        self.assertEqual(stats['errors'], 0, stats['error_examples'])
+        stock.refresh_from_db()
+        occupied.refresh_from_db()
+        self.assertEqual(stock.available_stock_in_mtr, 10)
+        self.assertEqual(occupied.available_stock_in_mtr, 3)
+        self.assertEqual(StockItem.objects.get(pk='SHARED 101').available_stock_in_mtr, 56)
 
     def test_zero_stock_is_applied_without_deleting_or_restoring_products(self):
         product, stock = self.existing_product_and_stock()

@@ -31,6 +31,7 @@ FINALIZED_COLUMNS = {
     'Parent Product Title',
     'Child Product Title',
     'ShortTitle',
+    'Attribute 13 (Drop Size)',
     'Product Subtitle',
     'Product Summary',
     'Product Description',
@@ -124,6 +125,7 @@ PRODUCT_COLUMNS = {
     'attribute_choose_type': 'Attribute 10 (Choose Type)',
     'attribute_gift_card_value': 'Attribute 11 (Gift Card Value)',
     'attribute_colours_pf': 'Attribute 12 (Colours PF)',
+    'attribute_drop_size': 'Attribute 13 (Drop Size)',
     'allow_sample_request': 'Allow Sample Request',
     'sample_request_cost': 'Sample Request Cost',
     'tag_colours': 'Tag 2 (Colours)',
@@ -676,26 +678,43 @@ class Command(BaseCommand):
 
         existing_for_product = StockItem.all_objects.filter(product_id=product.pk)
         linked_skus = list(existing_for_product.values_list('sku', flat=True)[:2])
-        if linked_skus:
-            if len(linked_skus) == 1:
-                return linked_skus[0]
-            if existing_for_product.filter(pk=sku).exists():
-                return sku
-            candidates = list(existing_for_product.values_list('sku', flat=True)[:5])
-            raise ValueError(
-                f'Product {product.pk} has multiple stock items and no exact reference match. '
-                f'Candidate SKUs: {candidates}. Correct the reference or stock links before importing.'
-            )
-
-        if not self._sku_conflicts(sku, product):
+        if linked_skus and existing_for_product.filter(pk=sku).exists():
             return sku
 
         suffix = f' {product.vs_child_id}'
         candidate = f'{sku[:50 - len(suffix)]}{suffix}'
-        if not self._sku_conflicts(candidate, product):
+        if linked_skus and existing_for_product.filter(pk=candidate).exists():
             return candidate
 
-        fallback = f'VS{product.vs_child_id}'[:50]
+        # Keep a single legacy SKU only when the source reference is not owned
+        # by another product. Never choose an arbitrary colour/roll stock row.
+        if len(linked_skus) == 1 and not self._sku_conflicts(sku, product):
+            return linked_skus[0]
+
+        if not self._sku_conflicts(sku, product):
+            if linked_skus:
+                self._warning(
+                    f'Product {product.pk}: existing stock links do not match the source reference. '
+                    f'Using separate stock SKU {sku}; existing stock rows are preserved.'
+                )
+            return sku
+
+        if not self._sku_conflicts(candidate, product):
+            self._warning(
+                f'Product {product.pk}: reference {sku} belongs to another product. '
+                f'Using product-specific stock SKU {candidate}; no stock is relinked.'
+            )
+            return candidate
+
+        fallback = f'VS{product.vs_child_id}'
+        number = 1
+        while self._sku_conflicts(fallback, product):
+            fallback = f'VS{product.vs_child_id}-{number}'
+            number += 1
+        self._warning(
+            f'Product {product.pk}: source SKU and product-specific SKU are occupied. '
+            f'Using {fallback}; existing stock rows are preserved.'
+        )
         return fallback
 
     def _sku_conflicts(self, sku, product):

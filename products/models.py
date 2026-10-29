@@ -164,6 +164,7 @@ class Product(models.Model):
     attribute_design = models.CharField(max_length=100, blank=True, null=True)
     attribute_gift_card_value = models.CharField(max_length=100, blank=True, null=True)
     attribute_colours_pf = models.CharField(max_length=100, blank=True, null=True)
+    attribute_drop_size = models.CharField(max_length=100, blank=True, null=True)
 
     # Sample request fields from the finalized product CSV.
     allow_sample_request = models.BooleanField(blank=True, null=True)
@@ -390,6 +391,7 @@ class ProductExtendedData(models.Model):
     attribute_10_choose_type = models.TextField(db_column='Attribute 10 (Choose Type)', blank=True, null=True)
     attribute_11_gift_card_value = models.TextField(db_column='Attribute 11 (Gift Card Value)', blank=True, null=True)
     attribute_12_colours_pf = models.TextField(db_column='Attribute 12 (Colours PF)', blank=True, null=True)
+    attribute_13_drop_size = models.TextField(db_column='Attribute 13 (Drop Size)', blank=True, null=True)
     blank_column_31 = models.TextField(db_column='blank_column_31', blank=True, null=True)
     allow_sample_request = models.TextField(db_column='Allow Sample Request', blank=True, null=True)
     blank_column_33 = models.TextField(db_column='blank_column_33', blank=True, null=True)

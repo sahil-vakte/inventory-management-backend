@@ -35,6 +35,7 @@ staticfiles/
 **/migrations/*.py
 !**/migrations/__init__.py
 !products/migrations/0007_expand_product_backup_tags.py
+!products/migrations/0008_add_product_drop_size.py
 !orders/migrations/0002_order_status_flow.py
 !orders/migrations/0004_orderitem_lable_printed.py
 !orders/migrations/0005_royal_mail_oauth_token.py
